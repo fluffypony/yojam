@@ -16,6 +16,30 @@ final class BrowserManager: ObservableObject {
         self.emailClients = settingsStore.loadEmailClients()
         if UserDefaults.standard.data(forKey: "browsers") == nil { performInitialDetection() }
         if UserDefaults.standard.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
+        deduplicateProfileEntries()
+    }
+
+    /// Remove duplicate profile entries and profile entries with empty names
+    /// that may have been created by earlier versions of profile discovery.
+    private func deduplicateProfileEntries() {
+        var seen = Set<String>() // "bundleId|profileId"
+        var cleaned: [BrowserEntry] = []
+        for entry in browsers {
+            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")"
+            guard seen.insert(key).inserted else { continue }
+            // Drop profile entries with empty profile names (useless in picker)
+            if entry.profileId != nil,
+               let profileName = entry.profileName,
+               profileName.isEmpty {
+                continue
+            }
+            cleaned.append(entry)
+        }
+        if cleaned.count != browsers.count {
+            browsers = cleaned
+            for i in browsers.indices { browsers[i].position = i }
+            save()
+        }
     }
 
     private func performInitialDetection() {

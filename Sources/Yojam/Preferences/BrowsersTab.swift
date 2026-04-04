@@ -92,7 +92,7 @@ struct BrowsersTab: View {
                                   .displayName)
                     Toggle("Enabled",
                            isOn: $browserManager.browsers[index].enabled)
-                    Toggle("Strip UTM",
+                    Toggle("Strip UTM Parameters",
                            isOn: $browserManager.browsers[index]
                                .stripUTMParams)
                     Toggle("Open in Private Window",
@@ -127,6 +127,7 @@ struct BrowsersTab: View {
                     }
                 }
                 .formStyle(.grouped).padding()
+                .frame(minWidth: 260)
             } else {
                 VStack {
                     Spacer()
@@ -134,6 +135,7 @@ struct BrowsersTab: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
+                .frame(minWidth: 260)
             }
         }
         .fileImporter(

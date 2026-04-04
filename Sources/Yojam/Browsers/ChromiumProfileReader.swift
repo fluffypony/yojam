@@ -12,8 +12,10 @@ struct ChromiumProfileReader {
               let infoCache = profile["info_cache"] as? [String: [String: Any]]
         else { return [] }
         return infoCache.compactMap { (dirName, info) -> BrowserProfile? in
-            let name = info["name"] as? String
-                ?? info["gaia_name"] as? String ?? dirName
+            let rawName = info["name"] as? String
+                ?? info["gaia_name"] as? String
+            // Use rawName if non-empty, otherwise fall back to dirName
+            let name = (rawName?.isEmpty == false) ? rawName! : dirName
             let email = info["user_name"] as? String
             return BrowserProfile(
                 id: dirName, name: name, email: email, browserBundleId: bundleId

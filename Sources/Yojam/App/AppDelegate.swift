@@ -133,17 +133,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore.isFirstLaunch = false
         }
 
-        // Profile discovery - async to avoid blocking launch
+        // Profile discovery - async to avoid blocking launch.
+        // Only add profile entries when the browser has multiple
+        // meaningfully-named profiles (skip empty names, skip if
+        // every profile name is just a Firefox-style internal name
+        // like "default" / "default-release").
         let profileDiscovery = ProfileDiscovery()
         Task { @MainActor in
             var newEntries: [BrowserEntry] = []
-            for entry in browserManager.browsers {
+            // Only discover profiles for base entries (no profileId set)
+            let baseEntries = browserManager.browsers.filter { $0.profileId == nil }
+            // Track bundle IDs we've already processed to avoid
+            // discovering for the same browser twice
+            var processedBundleIds = Set<String>()
+            for entry in baseEntries {
+                guard processedBundleIds.insert(entry.bundleIdentifier).inserted
+                else { continue }
                 let profiles = profileDiscovery.discoverProfiles(
                     for: entry.bundleIdentifier)
-                guard profiles.count > 1 else { continue }
-                for profile in profiles {
+                // Need at least 2 profiles with non-empty names to be useful
+                let namedProfiles = profiles.filter { !$0.name.isEmpty }
+                guard namedProfiles.count > 1 else { continue }
+                for profile in namedProfiles {
                     let alreadyExists = browserManager.browsers.contains {
-                        $0.bundleIdentifier == entry.bundleIdentifier && $0.profileId == profile.id
+                        $0.bundleIdentifier == entry.bundleIdentifier
+                            && $0.profileId == profile.id
+                    } || newEntries.contains {
+                        $0.bundleIdentifier == entry.bundleIdentifier
+                            && $0.profileId == profile.id
                     }
                     guard !alreadyExists else { continue }
                     var profileEntry = BrowserEntry(
