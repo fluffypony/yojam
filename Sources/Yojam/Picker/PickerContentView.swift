@@ -106,10 +106,10 @@ struct PickerIconView: View {
     let isSelected: Bool
     let size: CGFloat
 
-    @State private var iconResolver = IconResolver()
+    private static let sharedIconResolver = IconResolver()
 
     var body: some View {
-        Image(nsImage: iconResolver.icon(
+        Image(nsImage: Self.sharedIconResolver.icon(
             forBundleIdentifier: entry.bundleIdentifier))
             .resizable().frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.2))

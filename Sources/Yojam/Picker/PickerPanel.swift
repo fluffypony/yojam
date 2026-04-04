@@ -3,7 +3,6 @@ import SwiftUI
 
 @MainActor
 final class PickerPanel: NSPanel {
-    private var hostingView: NSHostingView<PickerContentView>?
     private var globalMonitor: Any?
     private let onDismiss: () -> Void
 
@@ -84,32 +83,7 @@ final class PickerPanel: NSPanel {
     }
 
     func showAtCursor() {
-        let cursor = NSEvent.mouseLocation
-        let size = frame.size
-        let screen = NSScreen.screens.first(where: {
-            $0.frame.contains(cursor)
-        }) ?? NSScreen.main!
-        let visible = screen.visibleFrame
-
-        var origin = NSPoint.zero
-        if cursor.x + (size.width / 2) > visible.maxX {
-            origin.x = cursor.x - size.width
-        } else if cursor.x - (size.width / 2) < visible.minX {
-            origin.x = cursor.x
-        } else {
-            origin.x = cursor.x - (size.width / 2)
-        }
-
-        if cursor.y - size.height - 8 < visible.minY {
-            origin.y = cursor.y + 8
-        } else {
-            origin.y = cursor.y - size.height - 8
-        }
-
-        origin.x = max(visible.minX,
-                        min(origin.x, visible.maxX - size.width))
-        origin.y = max(visible.minY,
-                        min(origin.y, visible.maxY - size.height))
+        let origin = ScreenEdgeDetector.calculateOrigin(pickerSize: frame.size)
         setFrameOrigin(origin)
 
         PickerAnimator.animateIn(panel: self)

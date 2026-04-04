@@ -58,6 +58,11 @@ struct GeneralTab: View {
                 Toggle(
                     "Enable modifier+click",
                     isOn: $settingsStore.universalClickModifierEnabled)
+                    .onChange(of: settingsStore.universalClickModifierEnabled) { _, enabled in
+                        if enabled && !AccessibilityHelper.isTrusted {
+                            AccessibilityHelper.promptForTrust()
+                        }
+                    }
                 if settingsStore.universalClickModifierEnabled {
                     Toggle("Cmd+Shift Click",
                            isOn: $settingsStore.cmdShiftClickEnabled)
@@ -65,8 +70,17 @@ struct GeneralTab: View {
                            isOn: $settingsStore.ctrlShiftClickEnabled)
                     Toggle("Cmd+Option Click",
                            isOn: $settingsStore.cmdOptionClickEnabled)
-                    Text("Requires Accessibility permission.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if !AccessibilityHelper.isTrusted {
+                        HStack {
+                            Text("Accessibility permission required.")
+                                .font(.caption).foregroundStyle(.orange)
+                            Button("Grant") { AccessibilityHelper.promptForTrust() }
+                                .controlSize(.small)
+                        }
+                    } else {
+                        Text("Accessibility permission granted.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("Sync") {
