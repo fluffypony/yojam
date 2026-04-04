@@ -6,7 +6,6 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
     var displayName: String
     var enabled: Bool
     var position: Int
-    var hotkey: KeyCombo?
     var profileId: String?
     var profileName: String?
     var stripUTMParams: Bool
@@ -23,7 +22,6 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
         displayName: String,
         enabled: Bool = true,
         position: Int = 0,
-        hotkey: KeyCombo? = nil,
         profileId: String? = nil,
         profileName: String? = nil,
         stripUTMParams: Bool = false,
@@ -39,7 +37,6 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
         self.displayName = displayName
         self.enabled = enabled
         self.position = position
-        self.hotkey = hotkey
         self.profileId = profileId
         self.profileName = profileName
         self.stripUTMParams = stripUTMParams
@@ -58,12 +55,6 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: BrowserEntry, rhs: BrowserEntry) -> Bool { lhs.id == rhs.id }
-}
-
-struct KeyCombo: Codable, Equatable, Hashable {
-    var keyCode: UInt16
-    var modifierFlags: UInt
-    var displayString: String
 }
 
 enum BrowserSource: String, Codable {
