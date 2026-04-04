@@ -70,6 +70,8 @@ struct GeneralTab: View {
                         }
                     }
                 if settingsStore.universalClickModifierEnabled {
+                    Text("Hold a modifier while clicking a link in Slack, Mail, Notes, or other non-browser apps to force the picker. Does not work for links inside browsers (they handle clicks internally).")
+                        .font(.caption).foregroundStyle(.secondary)
                     Toggle("Cmd+Shift Click",
                            isOn: $settingsStore.cmdShiftClickEnabled)
                     Toggle("Ctrl+Shift Click",
@@ -84,7 +86,7 @@ struct GeneralTab: View {
                                 Button("Grant") { AccessibilityHelper.promptForTrust() }
                                     .controlSize(.small)
                             }
-                            Text("After granting, restart Yojam for it to take effect.")
+                            Text("Permission is tracked by binary identity. Debug builds change identity on each compile, so you may need to re-grant after rebuilding.")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     } else {
