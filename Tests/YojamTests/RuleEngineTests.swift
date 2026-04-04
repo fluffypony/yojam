@@ -69,4 +69,40 @@ final class RuleEngineTests: XCTestCase {
             URL(string: "https://github.com/repo")!,
             sourceAppBundleId: "com.apple.mail"))
     }
+
+    @MainActor
+    func testPrecedenceUserOverBuiltIn() {
+        let engine = RuleEngine(settingsStore: SettingsStore())
+        let userRule = Rule(
+            name: "User", matchType: .urlContains, pattern: "zoom.us/j/",
+            targetBundleId: "com.apple.Safari", targetAppName: "Safari",
+            isBuiltIn: false, priority: 50)
+        let builtIn = Rule(
+            name: "BuiltIn", matchType: .urlContains, pattern: "zoom.us/j/",
+            targetBundleId: "us.zoom.xos", targetAppName: "Zoom",
+            isBuiltIn: true, priority: 100)
+        engine.rules = [builtIn, userRule]
+        let sorted = engine.rules.filter(\.enabled).sorted {
+            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
+            return $0.priority < $1.priority
+        }
+        XCTAssertEqual(sorted.first?.name, "User")
+    }
+
+    @MainActor
+    func testPriorityOrdering() {
+        let engine = RuleEngine(settingsStore: SettingsStore())
+        let low = Rule(
+            name: "Low", matchType: .domainSuffix, pattern: "example.com",
+            targetBundleId: "com.a", targetAppName: "A", priority: 10)
+        let high = Rule(
+            name: "High", matchType: .domainSuffix, pattern: "example.com",
+            targetBundleId: "com.b", targetAppName: "B", priority: 100)
+        engine.rules = [high, low]
+        let sorted = engine.rules.filter(\.enabled).sorted {
+            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
+            return $0.priority < $1.priority
+        }
+        XCTAssertEqual(sorted.first?.name, "Low")
+    }
 }
