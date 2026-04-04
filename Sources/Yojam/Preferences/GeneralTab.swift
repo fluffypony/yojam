@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
+    @State private var accessibilityGranted = AccessibilityHelper.isTrusted
 
     var body: some View {
         Form {
@@ -56,7 +57,7 @@ struct GeneralTab: View {
                     "Enable modifier+click",
                     isOn: $settingsStore.universalClickModifierEnabled)
                     .onChange(of: settingsStore.universalClickModifierEnabled) { _, enabled in
-                        if enabled && !AccessibilityHelper.isTrusted {
+                        if enabled && !accessibilityGranted {
                             AccessibilityHelper.promptForTrust()
                         }
                     }
@@ -67,7 +68,7 @@ struct GeneralTab: View {
                            isOn: $settingsStore.ctrlShiftClickEnabled)
                     Toggle("Cmd+Option Click",
                            isOn: $settingsStore.cmdOptionClickEnabled)
-                    if !AccessibilityHelper.isTrusted {
+                    if !accessibilityGranted {
                         HStack {
                             Text("Accessibility permission required.")
                                 .font(.caption).foregroundStyle(.orange)
@@ -84,6 +85,16 @@ struct GeneralTab: View {
                 Toggle("Sync via iCloud",
                        isOn: $settingsStore.iCloudSyncEnabled)
             }
-        }.formStyle(.grouped)
+        }
+        .formStyle(.grouped)
+        // Poll accessibility status every 2 seconds while visible,
+        // since the grant happens in System Settings and there is
+        // no callback for it.
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            accessibilityGranted = AccessibilityHelper.isTrusted
+        }
+        .onAppear {
+            accessibilityGranted = AccessibilityHelper.isTrusted
+        }
     }
 }

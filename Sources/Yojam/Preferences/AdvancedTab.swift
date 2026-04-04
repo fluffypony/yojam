@@ -7,6 +7,7 @@ struct AdvancedTab: View {
     @ObservedObject var ruleEngine: RuleEngine
     let routingSuggestionEngine: RoutingSuggestionEngine
     @State private var showingResetAlert = false
+    @State private var showingResetBrowsersAlert = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -79,6 +80,29 @@ struct AdvancedTab: View {
                             }
                         }
                     }
+                }
+                Button("Re-detect Browsers") {
+                    showingResetBrowsersAlert = true
+                }
+                .alert("Re-detect browsers?",
+                       isPresented: $showingResetBrowsersAlert) {
+                    Button("Re-detect", role: .destructive) {
+                        settingsStore.saveBrowsers([])
+                        settingsStore.saveEmailClients([])
+                        UserDefaults.standard.removeObject(forKey: "browsers")
+                        UserDefaults.standard.removeObject(forKey: "emailClients")
+                        browserManager.browsers = []
+                        browserManager.suggestedBrowsers = []
+                        browserManager.emailClients = []
+                        // Re-init triggers fresh detection
+                        let fresh = BrowserManager(settingsStore: settingsStore)
+                        browserManager.browsers = fresh.browsers
+                        browserManager.emailClients = fresh.emailClients
+                        browserManager.suggestedBrowsers = fresh.suggestedBrowsers
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Clears all browser and email client data and re-detects from scratch.")
                 }
                 Button("Reset All Settings", role: .destructive) {
                     showingResetAlert = true

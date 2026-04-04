@@ -11,12 +11,18 @@ struct BrowsersTab: View {
     var body: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                List(selection: $selectedBrowser) {
+                // Use a plain List without selection to avoid
+                // selection-vs-drag conflicts on macOS.
+                List {
                     Section("Active") {
                         ForEach(browserManager.browsers) { browser in
-                            BrowserRow(browser: browser,
-                                       icon: browserManager.icon(for: browser))
-                                .tag(browser)
+                            BrowserRow(
+                                browser: browser,
+                                icon: browserManager.icon(for: browser),
+                                isSelected: selectedBrowser?.id == browser.id
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedBrowser = browser }
                         }
                         .onMove {
                             browserManager.moveBrowser(from: $0, to: $1)
@@ -24,8 +30,7 @@ struct BrowsersTab: View {
                     }
                     if !browserManager.suggestedBrowsers.isEmpty {
                         Section("Suggested") {
-                            ForEach(browserManager.suggestedBrowsers) {
-                                entry in
+                            ForEach(browserManager.suggestedBrowsers) { entry in
                                 HStack {
                                     Image(nsImage: browserManager.icon(for: entry))
                                         .resizable()
@@ -41,19 +46,25 @@ struct BrowsersTab: View {
                         }
                     }
                 }
-                HStack {
+                HStack(spacing: 4) {
                     Button(action: { showingFilePicker = true }) {
                         Image(systemName: "plus")
+                            .frame(width: 24, height: 24)
                     }
+                    .buttonStyle(.borderless)
                     Button(action: {
                         if let browser = selectedBrowser,
-                           let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) {
+                           let idx = browserManager.browsers.firstIndex(
+                               where: { $0.id == browser.id }) {
                             browserManager.removeBrowser(at: idx)
                             selectedBrowser = nil
                         }
                     }) {
                         Image(systemName: "minus")
-                    }.disabled(selectedBrowser == nil)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(selectedBrowser == nil)
                     Spacer()
                     Button("Rescan") {
                         let handlers = NSWorkspace.shared.urlsForApplications(
@@ -146,18 +157,13 @@ struct BrowsersTab: View {
     }
 }
 
-/// A single row in the browser list with a drag handle for reordering.
 private struct BrowserRow: View {
     let browser: BrowserEntry
     let icon: NSImage
-    @State private var hoveringHandle = false
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.tertiary)
-                .font(.system(size: 10))
-                .onHover { hoveringHandle = $0 }
             Image(nsImage: icon)
                 .resizable()
                 .frame(width: 24, height: 24)
@@ -172,10 +178,15 @@ private struct BrowserRow: View {
             }
             Spacer()
             Circle()
-                .fill(browser.source == .suggested ? .blue :
-                      browser.isInstalled ? .green : .gray)
+                .fill(browser.isInstalled ? .green : .gray)
                 .frame(width: 8, height: 8)
         }
-        .moveDisabled(!hoveringHandle)
+        .padding(.vertical, 2)
+        .listRowBackground(
+            isSelected
+                ? RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.accentColor.opacity(0.25))
+                : nil
+        )
     }
 }

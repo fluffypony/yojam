@@ -545,16 +545,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showPreferences() {
+        // Show in Cmd+Tab while preferences are open
+        NSApp.setActivationPolicy(.regular)
+
         if let openSettings = openSettingsAction {
-            // Use the SwiftUI environment action (no deprecation warning)
             openSettings()
         } else {
-            // Fallback for before the Settings scene has appeared once
             NSApp.sendAction(
                 Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
         DispatchQueue.main.async {
             NSApp.activate()
+        }
+
+        // Watch for all windows closing to hide from Cmd+Tab again
+        startWindowCloseObserver()
+    }
+
+    private var windowCloseObserver: NSObjectProtocol?
+
+    private func startWindowCloseObserver() {
+        guard windowCloseObserver == nil else { return }
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            // Delay slightly so the window count updates
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                guard let self else { return }
+                let hasVisibleWindows = NSApp.windows.contains {
+                    $0.isVisible && !($0 is NSPanel)
+                }
+                if !hasVisibleWindows {
+                    NSApp.setActivationPolicy(.accessory)
+                    if let obs = self.windowCloseObserver {
+                        NotificationCenter.default.removeObserver(obs)
+                        self.windowCloseObserver = nil
+                    }
+                }
+            }
         }
     }
 
