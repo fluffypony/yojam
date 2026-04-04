@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State
     private var forcePickerForNextURL = false
     private var cancellables = Set<AnyCancellable>()
+    private var recentlyRoutedURLs: [String: Date] = [:]
+    private let deduplicationWindow: TimeInterval = 0.5
 
     override init() {
         let store = settingsStore
@@ -90,22 +92,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             iCloudSyncManager?.startSync()
         }
 
+        // Dynamic service toggles (§2.7)
+        settingsStore.$clipboardMonitoringEnabled.dropFirst().sink { [weak self] enabled in
+            if enabled { self?.startClipboardMonitor() }
+            else { self?.clipboardMonitor?.stop(); self?.clipboardMonitor = nil }
+        }.store(in: &cancellables)
+
+        settingsStore.$universalClickModifierEnabled.dropFirst().sink { [weak self] enabled in
+            if enabled { self?.startGlobalClickMonitor() }
+            else { self?.globalClickMonitor?.stop(); self?.globalClickMonitor = nil }
+        }.store(in: &cancellables)
+
+        settingsStore.$iCloudSyncEnabled.dropFirst().sink { [weak self] enabled in
+            guard let self else { return }
+            if enabled {
+                self.iCloudSyncManager = ICloudSyncManager(settingsStore: self.settingsStore)
+                self.iCloudSyncManager?.startSync()
+            } else {
+                self.iCloudSyncManager?.stopSync()
+                self.iCloudSyncManager = nil
+            }
+        }.store(in: &cancellables)
+
+        settingsStore.$periodicRescanInterval.dropFirst().sink { [weak self] interval in
+            guard let self else { return }
+            self.periodicScanner.stop()
+            self.periodicScanner = PeriodicScanner(
+                reconciler: self.changeReconciler, interval: interval)
+            self.periodicScanner.start()
+        }.store(in: &cancellables)
+
         // First launch
         if settingsStore.isFirstLaunch {
             DefaultBrowserManager.promptSetDefault()
             settingsStore.isFirstLaunch = false
         }
 
-        // Profile discovery
+        // Profile discovery - create profile entries (§2.6)
         let profileDiscovery = ProfileDiscovery()
         for entry in browserManager.browsers {
             let profiles = profileDiscovery.discoverProfiles(
                 for: entry.bundleIdentifier)
-            if profiles.count > 1 {
-                YojamLogger.shared.log(
-                    "Found \(profiles.count) profiles for \(entry.displayName)")
+            guard profiles.count > 1 else { continue }
+            for profile in profiles {
+                let alreadyExists = browserManager.browsers.contains {
+                    $0.bundleIdentifier == entry.bundleIdentifier && $0.profileId == profile.id
+                }
+                guard !alreadyExists else { continue }
+                var profileEntry = BrowserEntry(
+                    bundleIdentifier: entry.bundleIdentifier,
+                    displayName: "\(entry.displayName) — \(profile.name)",
+                    enabled: true,
+                    position: browserManager.browsers.count,
+                    profileId: profile.id,
+                    profileName: profile.name,
+                    source: .autoDetected
+                )
+                profileEntry.isInstalled = entry.isInstalled
+                browserManager.addBrowser(profileEntry)
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        appInstallMonitor.stopMonitoring()
+        workspaceObserver.stopObserving()
+        periodicScanner.stop()
+        clipboardMonitor?.stop()
+        globalClickMonitor?.stop()
+        iCloudSyncManager?.stopSync()
     }
 
     // MARK: - URL Handling
@@ -114,19 +169,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         event: NSAppleEventDescriptor,
         reply: NSAppleEventDescriptor
     ) {
+        // Capture modifiers immediately to avoid race condition (§2.8)
+        let modifiers = NSEvent.modifierFlags
         guard let urlString = event.paramDescriptor(
             forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: urlString) else { return }
         let sourceAppBundleId = SourceAppResolver.resolveSourceApp(
             from: event)
-        routeURL(url, sourceAppBundleId: sourceAppBundleId)
+        routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
     }
 
-    func routeURL(_ url: URL, sourceAppBundleId: String? = nil) {
+    func routeURL(
+        _ url: URL, sourceAppBundleId: String? = nil,
+        modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
+    ) {
         guard settingsStore.isEnabled else {
             openInDefaultBrowser(url)
             return
         }
+
+        // URL deduplication (§2.14)
+        let urlKey = url.absoluteString
+        let now = Date()
+        if let lastRouted = recentlyRoutedURLs[urlKey],
+           now.timeIntervalSince(lastRouted) < deduplicationWindow {
+            return
+        }
+        recentlyRoutedURLs[urlKey] = now
+        recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
 
         recentURLsManager.add(url)
 
@@ -135,30 +205,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Step 1: Global rewrites
         processedURL = urlRewriter.applyGlobalRewrites(to: processedURL)
 
-        // Step 2: Global UTM stripping
-        if settingsStore.globalUTMStrippingEnabled {
-            processedURL = utmStripper.strip(processedURL)
-        }
-
-        // Step 3: Check mailto
+        // Step 2: Check mailto
         if processedURL.scheme == "mailto" {
             handleMailtoURL(processedURL)
             return
         }
 
-        // Step 4: Check force-picker from modifier click
+        // Step 3: Check force-picker from modifier click
         let forcePicker = forcePickerForNextURL
         forcePickerForNextURL = false
 
-        // Step 5: Evaluate rules (with source app context)
+        // Step 4: Evaluate rules (with source app context)
         if !forcePicker,
            let match = ruleEngine.evaluate(
                processedURL, sourceAppBundleId: sourceAppBundleId
            ) {
             processedURL = urlRewriter.applyRuleRewrites(
                 to: processedURL, rule: match)
+
+            // Apply UTM stripping: rule > browser > global (§2.11)
+            let matchedEntry = browserManager.browsers.first {
+                $0.bundleIdentifier == match.targetBundleId
+            }
             if match.stripUTMParams {
                 processedURL = utmStripper.strip(processedURL)
+            } else if let entry = matchedEntry, entry.stripUTMParams {
+                processedURL = utmStripper.strip(processedURL)
+            } else if settingsStore.globalUTMStrippingEnabled {
+                processedURL = utmStripper.strip(processedURL)
+            }
+
+            // Apply browser-specific rewrites (§2.5)
+            if let entry = matchedEntry {
+                processedURL = urlRewriter.applyBrowserRewrites(
+                    to: processedURL, browser: entry)
             }
 
             if let appURL = NSWorkspace.shared.urlForApplication(
@@ -170,26 +250,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         for: processedURL,
                         preselectedBundleId: match.targetBundleId)
                 case .holdShift:
-                    if NSEvent.modifierFlags.contains(.shift) {
+                    if modifiers.contains(.shift) {
                         showPicker(
                             for: processedURL,
                             preselectedBundleId: match.targetBundleId)
                     } else {
-                        openURL(processedURL, withAppAt: appURL)
+                        openURL(processedURL, withAppAt: appURL,
+                            profile: matchedEntry?.profileId,
+                            bundleId: match.targetBundleId,
+                            privateWindow: matchedEntry?.openInPrivateWindow ?? false)
                     }
                 case .smartFallback:
-                    openURL(processedURL, withAppAt: appURL)
+                    openURL(processedURL, withAppAt: appURL,
+                        profile: matchedEntry?.profileId,
+                        bundleId: match.targetBundleId,
+                        privateWindow: matchedEntry?.openInPrivateWindow ?? false)
                 }
                 return
             }
         }
 
-        // Step 6: No rule matched or force picker
+        // Step 5: No rule matched or force picker — apply global UTM stripping
+        if settingsStore.globalUTMStrippingEnabled {
+            processedURL = utmStripper.strip(processedURL)
+        }
+
         switch settingsStore.activationMode {
         case .always, .smartFallback:
             showPicker(for: processedURL)
         case .holdShift:
-            if forcePicker || NSEvent.modifierFlags.contains(.shift) {
+            if forcePicker || modifiers.contains(.shift) {
                 showPicker(for: processedURL)
             } else {
                 openInDefaultBrowser(processedURL)
@@ -199,7 +289,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleMailtoURL(_ url: URL) {
         let clients = browserManager.emailClients.filter(\.enabled)
-        if clients.count == 1, let client = clients.first,
+        // Respect activation mode (§2.9)
+        if settingsStore.activationMode != .always,
+           clients.count == 1, let client = clients.first,
            let appURL = NSWorkspace.shared.urlForApplication(
                withBundleIdentifier: client.bundleIdentifier
            ) {
@@ -230,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preselectedIndex = idx
         } else {
             preselectedIndex = resolveDefaultIndex(
-                entries: entries, url: url)
+                entries: entries, url: url, isEmail: isEmail)
         }
 
         pickerPanel?.close()
@@ -257,7 +349,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var finalURL = url
         finalURL = urlRewriter.applyBrowserRewrites(
             to: finalURL, browser: entry)
+
+        // Apply UTM stripping: per-browser > global
         if entry.stripUTMParams {
+            finalURL = utmStripper.strip(finalURL)
+        } else if settingsStore.globalUTMStrippingEnabled {
             finalURL = utmStripper.strip(finalURL)
         }
 
@@ -269,7 +365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let domain = finalURL.host?.lowercased() {
             routingSuggestionEngine.recordChoice(
-                domain: domain, bundleId: entry.bundleIdentifier)
+                domain: domain, entryId: entry.id.uuidString)
         }
 
         openURL(
@@ -287,19 +383,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
 
+        // Combine profile + private window arguments (§2.2)
+        var arguments: [String] = []
         if let profile, let bundleId {
-            config.arguments = ProfileLaunchHelper.launchArguments(
-                forProfile: profile, browserBundleId: bundleId)
-        } else if privateWindow, let bundleId {
-            config.arguments = ProfileLaunchHelper
-                .privateWindowArguments(browserBundleId: bundleId)
+            arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                forProfile: profile, browserBundleId: bundleId))
         }
+        if privateWindow, let bundleId {
+            arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
+                browserBundleId: bundleId))
+        }
+        if !arguments.isEmpty { config.arguments = arguments }
 
-        NSWorkspace.shared.open(
-            [url], withApplicationAt: appURL,
-            configuration: config
-        ) { _, error in
-            if let error {
+        // Use async version for @MainActor safety (§2.12)
+        Task {
+            do {
+                _ = try await NSWorkspace.shared.open(
+                    [url], withApplicationAt: appURL, configuration: config)
+            } catch {
                 YojamLogger.shared.log(
                     "Failed to open URL: \(error.localizedDescription)")
             }
@@ -307,11 +408,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openInDefaultBrowser(_ url: URL) {
+        // Always target a specific app to avoid recursion (§2.13)
         guard let first = browserManager.browsers.first(where: \.enabled),
               let appURL = NSWorkspace.shared.urlForApplication(
                   withBundleIdentifier: first.bundleIdentifier
               ) else {
-            NSWorkspace.shared.open(url)
+            YojamLogger.shared.log("No enabled browser available. Cannot open URL.")
             return
         }
         var processedURL = url
@@ -319,27 +421,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             to: processedURL, browser: first)
         if first.stripUTMParams {
             processedURL = utmStripper.strip(processedURL)
+        } else if settingsStore.globalUTMStrippingEnabled {
+            processedURL = utmStripper.strip(processedURL)
         }
         openURL(
             processedURL, withAppAt: appURL,
             profile: first.profileId,
-            bundleId: first.bundleIdentifier)
+            bundleId: first.bundleIdentifier,
+            privateWindow: first.openInPrivateWindow)
     }
 
     private func resolveDefaultIndex(
-        entries: [BrowserEntry], url: URL
+        entries: [BrowserEntry], url: URL, isEmail: Bool = false
     ) -> Int {
         switch settingsStore.defaultSelectionBehavior {
         case .alwaysFirst:
             return 0
         case .lastUsed:
-            return browserManager.lastUsedIndex(isEmail: false)
+            return browserManager.lastUsedIndex(isEmail: isEmail)
         case .smart:
             if let domain = url.host?.lowercased(),
-               let suggestedBundleId = routingSuggestionEngine
+               let suggestedEntryId = routingSuggestionEngine
                    .suggestion(for: domain),
                let idx = entries.firstIndex(where: {
-                   $0.bundleIdentifier == suggestedBundleId
+                   $0.id.uuidString == suggestedEntryId
                }) {
                 return idx
             }
@@ -373,6 +478,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore: settingsStore
         ) { [weak self] in
             self?.forcePickerForNextURL = true
+            // Auto-expire after 200ms (§2.1)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.forcePickerForNextURL = false
+            }
         }
         globalClickMonitor?.start()
     }
