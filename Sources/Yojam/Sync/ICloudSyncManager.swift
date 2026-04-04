@@ -34,17 +34,22 @@ final class ICloudSyncManager {
 
     func pushToCloud() {
         guard settingsStore.iCloudSyncEnabled else { return }
-        if let data = try? JSONEncoder().encode(settingsStore.loadBrowsers()) {
-            kvStore.set(data, forKey: "sync_browsers")
+        let encoder = JSONEncoder()
+        do {
+            kvStore.set(try encoder.encode(settingsStore.loadBrowsers()), forKey: "sync_browsers")
+        } catch {
+            YojamLogger.shared.log("iCloud push browsers failed: \(error.localizedDescription)")
         }
-        let userRules = settingsStore.loadRules().filter { !$0.isBuiltIn }
-        if let data = try? JSONEncoder().encode(userRules) {
-            kvStore.set(data, forKey: "sync_rules")
+        do {
+            let userRules = settingsStore.loadRules().filter { !$0.isBuiltIn }
+            kvStore.set(try encoder.encode(userRules), forKey: "sync_rules")
+        } catch {
+            YojamLogger.shared.log("iCloud push rules failed: \(error.localizedDescription)")
         }
-        if let data = try? JSONEncoder().encode(
-            settingsStore.loadGlobalRewriteRules()
-        ) {
-            kvStore.set(data, forKey: "sync_rewrites")
+        do {
+            kvStore.set(try encoder.encode(settingsStore.loadGlobalRewriteRules()), forKey: "sync_rewrites")
+        } catch {
+            YojamLogger.shared.log("iCloud push rewrites failed: \(error.localizedDescription)")
         }
         kvStore.set(settingsStore.utmStripList, forKey: "sync_utmStripList")
         kvStore.synchronize()
@@ -52,33 +57,39 @@ final class ICloudSyncManager {
 
     private func handleRemoteChange() {
         guard settingsStore.iCloudSyncEnabled else { return }
-        if let data = kvStore.data(forKey: "sync_browsers"),
-           let remote = try? JSONDecoder().decode(
-               [BrowserEntry].self, from: data
-           ) {
-            let merged = SyncConflictResolver.mergeBrowserLists(
-                local: settingsStore.loadBrowsers(), remote: remote)
-            settingsStore.saveBrowsers(merged)
+        let decoder = JSONDecoder()
+        if let data = kvStore.data(forKey: "sync_browsers") {
+            do {
+                let remote = try decoder.decode([BrowserEntry].self, from: data)
+                let merged = SyncConflictResolver.mergeBrowserLists(
+                    local: settingsStore.loadBrowsers(), remote: remote)
+                settingsStore.saveBrowsers(merged)
+            } catch {
+                YojamLogger.shared.log("iCloud pull browsers failed: \(error.localizedDescription)")
+            }
         }
-        if let data = kvStore.data(forKey: "sync_rules"),
-           let remote = try? JSONDecoder().decode(
-               [Rule].self, from: data
-           ) {
-            // Preserve local user's built-in rule states (§11.3)
-            let localBuiltIns = settingsStore.loadRules().filter { $0.isBuiltIn }
-            let local = settingsStore.loadRules().filter { !$0.isBuiltIn }
-            let merged = SyncConflictResolver.mergeRules(
-                local: local, remote: remote)
-            var allRules = localBuiltIns
-            allRules.append(contentsOf: merged)
-            settingsStore.saveRules(allRules)
+        if let data = kvStore.data(forKey: "sync_rules") {
+            do {
+                let remote = try decoder.decode([Rule].self, from: data)
+                // Preserve local user's built-in rule states
+                let localBuiltIns = settingsStore.loadRules().filter { $0.isBuiltIn }
+                let local = settingsStore.loadRules().filter { !$0.isBuiltIn }
+                let merged = SyncConflictResolver.mergeRules(
+                    local: local, remote: remote)
+                var allRules = localBuiltIns
+                allRules.append(contentsOf: merged)
+                settingsStore.saveRules(allRules)
+            } catch {
+                YojamLogger.shared.log("iCloud pull rules failed: \(error.localizedDescription)")
+            }
         }
-        // Pull rewrite rules (§11.1)
-        if let data = kvStore.data(forKey: "sync_rewrites"),
-           let remote = try? JSONDecoder().decode(
-               [URLRewriteRule].self, from: data
-           ) {
-            settingsStore.saveGlobalRewriteRules(remote)
+        if let data = kvStore.data(forKey: "sync_rewrites") {
+            do {
+                let remote = try decoder.decode([URLRewriteRule].self, from: data)
+                settingsStore.saveGlobalRewriteRules(remote)
+            } catch {
+                YojamLogger.shared.log("iCloud pull rewrites failed: \(error.localizedDescription)")
+            }
         }
         if let list = kvStore.array(forKey: "sync_utmStripList") as? [String] {
             settingsStore.utmStripList = list

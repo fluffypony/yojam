@@ -7,6 +7,7 @@ struct RulesTab: View {
     @State private var testURL = ""
     @State private var testResult = ""
     @State private var showingAddRule = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,24 +91,40 @@ struct RulesTab: View {
                 Button("Import...") {
                     let panel = NSOpenPanel()
                     panel.allowedContentTypes = [.json]
-                    if panel.runModal() == .OK, let url = panel.url,
-                       let data = try? Data(contentsOf: url) {
-                        try? ruleEngine.importRules(from: data)
+                    if panel.runModal() == .OK, let url = panel.url {
+                        do {
+                            let data = try Data(contentsOf: url)
+                            try ruleEngine.importRules(from: data)
+                        } catch {
+                            errorMessage = "Import failed: \(error.localizedDescription)"
+                        }
                     }
                 }
                 Button("Export...") {
                     let panel = NSSavePanel()
                     panel.allowedContentTypes = [.json]
                     panel.nameFieldStringValue = "yojam-rules.json"
-                    if panel.runModal() == .OK, let url = panel.url,
-                       let data = try? ruleEngine.exportRules() {
-                        try? data.write(to: url)
+                    if panel.runModal() == .OK, let url = panel.url {
+                        do {
+                            let data = try ruleEngine.exportRules()
+                            try data.write(to: url)
+                        } catch {
+                            errorMessage = "Export failed: \(error.localizedDescription)"
+                        }
                     }
                 }
             }.padding()
         }
         .sheet(isPresented: $showingAddRule) {
             AddRuleSheet(ruleEngine: ruleEngine, onDismiss: { showingAddRule = false })
+        }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 }
