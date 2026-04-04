@@ -3,6 +3,14 @@ import AppKit
 enum DefaultBrowserManager {
     static func promptSetDefault() {
         let bundleURL = Bundle.main.bundleURL
+        // Registration only works when running as a proper .app bundle.
+        // A bare binary from `swift run` will always fail with permErr.
+        guard bundleURL.pathExtension == "app" else {
+            YojamLogger.shared.log(
+                "Not running as .app bundle — skipping default browser registration. "
+                + "Build via Xcode (xcodegen generate) for full functionality.")
+            return
+        }
         Task {
             do {
                 try await NSWorkspace.shared.setDefaultApplication(
@@ -16,6 +24,10 @@ enum DefaultBrowserManager {
                 YojamLogger.shared.log("Failed to register: \(error)")
             }
         }
+    }
+
+    static var isAppBundle: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
     }
 
     static var isDefaultBrowser: Bool {

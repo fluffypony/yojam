@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let utmStripper: UTMStripper
     let recentURLsManager = RecentURLsManager()
     let routingSuggestionEngine = RoutingSuggestionEngine()
+
+    /// Bridged from YojamApp so we can open Settings from AppKit code
+    /// without the deprecated showSettingsWindow: selector.
+    var openSettingsAction: OpenSettingsAction?
 
     // MARK: - Detection
     private var appInstallMonitor: AppInstallMonitor!
@@ -509,9 +514,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showPreferences() {
-        NSApp.activate()
-        NSApp.sendAction(
-            Selector(("showSettingsWindow:")), to: nil, from: nil)
+        if let openSettings = openSettingsAction {
+            // Use the SwiftUI environment action (no deprecation warning)
+            openSettings()
+        } else {
+            // Fallback for before the Settings scene has appeared once
+            NSApp.sendAction(
+                Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
+        DispatchQueue.main.async {
+            NSApp.activate()
+        }
     }
 
     func applicationShouldHandleReopen(

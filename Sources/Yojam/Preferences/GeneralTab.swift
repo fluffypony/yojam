@@ -11,6 +11,8 @@ struct GeneralTab: View {
                     Text("Default browser:")
                     if DefaultBrowserManager.isDefaultBrowser {
                         Text("Yojam").foregroundStyle(.green)
+                    } else if !DefaultBrowserManager.isAppBundle {
+                        Text("Requires .app build").foregroundStyle(.secondary)
                     } else {
                         Text("Not set").foregroundStyle(.orange)
                         Button("Set") {
