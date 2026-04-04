@@ -12,7 +12,13 @@ struct BrowsersTab: View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 List(selection: $selectedBrowserId) {
-                    Section("Active") {
+                    Section(header: HStack {
+                        Text("Active")
+                        Spacer()
+                        Text("Drag to reorder")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }) {
                         ForEach(browserManager.browsers) { browser in
                             BrowserRow(browser: browser,
                                        icon: browserManager.icon(for: browser))

@@ -143,55 +143,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Profile discovery - async to avoid blocking launch.
-        // Only the default profile is auto-enabled; non-default
-        // profiles go to the "Suggested" list for the user to opt in.
+        // Auto-assign the default profile to each base browser entry.
+        // Users who want additional profiles as separate picker entries
+        // can add the browser again via + and select a different profile.
         let profileDiscovery = ProfileDiscovery()
         Task { @MainActor in
-            let baseEntries = browserManager.browsers.filter { $0.profileId == nil }
-            var processedBundleIds = Set<String>()
-            var newActive: [BrowserEntry] = []
-            for entry in baseEntries {
-                guard processedBundleIds.insert(entry.bundleIdentifier).inserted
-                else { continue }
+            var changed = false
+            for i in browserManager.browsers.indices {
+                // Only process base entries that don't have a profile set yet
+                guard browserManager.browsers[i].profileId == nil else { continue }
                 let profiles = profileDiscovery.discoverProfiles(
-                    for: entry.bundleIdentifier)
+                    for: browserManager.browsers[i].bundleIdentifier)
                 let namedProfiles = profiles.filter { !$0.name.isEmpty }
                 guard namedProfiles.count > 1 else { continue }
-                for profile in namedProfiles {
-                    let alreadyInBrowsers = browserManager.browsers.contains {
-                        $0.bundleIdentifier == entry.bundleIdentifier
-                            && $0.profileId == profile.id
-                    }
-                    let alreadyInNew = newActive.contains {
-                        $0.bundleIdentifier == entry.bundleIdentifier
-                            && $0.profileId == profile.id
-                    }
-                    let alreadySuggested = browserManager.suggestedBrowsers.contains {
-                        $0.bundleIdentifier == entry.bundleIdentifier
-                            && $0.profileId == profile.id
-                    }
-                    guard !alreadyInBrowsers && !alreadyInNew && !alreadySuggested
-                    else { continue }
-                    var profileEntry = BrowserEntry(
-                        bundleIdentifier: entry.bundleIdentifier,
-                        displayName: entry.displayName,
-                        enabled: true,
-                        position: browserManager.browsers.count + newActive.count,
-                        profileId: profile.id,
-                        profileName: profile.name,
-                        source: .autoDetected
-                    )
-                    profileEntry.isInstalled = entry.isInstalled
-                    if profile.isDefault {
-                        newActive.append(profileEntry)
-                    } else {
-                        profileEntry.source = .suggested
-                        browserManager.suggestedBrowsers.append(profileEntry)
-                    }
+                // Set the default profile on the base entry
+                if let defaultProfile = namedProfiles.first(where: \.isDefault)
+                    ?? namedProfiles.first {
+                    browserManager.browsers[i].profileId = defaultProfile.id
+                    browserManager.browsers[i].profileName = defaultProfile.name
+                    changed = true
                 }
             }
-            if !newActive.isEmpty {
-                browserManager.addBrowsers(newActive)
+            if changed {
+                browserManager.save()
             }
         }
     }

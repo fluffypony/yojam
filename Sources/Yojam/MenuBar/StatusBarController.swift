@@ -76,15 +76,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        if !browserManager.suggestedBrowsers.isEmpty {
-            let item = NSMenuItem(
-                title: "\(browserManager.suggestedBrowsers.count) New Browser(s)",
-                action: #selector(preferencesClicked),
-                keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-            menu.addItem(.separator())
-        }
+        let activeBrowsers = browserManager.browsers.filter(\.enabled).count
+        let activeClients = browserManager.emailClients.filter(\.enabled).count
+        let statsItem = NSMenuItem(
+            title: "\(activeBrowsers) browser\(activeBrowsers == 1 ? "" : "s"), \(activeClients) mail client\(activeClients == 1 ? "" : "s")",
+            action: nil, keyEquivalent: "")
+        statsItem.isEnabled = false
+        menu.addItem(statsItem)
+        menu.addItem(.separator())
 
         let prefsItem = NSMenuItem(
             title: "Preferences...",

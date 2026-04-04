@@ -229,5 +229,5 @@ final class BrowserManager: ObservableObject {
         for i in browsers.indices { browsers[i].position = i }
     }
 
-    private func save() { settingsStore.saveBrowsers(browsers) }
+    func save() { settingsStore.saveBrowsers(browsers) }
 }
