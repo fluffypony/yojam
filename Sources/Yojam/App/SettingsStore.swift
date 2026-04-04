@@ -262,9 +262,24 @@ final class SettingsStore: ObservableObject {
             YojamLogger.shared.log("Failed to decode rewrite rules: \(error.localizedDescription)")
             return BuiltInRewriteRules.all
         }
-        let savedIds = Set(savedRules.map(\.id))
+        // Deduplicate: keep the first occurrence of each (name + pattern) pair.
+        // This cleans up duplicates from earlier builds that used random UUIDs
+        // for built-in rewrite rules.
+        var seen = Set<String>()
+        var deduped: [URLRewriteRule] = []
+        for rule in savedRules {
+            let key = "\(rule.name)|\(rule.matchPattern)"
+            if seen.insert(key).inserted {
+                deduped.append(rule)
+            }
+        }
+        let savedIds = Set(deduped.map(\.id))
         let newBuiltIns = BuiltInRewriteRules.all.filter { !savedIds.contains($0.id) }
-        return savedRules + newBuiltIns
+        // Also skip new built-ins whose name+pattern already exist (migrating old random IDs)
+        let finalNew = newBuiltIns.filter { rule in
+            !seen.contains("\(rule.name)|\(rule.matchPattern)")
+        }
+        return deduped + finalNew
     }
 
     // MARK: - Import / Export

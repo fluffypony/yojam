@@ -24,8 +24,16 @@ struct GeneralTab: View {
             }
             Section("Activation") {
                 Picker("Mode:", selection: $settingsStore.activationMode) {
-                    ForEach(ActivationMode.allCases) {
-                        Text($0.displayName).tag($0)
+                    ForEach(ActivationMode.allCases) { mode in
+                        HStack(spacing: 4) {
+                            Text(mode.displayName)
+                            if mode == .smartFallback {
+                                Text("(?)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .help("URL rules are evaluated first. If a rule matches, the URL opens in the target app. If no rule matches, the browser picker appears.")
+                            }
+                        }.tag(mode)
                     }
                 }.pickerStyle(.radioGroup)
                 Picker(
@@ -69,11 +77,15 @@ struct GeneralTab: View {
                     Toggle("Cmd+Option Click",
                            isOn: $settingsStore.cmdOptionClickEnabled)
                     if !accessibilityGranted {
-                        HStack {
-                            Text("Accessibility permission required.")
-                                .font(.caption).foregroundStyle(.orange)
-                            Button("Grant") { AccessibilityHelper.promptForTrust() }
-                                .controlSize(.small)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Accessibility permission required.")
+                                    .font(.caption).foregroundStyle(.orange)
+                                Button("Grant") { AccessibilityHelper.promptForTrust() }
+                                    .controlSize(.small)
+                            }
+                            Text("After granting, restart Yojam for it to take effect.")
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                     } else {
                         Text("Accessibility permission granted.")

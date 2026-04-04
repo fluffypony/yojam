@@ -15,11 +15,20 @@ struct RulesTab: View {
                 TextField("Test URL:", text: $testURL)
                     .textFieldStyle(.roundedBorder)
                 Button("Test") {
-                    guard let url = URL(string: testURL) else {
+                    // Auto-prepend https:// if no scheme provided
+                    var input = testURL
+                    if !input.contains("://") { input = "https://" + input }
+                    guard let url = URL(string: input) else {
                         testResult = "Invalid URL"; return
                     }
-                    if let match = ruleEngine.evaluate(url) {
+                    // Test pattern matching only — don't skip uninstalled apps
+                    if let match = ruleEngine.rules.filter(\.enabled).first(
+                        where: { ruleEngine.matches(url: url, rule: $0) }
+                    ) {
+                        let installed = NSWorkspace.shared.urlForApplication(
+                            withBundleIdentifier: match.targetBundleId) != nil
                         testResult = "\(match.name) -> \(match.targetAppName)"
+                            + (installed ? "" : " (not installed)")
                     } else {
                         testResult = "No match"
                     }
