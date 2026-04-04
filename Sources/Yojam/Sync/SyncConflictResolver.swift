@@ -8,8 +8,10 @@ enum SyncConflictResolver {
         for entry in local { merged[entry.id] = entry }
         for entry in remote {
             if let existing = merged[entry.id] {
-                if (entry.lastSeenAt ?? .distantPast)
-                    > (existing.lastSeenAt ?? .distantPast) {
+                // Use lastModifiedAt for conflict resolution, fall back to lastSeenAt
+                let remoteDate = entry.lastModifiedAt ?? entry.lastSeenAt ?? .distantPast
+                let localDate = existing.lastModifiedAt ?? existing.lastSeenAt ?? .distantPast
+                if remoteDate > localDate {
                     merged[entry.id] = entry
                 }
             } else {
@@ -19,7 +21,6 @@ enum SyncConflictResolver {
         return merged.values.sorted { $0.position < $1.position }
     }
 
-    // Use lastModifiedAt for conflict resolution (§24.1)
     static func mergeRules(local: [Rule], remote: [Rule]) -> [Rule] {
         var merged: [UUID: Rule] = [:]
         for rule in local { merged[rule.id] = rule }
@@ -33,5 +34,15 @@ enum SyncConflictResolver {
             }
         }
         return merged.values.sorted { $0.priority < $1.priority }
+    }
+
+    static func mergeRewriteRules(
+        local: [URLRewriteRule], remote: [URLRewriteRule]
+    ) -> [URLRewriteRule] {
+        var merged: [UUID: URLRewriteRule] = [:]
+        for rule in remote { merged[rule.id] = rule }
+        // Local wins on conflict (no timestamp available for rewrite rules)
+        for rule in local { merged[rule.id] = rule }
+        return Array(merged.values)
     }
 }
