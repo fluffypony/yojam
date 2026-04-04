@@ -43,19 +43,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    // NSMenuDelegate: rebuild menu every time it opens (§14.1)
+    // Build menu directly into the provided menu to avoid NSMenuItem ownership issues
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let rebuilt = buildMenu()
-        for item in rebuilt.items {
-            rebuilt.removeItem(item)
-            menu.addItem(item)
-        }
+        buildMenu(in: menu)
     }
 
-    private func buildMenu() -> NSMenu {
-        let menu = NSMenu()
-
+    private func buildMenu(in menu: NSMenu) {
         let enabledItem = NSMenuItem(
             title: settingsStore.isEnabled
                 ? "Yojam Active" : "Yojam Paused",
@@ -105,7 +99,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
         menu.addItem(quitItem)
-        return menu
     }
 
     @objc private func toggleClicked() {
@@ -123,7 +116,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     ) {
         clipboardWindow?.dismiss()
         clipboardWindow = ClipboardNotificationWindow(
-            url: url, onOpen: onOpen, onDismiss: {},
+            url: url, onOpen: onOpen,
+            onDismiss: { [weak self] in self?.clipboardWindow = nil },
             settingsStore: settingsStore)
         clipboardWindow?.showWithAutoDismiss()
     }

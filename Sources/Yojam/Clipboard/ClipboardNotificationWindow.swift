@@ -6,6 +6,7 @@ final class ClipboardNotificationWindow: NSPanel {
     private var onDismissCallback: (() -> Void)?
     private var suppressDomain: String?
     private weak var settingsStoreRef: SettingsStore?
+    private var isDismissed = false
 
     init(url: URL, onOpen: @escaping () -> Void, onDismiss: @escaping () -> Void,
          settingsStore: SettingsStore? = nil) {
@@ -73,6 +74,8 @@ final class ClipboardNotificationWindow: NSPanel {
     }
 
     func dismiss() {
+        guard !isDismissed else { return }
+        isDismissed = true
         NSAnimationContext.runAnimationGroup(
             { ctx in
                 ctx.duration = 0.15
@@ -87,8 +90,9 @@ final class ClipboardNotificationWindow: NSPanel {
     }
 
     @objc private func openClicked() {
+        let openHandler = onOpen
         dismiss()
-        onOpen?()
+        openHandler?()
     }
 
     @objc private func suppressClicked() {
