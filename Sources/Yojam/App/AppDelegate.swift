@@ -562,29 +562,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWindowCloseObserver()
     }
 
-    private var windowCloseObserver: NSObjectProtocol?
+    private var windowObservers: [NSObjectProtocol] = []
 
     private func startWindowCloseObserver() {
-        guard windowCloseObserver == nil else { return }
-        windowCloseObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            // Delay slightly so the window count updates
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                guard let self else { return }
-                let hasVisibleWindows = NSApp.windows.contains {
-                    $0.isVisible && !($0 is NSPanel)
-                }
-                if !hasVisibleWindows {
-                    NSApp.setActivationPolicy(.accessory)
-                    if let obs = self.windowCloseObserver {
-                        NotificationCenter.default.removeObserver(obs)
-                        self.windowCloseObserver = nil
-                    }
+        guard windowObservers.isEmpty else { return }
+        // Settings windows may be closed (willClose) or hidden (orderOut
+        // triggers didResignActive). Watch for both.
+        let names: [Notification.Name] = [
+            NSWindow.willCloseNotification,
+            NSApplication.didResignActiveNotification,
+        ]
+        for name in names {
+            let obs = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self?.hideFromDockIfNoWindows()
                 }
             }
+            windowObservers.append(obs)
         }
+    }
+
+    private func hideFromDockIfNoWindows() {
+        let hasVisibleWindows = NSApp.windows.contains {
+            $0.isVisible && !($0 is NSPanel)
+        }
+        guard !hasVisibleWindows else { return }
+        NSApp.setActivationPolicy(.accessory)
+        for obs in windowObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        windowObservers.removeAll()
     }
 
     func applicationShouldHandleReopen(

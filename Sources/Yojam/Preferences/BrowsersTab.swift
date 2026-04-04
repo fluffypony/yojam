@@ -4,25 +4,19 @@ import UniformTypeIdentifiers
 struct BrowsersTab: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var browserManager: BrowserManager
-    @State private var selectedBrowser: BrowserEntry?
+    @State private var selectedBrowserId: UUID?
     @State private var showingFilePicker = false
     @State private var profileDiscovery = ProfileDiscovery()
 
     var body: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                // Use a plain List without selection to avoid
-                // selection-vs-drag conflicts on macOS.
-                List {
+                List(selection: $selectedBrowserId) {
                     Section("Active") {
                         ForEach(browserManager.browsers) { browser in
-                            BrowserRow(
-                                browser: browser,
-                                icon: browserManager.icon(for: browser),
-                                isSelected: selectedBrowser?.id == browser.id
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedBrowser = browser }
+                            BrowserRow(browser: browser,
+                                       icon: browserManager.icon(for: browser))
+                                .tag(browser.id)
                         }
                         .onMove {
                             browserManager.moveBrowser(from: $0, to: $1)
@@ -53,18 +47,18 @@ struct BrowsersTab: View {
                     }
                     .buttonStyle(.borderless)
                     Button(action: {
-                        if let browser = selectedBrowser,
+                        if let id = selectedBrowserId,
                            let idx = browserManager.browsers.firstIndex(
-                               where: { $0.id == browser.id }) {
+                               where: { $0.id == id }) {
                             browserManager.removeBrowser(at: idx)
-                            selectedBrowser = nil
+                            selectedBrowserId = nil
                         }
                     }) {
                         Image(systemName: "minus")
                             .frame(width: 24, height: 24)
                     }
                     .buttonStyle(.borderless)
-                    .disabled(selectedBrowser == nil)
+                    .disabled(selectedBrowserId == nil)
                     Spacer()
                     Button("Rescan") {
                         let handlers = NSWorkspace.shared.urlsForApplications(
@@ -82,9 +76,9 @@ struct BrowsersTab: View {
             }.frame(minWidth: 220, idealWidth: 300)
 
             Group {
-                if let browser = selectedBrowser,
+                if let selectedId = selectedBrowserId,
                    let index = browserManager.browsers.firstIndex(
-                       where: { $0.id == browser.id }
+                       where: { $0.id == selectedId }
                    ) {
                     Form {
                         TextField("Name:",
@@ -160,7 +154,6 @@ struct BrowsersTab: View {
 private struct BrowserRow: View {
     let browser: BrowserEntry
     let icon: NSImage
-    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -178,15 +171,15 @@ private struct BrowserRow: View {
             }
             Spacer()
             Circle()
-                .fill(browser.isInstalled ? .green : .gray)
+                .fill(statusColor)
                 .frame(width: 8, height: 8)
         }
+        .opacity(browser.enabled ? 1 : 0.5)
         .padding(.vertical, 2)
-        .listRowBackground(
-            isSelected
-                ? RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.accentColor.opacity(0.25))
-                : nil
-        )
+    }
+
+    private var statusColor: Color {
+        if !browser.isInstalled { return .gray }
+        return browser.enabled ? .green : .red
     }
 }
