@@ -47,7 +47,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Prevent Yojam from appearing in Cmd+Tab and the Dock.
+        // Two-step: .prohibited first to avoid a brief Dock icon flash,
+        // then .accessory in didFinishLaunching so we can show windows.
+        NSApp.setActivationPolicy(.prohibited)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURL(event:reply:)),
@@ -134,50 +143,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Profile discovery - async to avoid blocking launch.
-        // Only add profile entries when the browser has multiple
-        // meaningfully-named profiles (skip empty names, skip if
-        // every profile name is just a Firefox-style internal name
-        // like "default" / "default-release").
+        // Only the default profile is auto-enabled; non-default
+        // profiles go to the "Suggested" list for the user to opt in.
         let profileDiscovery = ProfileDiscovery()
         Task { @MainActor in
-            var newEntries: [BrowserEntry] = []
-            // Only discover profiles for base entries (no profileId set)
             let baseEntries = browserManager.browsers.filter { $0.profileId == nil }
-            // Track bundle IDs we've already processed to avoid
-            // discovering for the same browser twice
             var processedBundleIds = Set<String>()
+            var newActive: [BrowserEntry] = []
             for entry in baseEntries {
                 guard processedBundleIds.insert(entry.bundleIdentifier).inserted
                 else { continue }
                 let profiles = profileDiscovery.discoverProfiles(
                     for: entry.bundleIdentifier)
-                // Need at least 2 profiles with non-empty names to be useful
                 let namedProfiles = profiles.filter { !$0.name.isEmpty }
                 guard namedProfiles.count > 1 else { continue }
                 for profile in namedProfiles {
-                    let alreadyExists = browserManager.browsers.contains {
-                        $0.bundleIdentifier == entry.bundleIdentifier
-                            && $0.profileId == profile.id
-                    } || newEntries.contains {
+                    let alreadyInBrowsers = browserManager.browsers.contains {
                         $0.bundleIdentifier == entry.bundleIdentifier
                             && $0.profileId == profile.id
                     }
-                    guard !alreadyExists else { continue }
+                    let alreadyInNew = newActive.contains {
+                        $0.bundleIdentifier == entry.bundleIdentifier
+                            && $0.profileId == profile.id
+                    }
+                    let alreadySuggested = browserManager.suggestedBrowsers.contains {
+                        $0.bundleIdentifier == entry.bundleIdentifier
+                            && $0.profileId == profile.id
+                    }
+                    guard !alreadyInBrowsers && !alreadyInNew && !alreadySuggested
+                    else { continue }
                     var profileEntry = BrowserEntry(
                         bundleIdentifier: entry.bundleIdentifier,
                         displayName: entry.displayName,
                         enabled: true,
-                        position: browserManager.browsers.count + newEntries.count,
+                        position: browserManager.browsers.count + newActive.count,
                         profileId: profile.id,
                         profileName: profile.name,
                         source: .autoDetected
                     )
                     profileEntry.isInstalled = entry.isInstalled
-                    newEntries.append(profileEntry)
+                    if profile.isDefault {
+                        newActive.append(profileEntry)
+                    } else {
+                        profileEntry.source = .suggested
+                        browserManager.suggestedBrowsers.append(profileEntry)
+                    }
                 }
             }
-            if !newEntries.isEmpty {
-                browserManager.addBrowsers(newEntries)
+            if !newActive.isEmpty {
+                browserManager.addBrowsers(newActive)
             }
         }
     }

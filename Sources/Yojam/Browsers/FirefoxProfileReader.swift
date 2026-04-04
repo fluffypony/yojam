@@ -7,31 +7,51 @@ struct FirefoxProfileReader {
         let profilesIni = profilesDir.appendingPathComponent("profiles.ini")
         guard let content = try? String(contentsOf: profilesIni, encoding: .utf8)
         else { return [] }
-        var profiles: [BrowserProfile] = []
-        var currentName: String?
-        var currentPath: String?
-        var currentIsRelative: Bool = true
-        var inProfile = false
+
+        // Parse all sections
+        var sections: [(header: String, entries: [String: String])] = []
+        var currentHeader = ""
+        var currentEntries: [String: String] = [:]
         for line in content.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("[Profile") {
-                if inProfile, let name = currentName, currentPath != nil {
-                    // Use profile name as ID since -P expects the name, not the path
-                    profiles.append(BrowserProfile(
-                        id: name, name: name, browserBundleId: bundleId))
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                if !currentHeader.isEmpty {
+                    sections.append((currentHeader, currentEntries))
                 }
-                inProfile = true; currentName = nil; currentPath = nil; currentIsRelative = true
-            } else if trimmed.hasPrefix("Name=") {
-                currentName = String(trimmed.dropFirst(5))
-            } else if trimmed.hasPrefix("Path=") {
-                currentPath = String(trimmed.dropFirst(5))
-            } else if trimmed.hasPrefix("IsRelative=") {
-                currentIsRelative = String(trimmed.dropFirst(11)) == "1"
+                currentHeader = String(trimmed.dropFirst().dropLast())
+                currentEntries = [:]
+            } else if let eqIdx = trimmed.firstIndex(of: "=") {
+                let key = String(trimmed[..<eqIdx])
+                let value = String(trimmed[trimmed.index(after: eqIdx)...])
+                currentEntries[key] = value
             }
         }
-        if inProfile, let name = currentName, currentPath != nil {
+        if !currentHeader.isEmpty {
+            sections.append((currentHeader, currentEntries))
+        }
+
+        // Find the default profile path from [Install*] sections (Firefox 67+).
+        // Falls back to [Profile*] with Default=1.
+        var defaultPath: String?
+        for (header, entries) in sections where header.hasPrefix("Install") {
+            if let path = entries["Default"] {
+                defaultPath = path; break
+            }
+        }
+
+        var profiles: [BrowserProfile] = []
+        for (header, entries) in sections where header.hasPrefix("Profile") {
+            guard let name = entries["Name"], let path = entries["Path"],
+                  !name.isEmpty else { continue }
+            let isDefault: Bool
+            if let dp = defaultPath {
+                isDefault = (path == dp)
+            } else {
+                isDefault = (entries["Default"] == "1")
+            }
             profiles.append(BrowserProfile(
-                id: name, name: name, browserBundleId: bundleId))
+                id: name, name: name, browserBundleId: bundleId,
+                isDefault: isDefault))
         }
         return profiles
     }

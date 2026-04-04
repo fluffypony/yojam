@@ -1,25 +1,20 @@
 import AppKit
 
 enum ScreenEdgeDetector {
+    /// Calculate picker origin so a specific point within the picker
+    /// (the ``cursorTarget``, in picker-local coordinates from bottom-left)
+    /// lands at the cursor position, clamped to the visible screen frame.
     static func calculateOrigin(
-        pickerSize: NSSize, cursor: NSPoint, visibleFrame: NSRect
+        pickerSize: NSSize, cursor: NSPoint, visibleFrame: NSRect,
+        cursorTarget: NSPoint = .zero
     ) -> NSPoint {
-        var origin = NSPoint.zero
+        // Place the picker so that cursorTarget lines up with cursor
+        var origin = NSPoint(
+            x: cursor.x - cursorTarget.x,
+            y: cursor.y - cursorTarget.y
+        )
 
-        if cursor.x + (pickerSize.width / 2) > visibleFrame.maxX {
-            origin.x = cursor.x - pickerSize.width
-        } else if cursor.x - (pickerSize.width / 2) < visibleFrame.minX {
-            origin.x = cursor.x
-        } else {
-            origin.x = cursor.x - (pickerSize.width / 2)
-        }
-
-        if cursor.y - pickerSize.height - 8 < visibleFrame.minY {
-            origin.y = cursor.y + 8
-        } else {
-            origin.y = cursor.y - pickerSize.height - 8
-        }
-
+        // Clamp to visible frame
         origin.x = max(visibleFrame.minX,
                         min(origin.x, visibleFrame.maxX - pickerSize.width))
         origin.y = max(visibleFrame.minY,
@@ -27,7 +22,9 @@ enum ScreenEdgeDetector {
         return origin
     }
 
-    static func calculateOrigin(pickerSize: NSSize) -> NSPoint {
+    static func calculateOrigin(
+        pickerSize: NSSize, cursorTarget: NSPoint = .zero
+    ) -> NSPoint {
         let cursor = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: {
             $0.frame.contains(cursor)
@@ -36,6 +33,7 @@ enum ScreenEdgeDetector {
         }
         return calculateOrigin(
             pickerSize: pickerSize, cursor: cursor,
-            visibleFrame: screen.visibleFrame)
+            visibleFrame: screen.visibleFrame,
+            cursorTarget: cursorTarget)
     }
 }

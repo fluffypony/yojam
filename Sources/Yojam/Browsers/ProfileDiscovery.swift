@@ -5,6 +5,7 @@ struct BrowserProfile: Identifiable, Codable, Sendable {
     var name: String
     var email: String?
     var browserBundleId: String
+    var isDefault: Bool = false
 }
 
 @MainActor

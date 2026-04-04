@@ -43,7 +43,7 @@ struct PreferencesView: View {
                           systemImage: "wrench.and.screwdriver")
                 }
         }
-        .frame(minWidth: 600, minHeight: 450)
+        .frame(minWidth: 700, minHeight: 450)
         .padding()
     }
 }

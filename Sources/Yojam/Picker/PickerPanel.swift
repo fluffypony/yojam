@@ -93,10 +93,30 @@ final class PickerPanel: NSPanel {
                 width: CGFloat(entries.count) * 48 - 8 + 24,
                 height: 40 + 60)
         self.setContentSize(size)
+
+        // Calculate cursor target: the point within the picker (bottom-left
+        // origin) where the first item's center is, so the cursor lands on
+        // the first/default entry for a quick double-click.
+        if isVertical {
+            // First entry is at top: 12px padding + 21px center of 42px row.
+            // In flipped (top-left) coords that's 33px from top.
+            // Convert to bottom-left: size.height - 33
+            self.cursorTarget = NSPoint(
+                x: size.width / 2,
+                y: size.height - 33)
+        } else {
+            // First icon: 12px padding + 20px center of 40px icon
+            self.cursorTarget = NSPoint(
+                x: 32,
+                y: size.height / 2)
+        }
     }
 
+    private var cursorTarget: NSPoint = .zero
+
     func showAtCursor() {
-        let origin = ScreenEdgeDetector.calculateOrigin(pickerSize: frame.size)
+        let origin = ScreenEdgeDetector.calculateOrigin(
+            pickerSize: frame.size, cursorTarget: cursorTarget)
         setFrameOrigin(origin)
 
         NSApp.activate()

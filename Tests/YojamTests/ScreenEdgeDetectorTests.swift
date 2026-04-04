@@ -9,14 +9,17 @@ final class ScreenEdgeDetectorTests: XCTestCase {
         XCTAssertFalse(origin.y.isNaN)
     }
 
-    func testCenterOfScreen() {
+    func testCursorTargetPositioning() {
         let size = NSSize(width: 200, height: 100)
         let cursor = NSPoint(x: 500, y: 500)
         let frame = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let target = NSPoint(x: 32, y: 50) // first icon center
         let origin = ScreenEdgeDetector.calculateOrigin(
-            pickerSize: size, cursor: cursor, visibleFrame: frame)
-        // Picker should center horizontally on cursor
-        XCTAssertEqual(origin.x, cursor.x - size.width / 2, accuracy: 1)
+            pickerSize: size, cursor: cursor, visibleFrame: frame,
+            cursorTarget: target)
+        // The cursor target point within the picker should land at the cursor
+        XCTAssertEqual(origin.x + target.x, cursor.x, accuracy: 1)
+        XCTAssertEqual(origin.y + target.y, cursor.y, accuracy: 1)
     }
 
     func testRightEdge() {
