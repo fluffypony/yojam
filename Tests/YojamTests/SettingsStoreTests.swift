@@ -7,10 +7,8 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore()
         let initial = store.isFirstLaunch
         store.isFirstLaunch = false
-        // Creating a new store should read the saved value
         let store2 = SettingsStore()
         XCTAssertFalse(store2.isFirstLaunch)
-        // Restore
         store.isFirstLaunch = initial
     }
 
@@ -35,7 +33,6 @@ final class SettingsStoreTests: XCTestCase {
 
         let exported = try store.exportJSON()
 
-        // Reset and import
         store.verticalThreshold = 8
         store.soundEffectsEnabled = true
         store.debugLoggingEnabled = false
@@ -49,10 +46,8 @@ final class SettingsStoreTests: XCTestCase {
     @MainActor
     func testLoadRulesMergesNewBuiltIns() {
         let store = SettingsStore()
-        // Save some rules
         let partial = Array(BuiltInRules.all.prefix(3))
         store.saveRules(partial)
-        // Load should merge in the remaining built-in rules
         let loaded = store.loadRules()
         XCTAssertGreaterThan(loaded.count, partial.count)
     }
@@ -69,5 +64,68 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 2)
         XCTAssertEqual(loaded[0].displayName, "A")
         XCTAssertEqual(loaded[1].displayName, "B")
+    }
+
+    @MainActor
+    func testLoadRulesUpdatesBuiltInDefinitions() {
+        let store = SettingsStore()
+        // Save built-in rules with one disabled
+        var rules = BuiltInRules.all
+        rules[0].enabled = false
+        store.saveRules(rules)
+
+        let loaded = store.loadRules()
+        // The first built-in should still be disabled (user state preserved)
+        let firstBuiltIn = loaded.first(where: { $0.id == BuiltInRules.all[0].id })
+        XCTAssertNotNil(firstBuiltIn)
+        XCTAssertFalse(firstBuiltIn!.enabled)
+        // But the definition (name, pattern, etc.) should match current code
+        XCTAssertEqual(firstBuiltIn!.name, BuiltInRules.all[0].name)
+    }
+
+    @MainActor
+    func testLoadRulesDropsRemovedBuiltIns() {
+        let store = SettingsStore()
+        // Create a fake saved rule with a removed built-in ID
+        var rules = BuiltInRules.all
+        let removedId = UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000a")!
+        rules.append(Rule(id: removedId, name: "Google Maps", matchType: .domain,
+                          pattern: "maps.google.com", targetBundleId: "com.google.Maps",
+                          targetAppName: "Google Maps", isBuiltIn: true))
+        store.saveRules(rules)
+
+        let loaded = store.loadRules()
+        XCTAssertFalse(loaded.contains(where: { $0.id == removedId }))
+    }
+
+    @MainActor
+    func testImportPreservesBuiltInStates() throws {
+        let store = SettingsStore()
+        // Disable a built-in rule
+        var rules = BuiltInRules.all
+        rules[0].enabled = false
+        store.saveRules(rules)
+
+        // Export with custom rules only
+        let exported = try store.exportJSON()
+
+        // Import should preserve the disabled state
+        try store.importJSON(exported)
+        let loaded = store.loadRules()
+        let firstBuiltIn = loaded.first(where: { $0.id == BuiltInRules.all[0].id })
+        XCTAssertNotNil(firstBuiltIn)
+        XCTAssertFalse(firstBuiltIn!.enabled)
+    }
+
+    @MainActor
+    func testSuppressedClipboardDomainsExportImport() throws {
+        let store = SettingsStore()
+        store.suppressedClipboardDomains = ["example.com", "test.org"]
+
+        let exported = try store.exportJSON()
+        store.suppressedClipboardDomains = []
+        try store.importJSON(exported)
+
+        XCTAssertEqual(store.suppressedClipboardDomains, ["example.com", "test.org"])
     }
 }
