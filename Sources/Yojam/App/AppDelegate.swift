@@ -510,11 +510,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startWindowCloseObserver() {
         guard windowObservers.isEmpty else { return }
-        // Settings windows may be closed (willClose) or hidden (orderOut
-        // triggers didResignActive). Watch for both.
+        // Cmd+W on a SwiftUI Settings window calls orderOut (hide), not
+        // close, so willCloseNotification alone isn't enough. Also watch
+        // for occlusion changes (covers orderOut) and app deactivation.
         let names: [Notification.Name] = [
             NSWindow.willCloseNotification,
+            NSWindow.didChangeOcclusionStateNotification,
             NSApplication.didResignActiveNotification,
+            NSApplication.didHideNotification,
         ]
         for name in names {
             let obs = NotificationCenter.default.addObserver(
