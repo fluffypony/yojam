@@ -15,9 +15,10 @@ final class RoutingSuggestionEngine {
         }
     }
 
-    func recordChoice(domain: String, bundleId: String) {
+    // Uses entry ID (UUID string) to distinguish profiles (§13.1)
+    func recordChoice(domain: String, entryId: String) {
         var prefs = domainPreferences[domain, default: [:]]
-        prefs[bundleId, default: 0] += 1
+        prefs[entryId, default: 0] += 1
         domainPreferences[domain] = prefs
         save()
     }
@@ -26,9 +27,9 @@ final class RoutingSuggestionEngine {
         guard let prefs = domainPreferences[domain] else { return nil }
         let total = prefs.values.reduce(0, +)
         guard total >= minimumConfidence else { return nil }
-        if let (bundleId, count) = prefs.max(by: { $0.value < $1.value }),
+        if let (entryId, count) = prefs.max(by: { $0.value < $1.value }),
            Double(count) / Double(total) > 0.7 {
-            return bundleId
+            return entryId
         }
         return nil
     }

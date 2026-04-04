@@ -19,8 +19,9 @@ final class UTMStripper {
     func strip(_ url: URL) -> URL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let queryItems = components.queryItems, !queryItems.isEmpty else { return url }
-        let parametersToStrip = Set(settingsStore.utmStripList)
-        let filteredItems = queryItems.filter { !parametersToStrip.contains($0.name) }
+        // Case-insensitive matching (§12.1)
+        let parametersToStrip = Set(settingsStore.utmStripList.map { $0.lowercased() })
+        let filteredItems = queryItems.filter { !parametersToStrip.contains($0.name.lowercased()) }
         components.queryItems = filteredItems.isEmpty ? nil : filteredItems
         return components.url ?? url
     }
