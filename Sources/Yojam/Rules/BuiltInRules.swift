@@ -1,6 +1,14 @@
 import Foundation
 
 enum BuiltInRules {
+    // UUIDs of removed built-in rules, used by loadRules() to drop stale saved copies
+    static let removedIds: Set<UUID> = [
+        UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000a")!, // Google Maps
+        UUID(uuidString: "550e8400-e29b-41d4-a716-446655440019")!, // Google Maps (Short)
+        UUID(uuidString: "550e8400-e29b-41d4-a716-446655440014")!, // YouTube
+        UUID(uuidString: "550e8400-e29b-41d4-a716-446655440015")!, // YouTube Short
+    ]
+
     static let all: [Rule] = [
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440001")!,
              name: "Zoom Meetings", matchType: .urlContains, pattern: "zoom.us/j/",
@@ -38,14 +46,6 @@ enum BuiltInRules {
              name: "Apple Maps", matchType: .domainSuffix, pattern: "maps.apple.com",
              targetBundleId: "com.apple.Maps", targetAppName: "Maps",
              isBuiltIn: true, priority: 108),
-        Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000a")!,
-             name: "Google Maps", matchType: .domainSuffix, pattern: "maps.google.com",
-             targetBundleId: "com.google.Maps", targetAppName: "Google Maps",
-             isBuiltIn: true, priority: 109),
-        Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440019")!,
-             name: "Google Maps (Short)", matchType: .urlContains, pattern: "goo.gl/maps",
-             targetBundleId: "com.google.Maps", targetAppName: "Google Maps",
-             isBuiltIn: true, priority: 110),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000b")!,
              name: "Microsoft Teams", matchType: .domainSuffix, pattern: "teams.microsoft.com",
              targetBundleId: "com.microsoft.teams2", targetAppName: "Teams",
@@ -60,7 +60,7 @@ enum BuiltInRules {
              isBuiltIn: true, priority: 113),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000e")!,
              name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
-             targetBundleId: "com.linear", targetAppName: "Linear",
+             targetBundleId: "com.linear.Linear", targetAppName: "Linear",
              isBuiltIn: true, priority: 114),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000f")!,
              name: "Notion", matchType: .domainSuffix, pattern: "notion.so",
@@ -82,14 +82,6 @@ enum BuiltInRules {
              name: "Signal Group", matchType: .domain, pattern: "signal.group",
              targetBundleId: "org.whispersystems.signal-desktop", targetAppName: "Signal",
              isBuiltIn: true, priority: 119),
-        Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440014")!,
-             name: "YouTube", matchType: .domainSuffix, pattern: "youtube.com",
-             targetBundleId: "com.google.Chrome", targetAppName: "YouTube (Browser)",
-             isBuiltIn: true, priority: 120),
-        Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440015")!,
-             name: "YouTube Short", matchType: .domain, pattern: "youtu.be",
-             targetBundleId: "com.google.Chrome", targetAppName: "YouTube (Browser)",
-             isBuiltIn: true, priority: 121),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440016")!,
              name: "App Store", matchType: .domainSuffix, pattern: "apps.apple.com",
              targetBundleId: "com.apple.AppStore", targetAppName: "App Store",
