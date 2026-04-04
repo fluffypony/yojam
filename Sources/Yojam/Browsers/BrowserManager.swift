@@ -137,6 +137,7 @@ final class BrowserManager: ObservableObject {
     }
 
     func handleAppInstalled(bundleId: String, appURL: URL) {
+        iconResolver.invalidateCache(for: bundleId)
         if let idx = browsers.firstIndex(where: { $0.bundleIdentifier == bundleId }) {
             browsers[idx].isInstalled = true
             browsers[idx].lastSeenAt = Date()

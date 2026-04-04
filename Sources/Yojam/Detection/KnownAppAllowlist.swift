@@ -8,9 +8,4 @@ enum KnownAppAllowlist {
         "org.chromium.Chromium", "app.zen-browser.zen",
         "com.google.Chrome.canary", "org.mozilla.firefoxdeveloperedition",
     ]
-
-    static let emailClients: Set<String> = [
-        "com.apple.mail", "com.google.Gmail", "com.microsoft.Outlook",
-        "com.readdle.smartemail-macos", "com.fastmail.app", "com.freron.MailMate",
-    ]
 }
