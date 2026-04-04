@@ -14,8 +14,8 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
     var source: BrowserSource
     var isInstalled: Bool
     var lastSeenAt: Date?
+    var lastModifiedAt: Date?
     var customIconData: Data?
-    var hotkey: String?
 
     init(
         id: UUID = UUID(),
@@ -31,8 +31,8 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         source: BrowserSource = .autoDetected,
         isInstalled: Bool = true,
         lastSeenAt: Date? = Date(),
-        customIconData: Data? = nil,
-        hotkey: String? = nil
+        lastModifiedAt: Date? = nil,
+        customIconData: Data? = nil
     ) {
         self.id = id
         self.bundleIdentifier = bundleIdentifier
@@ -47,16 +47,14 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         self.source = source
         self.isInstalled = isInstalled
         self.lastSeenAt = lastSeenAt
+        self.lastModifiedAt = lastModifiedAt
         self.customIconData = customIconData
-        self.hotkey = hotkey
     }
 
     var fullDisplayName: String {
         if let profileName { return "\(displayName) — \(profileName)" }
         return displayName
     }
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 enum BrowserSource: String, Codable, Sendable {
