@@ -22,6 +22,7 @@ enum DefaultBrowserManager {
         guard let defaultHTTP = NSWorkspace.shared.urlForApplication(
             toOpen: URL(string: "https://example.com")!
         ) else { return false }
-        return defaultHTTP.path.contains("Yojam")
+        guard let defaultBundle = Bundle(url: defaultHTTP) else { return false }
+        return defaultBundle.bundleIdentifier == Bundle.main.bundleIdentifier
     }
 }
