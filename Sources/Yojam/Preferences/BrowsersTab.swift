@@ -98,6 +98,23 @@ struct BrowsersTab: View {
                     Toggle("Open in Private Window",
                            isOn: $browserManager.browsers[index]
                                .openInPrivateWindow)
+                    HStack {
+                        Text("Custom Icon:")
+                        Spacer()
+                        if browserManager.browsers[index].customIconData != nil {
+                            Button("Remove") {
+                                browserManager.browsers[index].customIconData = nil
+                            }.controlSize(.small)
+                        }
+                        Button("Choose...") {
+                            let panel = NSOpenPanel()
+                            panel.allowedContentTypes = [.image]
+                            if panel.runModal() == .OK, let url = panel.url,
+                               let data = try? Data(contentsOf: url) {
+                                browserManager.browsers[index].customIconData = data
+                            }
+                        }.controlSize(.small)
+                    }
                     let profiles = profileDiscovery.discoverProfiles(
                         for: browserManager.browsers[index].bundleIdentifier)
                     if !profiles.isEmpty {

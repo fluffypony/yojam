@@ -28,11 +28,13 @@ final class AppInstallMonitor {
                 $0.hasSuffix(".app") || $0.contains(".app/")
             }
             if !appPaths.isEmpty {
-                // Dispatch to MainActor for safety (§21.1)
+                // Stream dispatches on .main, so MainActor.assumeIsolated is safe
                 let monitor = Unmanaged<AppInstallMonitor>
                     .fromOpaque(clientInfo).takeUnretainedValue()
-                monitor.debouncer.debounce {
-                    Task { @MainActor in monitor.reconciler.reconcile() }
+                MainActor.assumeIsolated {
+                    monitor.debouncer.debounce {
+                        monitor.reconciler.reconcile()
+                    }
                 }
             }
         }
