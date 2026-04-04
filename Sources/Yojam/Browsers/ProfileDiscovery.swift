@@ -11,8 +11,6 @@ struct BrowserProfile: Identifiable, Codable, Sendable {
 final class ProfileDiscovery {
     private let chromiumReader = ChromiumProfileReader()
     private let firefoxReader = FirefoxProfileReader()
-    private let arcReader = ArcProfileReader()
-    private let orionReader = OrionProfileReader()
 
     func discoverProfiles(for bundleId: String) -> [BrowserProfile] {
         switch bundleId {
@@ -36,10 +34,7 @@ final class ProfileDiscovery {
                 appSupportPath: "Chromium", bundleId: bundleId)
         case "org.mozilla.firefox":
             return firefoxReader.readProfiles(bundleId: bundleId)
-        case "company.thebrowser.Browser":
-            return arcReader.readProfiles(bundleId: bundleId)
-        case "com.kagi.kagimacOS":
-            return orionReader.readProfiles(bundleId: bundleId)
+        // Arc and Orion profile discovery disabled: launch args not supported
         default:
             return []
         }
