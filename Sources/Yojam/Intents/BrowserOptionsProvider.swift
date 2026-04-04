@@ -1,0 +1,14 @@
+import AppIntents
+
+struct BrowserOptionsProvider: DynamicOptionsProvider {
+    @MainActor
+    func results() async throws -> [String] {
+        SettingsStore().loadBrowsers().filter(\.enabled)
+            .map(\.bundleIdentifier)
+    }
+
+    @MainActor
+    func defaultResult() async -> String? {
+        SettingsStore().loadBrowsers().first?.bundleIdentifier
+    }
+}
