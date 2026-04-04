@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ServiceManagement
 
 enum ActivationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case always, holdShift, smartFallback
@@ -72,7 +73,14 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(soundEffectsEnabled, forKey: Keys.soundEffects) }
     }
     @Published var launchAtLogin: Bool {
-        didSet { defaults.set(launchAtLogin, forKey: Keys.launchAtLogin) }
+        didSet {
+            defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+            if launchAtLogin {
+                try? SMAppService.mainApp.register()
+            } else {
+                try? SMAppService.mainApp.unregister()
+            }
+        }
     }
     @Published var globalUTMStrippingEnabled: Bool {
         didSet { defaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping) }
@@ -116,7 +124,7 @@ final class SettingsStore: ObservableObject {
             Keys.soundEffects: true,
             Keys.periodicRescanInterval: 1800.0,
         ])
-        self.isFirstLaunch = !d.bool(forKey: "hasLaunchedBefore")
+        self.isFirstLaunch = d.object(forKey: Keys.isFirstLaunch) as? Bool ?? true
         self.isEnabled = d.object(forKey: Keys.isEnabled) as? Bool ?? true
         self.activationMode = ActivationMode(
             rawValue: d.string(forKey: Keys.activationMode) ?? "") ?? .always
@@ -142,59 +150,81 @@ final class SettingsStore: ObservableObject {
     // MARK: - Complex Data Persistence
 
     func saveBrowsers(_ browsers: [BrowserEntry]) {
-        if let data = try? JSONEncoder().encode(browsers) {
+        do {
+            let data = try JSONEncoder().encode(browsers)
             defaults.set(data, forKey: Keys.browsers)
             objectWillChange.send()
+        } catch {
+            YojamLogger.shared.log("Failed to encode browsers: \(error.localizedDescription)")
         }
     }
 
     func loadBrowsers() -> [BrowserEntry] {
-        guard let data = defaults.data(forKey: Keys.browsers),
-              let browsers = try? JSONDecoder().decode([BrowserEntry].self, from: data)
-        else { return [] }
-        return browsers
+        guard let data = defaults.data(forKey: Keys.browsers) else { return [] }
+        do {
+            return try JSONDecoder().decode([BrowserEntry].self, from: data)
+        } catch {
+            YojamLogger.shared.log("Failed to decode browsers: \(error.localizedDescription)")
+            return []
+        }
     }
 
     func saveEmailClients(_ clients: [BrowserEntry]) {
-        if let data = try? JSONEncoder().encode(clients) {
+        do {
+            let data = try JSONEncoder().encode(clients)
             defaults.set(data, forKey: Keys.emailClients)
             objectWillChange.send()
+        } catch {
+            YojamLogger.shared.log("Failed to encode email clients: \(error.localizedDescription)")
         }
     }
 
     func loadEmailClients() -> [BrowserEntry] {
-        guard let data = defaults.data(forKey: Keys.emailClients),
-              let clients = try? JSONDecoder().decode([BrowserEntry].self, from: data)
-        else { return [] }
-        return clients
+        guard let data = defaults.data(forKey: Keys.emailClients) else { return [] }
+        do {
+            return try JSONDecoder().decode([BrowserEntry].self, from: data)
+        } catch {
+            YojamLogger.shared.log("Failed to decode email clients: \(error.localizedDescription)")
+            return []
+        }
     }
 
     func saveRules(_ rules: [Rule]) {
-        if let data = try? JSONEncoder().encode(rules) {
+        do {
+            let data = try JSONEncoder().encode(rules)
             defaults.set(data, forKey: Keys.rules)
             objectWillChange.send()
+        } catch {
+            YojamLogger.shared.log("Failed to encode rules: \(error.localizedDescription)")
         }
     }
 
     func loadRules() -> [Rule] {
         guard let data = defaults.data(forKey: Keys.rules),
-              let rules = try? JSONDecoder().decode([Rule].self, from: data)
+              let savedRules = try? JSONDecoder().decode([Rule].self, from: data)
         else { return BuiltInRules.all }
-        return rules
+        let savedBuiltInIds = Set(savedRules.filter(\.isBuiltIn).map(\.id))
+        let newBuiltIns = BuiltInRules.all.filter { !savedBuiltInIds.contains($0.id) }
+        return savedRules + newBuiltIns
     }
 
     func saveGlobalRewriteRules(_ rules: [URLRewriteRule]) {
-        if let data = try? JSONEncoder().encode(rules) {
+        do {
+            let data = try JSONEncoder().encode(rules)
             defaults.set(data, forKey: Keys.globalRewriteRules)
             objectWillChange.send()
+        } catch {
+            YojamLogger.shared.log("Failed to encode rewrite rules: \(error.localizedDescription)")
         }
     }
 
     func loadGlobalRewriteRules() -> [URLRewriteRule] {
         guard let data = defaults.data(forKey: Keys.globalRewriteRules),
-              let rules = try? JSONDecoder().decode([URLRewriteRule].self, from: data)
+              let savedRules = try? JSONDecoder().decode([URLRewriteRule].self, from: data)
         else { return BuiltInRewriteRules.all }
-        return rules
+        let savedIds = Set(savedRules.map(\.id))
+        let newBuiltIns = BuiltInRewriteRules.all.filter { !savedIds.contains($0.id) }
+        return savedRules + newBuiltIns
     }
 
     // MARK: - Import / Export
@@ -210,6 +240,12 @@ final class SettingsStore: ObservableObject {
             globalUTMStripping: globalUTMStrippingEnabled,
             clipboardMonitoring: clipboardMonitoringEnabled,
             iCloudSync: iCloudSyncEnabled,
+            universalClickModifierEnabled: universalClickModifierEnabled,
+            cmdShiftClickEnabled: cmdShiftClickEnabled,
+            ctrlShiftClickEnabled: ctrlShiftClickEnabled,
+            cmdOptionClickEnabled: cmdOptionClickEnabled,
+            debugLoggingEnabled: debugLoggingEnabled,
+            periodicRescanInterval: periodicRescanInterval,
             browsers: loadBrowsers(),
             emailClients: loadEmailClients(),
             rules: loadRules().filter { !$0.isBuiltIn },
@@ -231,6 +267,12 @@ final class SettingsStore: ObservableObject {
         globalUTMStrippingEnabled = imported.globalUTMStripping
         clipboardMonitoringEnabled = imported.clipboardMonitoring
         iCloudSyncEnabled = imported.iCloudSync
+        universalClickModifierEnabled = imported.universalClickModifierEnabled
+        cmdShiftClickEnabled = imported.cmdShiftClickEnabled
+        ctrlShiftClickEnabled = imported.ctrlShiftClickEnabled
+        cmdOptionClickEnabled = imported.cmdOptionClickEnabled
+        debugLoggingEnabled = imported.debugLoggingEnabled
+        periodicRescanInterval = imported.periodicRescanInterval
         saveBrowsers(imported.browsers)
         saveEmailClients(imported.emailClients)
         var allRules = BuiltInRules.all
@@ -244,6 +286,24 @@ final class SettingsStore: ObservableObject {
         if let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
         }
+        self.isEnabled = true
+        self.activationMode = .always
+        self.defaultSelectionBehavior = .alwaysFirst
+        self.globalUTMStrippingEnabled = false
+        self.soundEffectsEnabled = true
+        self.clipboardMonitoringEnabled = false
+        self.universalClickModifierEnabled = false
+        self.cmdShiftClickEnabled = false
+        self.ctrlShiftClickEnabled = false
+        self.cmdOptionClickEnabled = false
+        self.iCloudSyncEnabled = false
+        self.launchAtLogin = false
+        self.verticalThreshold = 8
+        self.isFirstLaunch = true
+        self.debugLoggingEnabled = false
+        self.periodicRescanInterval = 1800
+        self.utmStripList = UTMStripper.defaultParameters
+        objectWillChange.send()
     }
 }
 
@@ -257,6 +317,12 @@ struct SettingsExport: Codable {
     var globalUTMStripping: Bool
     var clipboardMonitoring: Bool
     var iCloudSync: Bool
+    var universalClickModifierEnabled: Bool
+    var cmdShiftClickEnabled: Bool
+    var ctrlShiftClickEnabled: Bool
+    var cmdOptionClickEnabled: Bool
+    var debugLoggingEnabled: Bool
+    var periodicRescanInterval: TimeInterval
     var browsers: [BrowserEntry]
     var emailClients: [BrowserEntry]
     var rules: [Rule]

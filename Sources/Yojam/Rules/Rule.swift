@@ -1,6 +1,6 @@
 import Foundation
 
-struct Rule: Codable, Identifiable, Equatable {
+struct Rule: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     var name: String
     var enabled: Bool
@@ -14,6 +14,7 @@ struct Rule: Codable, Identifiable, Equatable {
     var rewriteRules: [URLRewriteRule]
     var sourceAppBundleId: String?
     var sourceAppName: String?
+    var lastModifiedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -28,7 +29,8 @@ struct Rule: Codable, Identifiable, Equatable {
         stripUTMParams: Bool = false,
         rewriteRules: [URLRewriteRule] = [],
         sourceAppBundleId: String? = nil,
-        sourceAppName: String? = nil
+        sourceAppName: String? = nil,
+        lastModifiedAt: Date? = nil
     ) {
         self.id = id; self.name = name; self.enabled = enabled
         self.matchType = matchType; self.pattern = pattern
@@ -36,10 +38,11 @@ struct Rule: Codable, Identifiable, Equatable {
         self.isBuiltIn = isBuiltIn; self.priority = priority
         self.stripUTMParams = stripUTMParams; self.rewriteRules = rewriteRules
         self.sourceAppBundleId = sourceAppBundleId; self.sourceAppName = sourceAppName
+        self.lastModifiedAt = lastModifiedAt
     }
 }
 
-enum MatchType: String, Codable, CaseIterable, Identifiable {
+enum MatchType: String, Codable, CaseIterable, Identifiable, Sendable {
     case domain, domainSuffix, urlPrefix, urlContains, regex
     var id: String { rawValue }
     var displayName: String {

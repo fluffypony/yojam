@@ -1,6 +1,6 @@
 import Foundation
 
-struct URLRewriteRule: Codable, Identifiable, Equatable, Hashable {
+struct URLRewriteRule: Codable, Identifiable, Equatable, Hashable, Sendable {
     let id: UUID
     var name: String
     var enabled: Bool
@@ -18,7 +18,7 @@ struct URLRewriteRule: Codable, Identifiable, Equatable, Hashable {
     }
 }
 
-enum RewriteScope: Codable, Equatable, Hashable {
+enum RewriteScope: Codable, Equatable, Hashable, Sendable {
     case global
     case browser(String)
     case rule(UUID)

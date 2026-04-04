@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
+struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     var bundleIdentifier: String
     var displayName: String
@@ -15,6 +15,7 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
     var isInstalled: Bool
     var lastSeenAt: Date?
     var customIconData: Data?
+    var hotkey: String?
 
     init(
         id: UUID = UUID(),
@@ -30,7 +31,8 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
         source: BrowserSource = .autoDetected,
         isInstalled: Bool = true,
         lastSeenAt: Date? = Date(),
-        customIconData: Data? = nil
+        customIconData: Data? = nil,
+        hotkey: String? = nil
     ) {
         self.id = id
         self.bundleIdentifier = bundleIdentifier
@@ -46,6 +48,7 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
         self.isInstalled = isInstalled
         self.lastSeenAt = lastSeenAt
         self.customIconData = customIconData
+        self.hotkey = hotkey
     }
 
     var fullDisplayName: String {
@@ -54,9 +57,8 @@ struct BrowserEntry: Codable, Identifiable, Equatable, Hashable {
     }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: BrowserEntry, rhs: BrowserEntry) -> Bool { lhs.id == rhs.id }
 }
 
-enum BrowserSource: String, Codable {
+enum BrowserSource: String, Codable, Sendable {
     case autoDetected, manual, suggested
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserProfile: Identifiable, Codable {
+struct BrowserProfile: Identifiable, Codable, Sendable {
     let id: String
     var name: String
     var email: String?
