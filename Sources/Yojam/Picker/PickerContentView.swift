@@ -29,7 +29,7 @@ struct PickerContentView: View {
         .onKeyPress(.upArrow) { move(-1); return .handled }
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.return) { selectCurrent(); return .handled }
-        .onKeyPress(.space) { selectCurrent(); return .handled }
+        .onKeyPress(.space) { selectFirst(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }
         .onKeyPress(phases: .down) { press in
             if press.modifiers.contains(.command)
@@ -98,7 +98,15 @@ struct PickerContentView: View {
         }
     }
 
-    private func selectCurrent() { onSelect(entries[selectedIndex]) }
+    private func selectCurrent() {
+        guard entries.indices.contains(selectedIndex) else { return }
+        onSelect(entries[selectedIndex])
+    }
+
+    private func selectFirst() {
+        guard !entries.isEmpty else { return }
+        onSelect(entries[0])
+    }
 
     private func selectByNumber(_ index: Int) {
         if index < entries.count {

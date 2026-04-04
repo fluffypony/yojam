@@ -1,32 +1,41 @@
 import AppKit
 
 enum ScreenEdgeDetector {
-    static func calculateOrigin(pickerSize: NSSize) -> NSPoint {
-        let cursor = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: {
-            $0.frame.contains(cursor)
-        }) ?? NSScreen.main!
-        let visible = screen.visibleFrame
+    static func calculateOrigin(
+        pickerSize: NSSize, cursor: NSPoint, visibleFrame: NSRect
+    ) -> NSPoint {
         var origin = NSPoint.zero
 
-        if cursor.x + (pickerSize.width / 2) > visible.maxX {
+        if cursor.x + (pickerSize.width / 2) > visibleFrame.maxX {
             origin.x = cursor.x - pickerSize.width
-        } else if cursor.x - (pickerSize.width / 2) < visible.minX {
+        } else if cursor.x - (pickerSize.width / 2) < visibleFrame.minX {
             origin.x = cursor.x
         } else {
             origin.x = cursor.x - (pickerSize.width / 2)
         }
 
-        if cursor.y - pickerSize.height - 8 < visible.minY {
+        if cursor.y - pickerSize.height - 8 < visibleFrame.minY {
             origin.y = cursor.y + 8
         } else {
             origin.y = cursor.y - pickerSize.height - 8
         }
 
-        origin.x = max(visible.minX,
-                        min(origin.x, visible.maxX - pickerSize.width))
-        origin.y = max(visible.minY,
-                        min(origin.y, visible.maxY - pickerSize.height))
+        origin.x = max(visibleFrame.minX,
+                        min(origin.x, visibleFrame.maxX - pickerSize.width))
+        origin.y = max(visibleFrame.minY,
+                        min(origin.y, visibleFrame.maxY - pickerSize.height))
         return origin
+    }
+
+    static func calculateOrigin(pickerSize: NSSize) -> NSPoint {
+        let cursor = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(cursor)
+        }) ?? NSScreen.main else {
+            return NSPoint(x: cursor.x, y: cursor.y)
+        }
+        return calculateOrigin(
+            pickerSize: pickerSize, cursor: cursor,
+            visibleFrame: screen.visibleFrame)
     }
 }
