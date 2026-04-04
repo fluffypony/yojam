@@ -7,7 +7,9 @@ final class ICloudSyncManager {
     private let kvStore = NSUbiquitousKeyValueStore.default
     private var observer: NSObjectProtocol?
     private var cancellable: AnyCancellable?
-    private var isSyncing = false
+    private var lastPullTime: Date = .distantPast
+    // Suppress push-back for 3 seconds after a pull to outlast the 2-second debounce
+    private let pullSuppressionWindow: TimeInterval = 3.0
 
     init(settingsStore: SettingsStore) { self.settingsStore = settingsStore }
 
@@ -40,7 +42,8 @@ final class ICloudSyncManager {
     }
 
     func pushToCloud() {
-        guard settingsStore.iCloudSyncEnabled, !isSyncing else { return }
+        guard settingsStore.iCloudSyncEnabled,
+              Date().timeIntervalSince(lastPullTime) > pullSuppressionWindow else { return }
         let encoder = JSONEncoder()
         do {
             kvStore.set(try encoder.encode(settingsStore.loadBrowsers()), forKey: "sync_browsers")
@@ -79,8 +82,7 @@ final class ICloudSyncManager {
 
     private func handleRemoteChange() {
         guard settingsStore.iCloudSyncEnabled else { return }
-        isSyncing = true
-        defer { isSyncing = false }
+        lastPullTime = Date()
 
         let decoder = JSONDecoder()
         if let data = kvStore.data(forKey: "sync_browsers") {
