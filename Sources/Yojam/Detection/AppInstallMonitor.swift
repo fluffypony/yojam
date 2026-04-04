@@ -14,8 +14,6 @@ final class AppInstallMonitor {
 
     init(reconciler: ChangeReconciler) { self.reconciler = reconciler }
 
-    deinit { stopMonitoring() }
-
     func startMonitoring() {
         let pathsCF = watchedPaths as CFArray
         var context = FSEventStreamContext()

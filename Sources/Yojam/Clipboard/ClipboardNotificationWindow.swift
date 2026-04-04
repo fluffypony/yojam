@@ -4,6 +4,8 @@ import AppKit
 final class ClipboardNotificationWindow: NSPanel {
     private var onOpen: (() -> Void)?
     private var onDismissCallback: (() -> Void)?
+    private var suppressDomain: String?
+    private weak var settingsStoreRef: SettingsStore?
 
     init(url: URL, onOpen: @escaping () -> Void, onDismiss: @escaping () -> Void,
          settingsStore: SettingsStore? = nil) {
@@ -16,6 +18,8 @@ final class ClipboardNotificationWindow: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = true
         self.collectionBehavior = [.canJoinAllSpaces, .transient]
+        self.suppressDomain = url.host?.lowercased()
+        self.settingsStoreRef = settingsStore
 
         let ve = NSVisualEffectView(
             frame: NSRect(x: 0, y: 0, width: 320, height: 60))
@@ -37,29 +41,19 @@ final class ClipboardNotificationWindow: NSPanel {
         ve.addSubview(label)
         ve.addSubview(openButton)
 
-        // "Don't show" button for suppressing this domain (§23.1)
-        if let domain = url.host?.lowercased(), let settingsStore {
+        if settingsStore != nil {
             let suppressButton = NSButton(title: "Don't show", target: nil, action: nil)
             suppressButton.bezelStyle = .rounded
             suppressButton.controlSize = .small
             suppressButton.frame = NSRect(x: 235, y: 25, width: 75, height: 24)
             suppressButton.target = self
             suppressButton.action = #selector(suppressClicked)
-            suppressButton.tag = 0
-            // Store domain and settingsStore via representedObject pattern
-            objc_setAssociatedObject(self, &AssociatedKeys.domain, domain, .OBJC_ASSOCIATION_RETAIN)
-            objc_setAssociatedObject(self, &AssociatedKeys.store, settingsStore, .OBJC_ASSOCIATION_ASSIGN)
             ve.addSubview(suppressButton)
         }
 
         self.contentView = ve
         self.onOpen = onOpen
         self.onDismissCallback = onDismiss
-    }
-
-    private struct AssociatedKeys {
-        nonisolated(unsafe) static var domain = "domain"
-        nonisolated(unsafe) static var store = "store"
     }
 
     func showWithAutoDismiss() {
@@ -98,8 +92,7 @@ final class ClipboardNotificationWindow: NSPanel {
     }
 
     @objc private func suppressClicked() {
-        if let domain = objc_getAssociatedObject(self, &AssociatedKeys.domain) as? String,
-           let store = objc_getAssociatedObject(self, &AssociatedKeys.store) as? SettingsStore {
+        if let domain = suppressDomain, let store = settingsStoreRef {
             if !store.suppressedClipboardDomains.contains(domain) {
                 store.suppressedClipboardDomains.append(domain)
             }

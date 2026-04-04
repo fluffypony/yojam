@@ -44,14 +44,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     // NSMenuDelegate: rebuild menu every time it opens (§14.1)
-    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
-        MainActor.assumeIsolated {
-            menu.removeAllItems()
-            let rebuilt = buildMenu()
-            for item in rebuilt.items {
-                rebuilt.removeItem(item)
-                menu.addItem(item)
-            }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let rebuilt = buildMenu()
+        for item in rebuilt.items {
+            rebuilt.removeItem(item)
+            menu.addItem(item)
         }
     }
 
