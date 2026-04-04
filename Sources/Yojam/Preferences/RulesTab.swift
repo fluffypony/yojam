@@ -174,6 +174,19 @@ struct AddRuleSheet: View {
                 }.onChange(of: targetBundleId) { _, newValue in
                     targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
                 }
+                // Allow targeting any app, not just HTTP handlers
+                Button("Choose App...") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.applicationBundle]
+                    panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                    if panel.runModal() == .OK, let url = panel.url,
+                       let bundle = Bundle(url: url),
+                       let bundleId = bundle.bundleIdentifier {
+                        targetBundleId = bundleId
+                        targetAppName = bundle.infoDictionary?["CFBundleName"] as? String
+                            ?? url.deletingPathExtension().lastPathComponent
+                    }
+                }
                 Stepper("Priority: \(priority)", value: $priority, in: 1...1000)
                 Toggle("Strip UTM Parameters", isOn: $stripUTMParams)
                 TextField("Source App (optional):", text: $sourceAppBundleId)
