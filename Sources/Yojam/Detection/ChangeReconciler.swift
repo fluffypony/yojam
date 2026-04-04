@@ -13,17 +13,38 @@ final class ChangeReconciler {
     }
 
     func reconcile() {
-        let handlers = NSWorkspace.shared.urlsForApplications(
+        // HTTP handler discovery
+        let httpHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "https://example.com")!)
         let currentIds = Set(
-            handlers.compactMap { Bundle(url: $0)?.bundleIdentifier })
+            httpHandlers.compactMap { Bundle(url: $0)?.bundleIdentifier })
 
-        for appURL in handlers {
+        for appURL in httpHandlers {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
-                  bundleId != "com.yojam.app",
+                  bundleId != Bundle.main.bundleIdentifier,
                   !knownBundleIds.contains(bundleId) else { continue }
             appDiscovered(bundleId: bundleId, appURL: appURL)
+        }
+
+        // mailto: handler discovery (§9.2)
+        let mailtoHandlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "mailto:test@example.com")!)
+        for appURL in mailtoHandlers {
+            guard let bundle = Bundle(url: appURL),
+                  let bundleId = bundle.bundleIdentifier,
+                  bundleId != Bundle.main.bundleIdentifier else { continue }
+            if !browserManager.emailClients.contains(where: {
+                $0.bundleIdentifier == bundleId
+            }) {
+                let name = bundle.infoDictionary?["CFBundleName"] as? String
+                    ?? appURL.deletingPathExtension().lastPathComponent
+                let entry = BrowserEntry(
+                    bundleIdentifier: bundleId, displayName: name,
+                    position: browserManager.emailClients.count,
+                    source: .autoDetected)
+                browserManager.emailClients.append(entry)
+            }
         }
 
         let removed = knownBundleIds.subtracting(currentIds)
@@ -35,7 +56,7 @@ final class ChangeReconciler {
     }
 
     func appDiscovered(bundleId: String, appURL: URL) {
-        guard bundleId != "com.yojam.app",
+        guard bundleId != Bundle.main.bundleIdentifier,
               !knownBundleIds.contains(bundleId) else { return }
         browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
         ruleEngine.enableRulesForApp(bundleId)

@@ -14,18 +14,22 @@ final class BrowserManager: ObservableObject {
         self.settingsStore = settingsStore
         self.browsers = settingsStore.loadBrowsers()
         self.emailClients = settingsStore.loadEmailClients()
-        if browsers.isEmpty { performInitialDetection() }
-        if emailClients.isEmpty { addDefaultEmailClients() }
+        // Only detect if never saved before, not if user intentionally emptied (§8.3)
+        if UserDefaults.standard.data(forKey: "browsers") == nil { performInitialDetection() }
+        if UserDefaults.standard.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
     }
 
     private func performInitialDetection() {
         let httpHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "https://example.com")!)
         var position = 0
+        var seenBundleIds = Set<String>()
         for appURL in httpHandlers {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
-                  bundleId != "com.yojam.app" else { continue }
+                  bundleId != Bundle.main.bundleIdentifier,
+                  !seenBundleIds.contains(bundleId) else { continue }
+            seenBundleIds.insert(bundleId)
             let name = bundle.infoDictionary?["CFBundleName"] as? String
                 ?? appURL.deletingPathExtension().lastPathComponent
             let entry = BrowserEntry(
@@ -44,22 +48,39 @@ final class BrowserManager: ObservableObject {
     }
 
     private func addDefaultEmailClients() {
-        let mailBundleIds: [(String, String)] = [
+        // Discover mailto: handlers from the system
+        let mailtoHandlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "mailto:test@example.com")!)
+        var seenBundleIds = Set<String>()
+        var pos = 0
+        for appURL in mailtoHandlers {
+            guard let bundle = Bundle(url: appURL),
+                  let bundleId = bundle.bundleIdentifier,
+                  bundleId != Bundle.main.bundleIdentifier,
+                  !seenBundleIds.contains(bundleId) else { continue }
+            seenBundleIds.insert(bundleId)
+            let name = bundle.infoDictionary?["CFBundleName"] as? String
+                ?? appURL.deletingPathExtension().lastPathComponent
+            emailClients.append(BrowserEntry(
+                bundleIdentifier: bundleId, displayName: name,
+                position: pos, source: .autoDetected))
+            pos += 1
+        }
+        // Add known clients not already found
+        let knownMailClients: [(String, String)] = [
             ("com.apple.mail", "Mail"),
             ("com.google.Gmail", "Gmail"),
             ("com.microsoft.Outlook", "Outlook"),
             ("com.readdle.smartemail-macos", "Spark"),
         ]
-        var pos = 0
-        for (bundleId, name) in mailBundleIds {
-            if NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: bundleId
-            ) != nil {
-                emailClients.append(BrowserEntry(
-                    bundleIdentifier: bundleId, displayName: name,
-                    position: pos, source: .autoDetected))
-                pos += 1
-            }
+        for (bundleId, name) in knownMailClients {
+            guard !seenBundleIds.contains(bundleId),
+                  NSWorkspace.shared.urlForApplication(
+                      withBundleIdentifier: bundleId) != nil else { continue }
+            emailClients.append(BrowserEntry(
+                bundleIdentifier: bundleId, displayName: name,
+                position: pos, source: .autoDetected))
+            pos += 1
         }
         settingsStore.saveEmailClients(emailClients)
     }
@@ -131,7 +152,7 @@ final class BrowserManager: ObservableObject {
                 $0.lowercased() == "http" || $0.lowercased() == "https"
             }) ?? false
         }
-        guard handlesHTTP, bundleId != "com.yojam.app" else { return }
+        guard handlesHTTP, bundleId != Bundle.main.bundleIdentifier else { return }
         let name = bundle.infoDictionary?["CFBundleName"] as? String ?? "Unknown"
         let entry = BrowserEntry(
             bundleIdentifier: bundleId, displayName: name, source: .suggested

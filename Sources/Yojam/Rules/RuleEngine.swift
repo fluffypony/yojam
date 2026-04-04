@@ -60,11 +60,19 @@ final class RuleEngine: ObservableObject {
         save()
     }
 
-    func addRule(_ rule: Rule) { rules.append(rule); save() }
+    func addRule(_ rule: Rule) {
+        var r = rule
+        r.lastModifiedAt = Date()
+        rules.append(r)
+        save()
+    }
 
     func updateRule(_ rule: Rule) {
         if let idx = rules.firstIndex(where: { $0.id == rule.id }) {
-            rules[idx] = rule; save()
+            var r = rule
+            r.lastModifiedAt = Date()
+            rules[idx] = r
+            save()
         }
     }
 
@@ -74,16 +82,21 @@ final class RuleEngine: ObservableObject {
 
     func toggleRule(_ id: UUID) {
         if let idx = rules.firstIndex(where: { $0.id == id }) {
-            rules[idx].enabled.toggle(); save()
+            rules[idx].enabled.toggle()
+            rules[idx].lastModifiedAt = Date()
+            save()
         }
     }
 
     func reloadRules() { rules = settingsStore.loadRules() }
 
+    // Only disable rules whose target is uninstalled; never force-enable (§7.1)
     private func autoDisableUninstalledRules() {
         for i in rules.indices where rules[i].isBuiltIn {
-            rules[i].enabled = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: rules[i].targetBundleId) != nil
+            if NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: rules[i].targetBundleId) == nil {
+                rules[i].enabled = false
+            }
         }
         save()
     }
