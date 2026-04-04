@@ -29,11 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Optional subsystems
     private var clipboardMonitor: ClipboardMonitor?
-    private var globalClickMonitor: GlobalClickMonitor?
     private var iCloudSyncManager: ICloudSyncManager?
 
     // MARK: - State
-    private var forcePickerForNextURL = false
     private var cancellables = Set<AnyCancellable>()
     private var recentlyRoutedURLs: [String: Date] = [:]
     private let deduplicationWindow: TimeInterval = 0.5
@@ -94,11 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startClipboardMonitor()
         }
 
-        // Global click modifier
-        if settingsStore.universalClickModifierEnabled {
-            startGlobalClickMonitor()
-        }
-
         // iCloud sync
         if settingsStore.iCloudSyncEnabled {
             iCloudSyncManager = ICloudSyncManager(
@@ -110,11 +103,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsStore.$clipboardMonitoringEnabled.dropFirst().sink { [weak self] enabled in
             if enabled { self?.startClipboardMonitor() }
             else { self?.clipboardMonitor?.stop(); self?.clipboardMonitor = nil }
-        }.store(in: &cancellables)
-
-        settingsStore.$universalClickModifierEnabled.dropFirst().sink { [weak self] enabled in
-            if enabled { self?.startGlobalClickMonitor() }
-            else { self?.globalClickMonitor?.stop(); self?.globalClickMonitor = nil }
         }.store(in: &cancellables)
 
         settingsStore.$iCloudSyncEnabled.dropFirst().sink { [weak self] enabled in
@@ -175,7 +163,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceObserver.stopObserving()
         periodicScanner.stop()
         clipboardMonitor?.stop()
-        globalClickMonitor?.stop()
         iCloudSyncManager?.stopSync()
     }
 
@@ -226,19 +213,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             processedURL = utmStripper.strip(processedURL)
         }
 
-        // Step 3: Check force-picker from modifier click
-        let forcePicker = forcePickerForNextURL
-        forcePickerForNextURL = false
-
-        // Step 4: Check mailto (respects forcePicker and modifiers)
+        // Step 3: Check mailto
         if processedURL.scheme == "mailto" {
-            handleMailtoURL(processedURL, forcePicker: forcePicker, modifiers: modifiers)
+            handleMailtoURL(processedURL, modifiers: modifiers)
             return
         }
 
-        // Step 5: Evaluate rules (with source app context)
-        if !forcePicker,
-           let match = ruleEngine.evaluate(
+        // Step 4: Evaluate rules (with source app context)
+        if let match = ruleEngine.evaluate(
                processedURL, sourceAppBundleId: sourceAppBundleId
            ) {
             processedURL = urlRewriter.applyRuleRewrites(
@@ -263,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         for: processedURL,
                         preselectedBundleId: match.targetBundleId)
                 case .holdShift:
-                    if modifiers.contains(.shift) || forcePicker {
+                    if modifiers.contains(.shift) {
                         showPicker(
                             for: processedURL,
                             preselectedBundleId: match.targetBundleId)
@@ -293,12 +275,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Step 6: No rule matched or force picker
+        // Step 5: No rule matched — show picker or use default
         switch settingsStore.activationMode {
         case .always, .smartFallback:
             showPicker(for: processedURL)
         case .holdShift:
-            if forcePicker || modifiers.contains(.shift) {
+            if modifiers.contains(.shift) {
                 showPicker(for: processedURL)
             } else {
                 openInDefaultBrowser(processedURL)
@@ -307,11 +289,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleMailtoURL(
-        _ url: URL, forcePicker: Bool, modifiers: NSEvent.ModifierFlags
+        _ url: URL, modifiers: NSEvent.ModifierFlags
     ) {
         let clients = browserManager.emailClients.filter(\.enabled)
 
-        if forcePicker || (settingsStore.activationMode == .holdShift && modifiers.contains(.shift)) {
+        if settingsStore.activationMode == .holdShift && modifiers.contains(.shift) {
             showPicker(for: url, isEmail: true)
             return
         }
@@ -504,18 +486,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         clipboardMonitor?.start()
-    }
-
-    private func startGlobalClickMonitor() {
-        globalClickMonitor = GlobalClickMonitor(
-            settingsStore: settingsStore
-        ) { [weak self] in
-            self?.forcePickerForNextURL = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.forcePickerForNextURL = false
-            }
-        }
-        globalClickMonitor?.start()
     }
 
     func showPreferences() {

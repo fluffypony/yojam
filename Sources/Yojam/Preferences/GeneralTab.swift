@@ -2,7 +2,6 @@ import SwiftUI
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
-    @State private var accessibilityGranted = AccessibilityHelper.isTrusted
 
     var body: some View {
         Form {
@@ -60,55 +59,10 @@ struct GeneralTab: View {
                 Toggle("Monitor clipboard for URLs",
                        isOn: $settingsStore.clipboardMonitoringEnabled)
             }
-            Section("Universal Click Modifier") {
-                Toggle(
-                    "Enable modifier+click",
-                    isOn: $settingsStore.universalClickModifierEnabled)
-                    .onChange(of: settingsStore.universalClickModifierEnabled) { _, enabled in
-                        if enabled && !accessibilityGranted {
-                            AccessibilityHelper.promptForTrust()
-                        }
-                    }
-                if settingsStore.universalClickModifierEnabled {
-                    Text("Hold a modifier while clicking a link in Slack, Mail, Notes, or other non-browser apps to force the picker. Does not work for links inside browsers (they handle clicks internally).")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Toggle("Cmd+Shift Click",
-                           isOn: $settingsStore.cmdShiftClickEnabled)
-                    Toggle("Ctrl+Shift Click",
-                           isOn: $settingsStore.ctrlShiftClickEnabled)
-                    Toggle("Cmd+Option Click",
-                           isOn: $settingsStore.cmdOptionClickEnabled)
-                    if !accessibilityGranted {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("Accessibility permission required.")
-                                    .font(.caption).foregroundStyle(.orange)
-                                Button("Grant") { AccessibilityHelper.promptForTrust() }
-                                    .controlSize(.small)
-                            }
-                            Text("Permission is tracked by binary identity. Debug builds change identity on each compile, so you may need to re-grant after rebuilding.")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text("Accessibility permission granted.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
             Section("Sync") {
                 Toggle("Sync via iCloud",
                        isOn: $settingsStore.iCloudSyncEnabled)
             }
-        }
-        .formStyle(.grouped)
-        // Poll accessibility status every 2 seconds while visible,
-        // since the grant happens in System Settings and there is
-        // no callback for it.
-        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            accessibilityGranted = AccessibilityHelper.isTrusted
-        }
-        .onAppear {
-            accessibilityGranted = AccessibilityHelper.isTrusted
-        }
+        }.formStyle(.grouped)
     }
 }

@@ -40,10 +40,6 @@ final class SettingsStore: ObservableObject {
         static let launchAtLogin = "launchAtLogin"
         static let globalUTMStripping = "globalUTMStripping"
         static let clipboardMonitoring = "clipboardMonitoring"
-        static let universalClickModifier = "universalClickModifier"
-        static let cmdShiftClick = "cmdShiftClick"
-        static let ctrlShiftClick = "ctrlShiftClick"
-        static let cmdOptionClick = "cmdOptionClick"
         static let iCloudSync = "iCloudSync"
         static let debugLogging = "debugLogging"
         static let periodicRescanInterval = "periodicRescanInterval"
@@ -89,18 +85,6 @@ final class SettingsStore: ObservableObject {
     @Published var clipboardMonitoringEnabled: Bool {
         didSet { defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring) }
     }
-    @Published var universalClickModifierEnabled: Bool {
-        didSet { defaults.set(universalClickModifierEnabled, forKey: Keys.universalClickModifier) }
-    }
-    @Published var cmdShiftClickEnabled: Bool {
-        didSet { defaults.set(cmdShiftClickEnabled, forKey: Keys.cmdShiftClick) }
-    }
-    @Published var ctrlShiftClickEnabled: Bool {
-        didSet { defaults.set(ctrlShiftClickEnabled, forKey: Keys.ctrlShiftClick) }
-    }
-    @Published var cmdOptionClickEnabled: Bool {
-        didSet { defaults.set(cmdOptionClickEnabled, forKey: Keys.cmdOptionClick) }
-    }
     @Published var iCloudSyncEnabled: Bool {
         didSet { defaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSync) }
     }
@@ -139,10 +123,6 @@ final class SettingsStore: ObservableObject {
         self.launchAtLogin = d.bool(forKey: Keys.launchAtLogin)
         self.globalUTMStrippingEnabled = d.bool(forKey: Keys.globalUTMStripping)
         self.clipboardMonitoringEnabled = d.bool(forKey: Keys.clipboardMonitoring)
-        self.universalClickModifierEnabled = d.bool(forKey: Keys.universalClickModifier)
-        self.cmdShiftClickEnabled = d.bool(forKey: Keys.cmdShiftClick)
-        self.ctrlShiftClickEnabled = d.bool(forKey: Keys.ctrlShiftClick)
-        self.cmdOptionClickEnabled = d.bool(forKey: Keys.cmdOptionClick)
         self.iCloudSyncEnabled = d.bool(forKey: Keys.iCloudSync)
         self.debugLoggingEnabled = d.bool(forKey: Keys.debugLogging)
         self.periodicRescanInterval = d.object(forKey: Keys.periodicRescanInterval)
@@ -295,10 +275,6 @@ final class SettingsStore: ObservableObject {
             globalUTMStripping: globalUTMStrippingEnabled,
             clipboardMonitoring: clipboardMonitoringEnabled,
             iCloudSync: iCloudSyncEnabled,
-            universalClickModifierEnabled: universalClickModifierEnabled,
-            cmdShiftClickEnabled: cmdShiftClickEnabled,
-            ctrlShiftClickEnabled: ctrlShiftClickEnabled,
-            cmdOptionClickEnabled: cmdOptionClickEnabled,
             debugLoggingEnabled: debugLoggingEnabled,
             periodicRescanInterval: periodicRescanInterval,
             browsers: loadBrowsers(),
@@ -323,10 +299,6 @@ final class SettingsStore: ObservableObject {
         globalUTMStrippingEnabled = imported.globalUTMStripping
         clipboardMonitoringEnabled = imported.clipboardMonitoring
         iCloudSyncEnabled = imported.iCloudSync
-        universalClickModifierEnabled = imported.universalClickModifierEnabled
-        cmdShiftClickEnabled = imported.cmdShiftClickEnabled
-        ctrlShiftClickEnabled = imported.ctrlShiftClickEnabled
-        cmdOptionClickEnabled = imported.cmdOptionClickEnabled
         debugLoggingEnabled = imported.debugLoggingEnabled
         periodicRescanInterval = imported.periodicRescanInterval
         saveBrowsers(imported.browsers)
@@ -357,10 +329,6 @@ final class SettingsStore: ObservableObject {
         self.globalUTMStrippingEnabled = false
         self.soundEffectsEnabled = true
         self.clipboardMonitoringEnabled = false
-        self.universalClickModifierEnabled = false
-        self.cmdShiftClickEnabled = false
-        self.ctrlShiftClickEnabled = false
-        self.cmdOptionClickEnabled = false
         self.iCloudSyncEnabled = false
         self.launchAtLogin = false
         self.verticalThreshold = 8
@@ -387,10 +355,6 @@ struct SettingsExport: Codable {
     var globalUTMStripping: Bool
     var clipboardMonitoring: Bool
     var iCloudSync: Bool
-    var universalClickModifierEnabled: Bool
-    var cmdShiftClickEnabled: Bool
-    var ctrlShiftClickEnabled: Bool
-    var cmdOptionClickEnabled: Bool
     var debugLoggingEnabled: Bool
     var periodicRescanInterval: TimeInterval
     var browsers: [BrowserEntry]
@@ -403,8 +367,7 @@ struct SettingsExport: Codable {
     enum CodingKeys: String, CodingKey {
         case version, activationMode, defaultSelection, verticalThreshold
         case soundEffects, launchAtLogin, globalUTMStripping, clipboardMonitoring
-        case iCloudSync, universalClickModifierEnabled, cmdShiftClickEnabled
-        case ctrlShiftClickEnabled, cmdOptionClickEnabled, debugLoggingEnabled
+        case iCloudSync, debugLoggingEnabled
         case periodicRescanInterval, browsers, emailClients, rules
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
     }
@@ -413,8 +376,6 @@ struct SettingsExport: Codable {
          defaultSelection: DefaultSelectionBehavior, verticalThreshold: Int,
          soundEffects: Bool, launchAtLogin: Bool, globalUTMStripping: Bool,
          clipboardMonitoring: Bool, iCloudSync: Bool,
-         universalClickModifierEnabled: Bool, cmdShiftClickEnabled: Bool,
-         ctrlShiftClickEnabled: Bool, cmdOptionClickEnabled: Bool,
          debugLoggingEnabled: Bool, periodicRescanInterval: TimeInterval,
          browsers: [BrowserEntry], emailClients: [BrowserEntry],
          rules: [Rule], globalRewriteRules: [URLRewriteRule],
@@ -428,10 +389,6 @@ struct SettingsExport: Codable {
         self.globalUTMStripping = globalUTMStripping
         self.clipboardMonitoring = clipboardMonitoring
         self.iCloudSync = iCloudSync
-        self.universalClickModifierEnabled = universalClickModifierEnabled
-        self.cmdShiftClickEnabled = cmdShiftClickEnabled
-        self.ctrlShiftClickEnabled = ctrlShiftClickEnabled
-        self.cmdOptionClickEnabled = cmdOptionClickEnabled
         self.debugLoggingEnabled = debugLoggingEnabled
         self.periodicRescanInterval = periodicRescanInterval
         self.browsers = browsers
@@ -453,10 +410,6 @@ struct SettingsExport: Codable {
         globalUTMStripping = try container.decode(Bool.self, forKey: .globalUTMStripping)
         clipboardMonitoring = try container.decode(Bool.self, forKey: .clipboardMonitoring)
         iCloudSync = try container.decode(Bool.self, forKey: .iCloudSync)
-        universalClickModifierEnabled = try container.decode(Bool.self, forKey: .universalClickModifierEnabled)
-        cmdShiftClickEnabled = try container.decode(Bool.self, forKey: .cmdShiftClickEnabled)
-        ctrlShiftClickEnabled = try container.decode(Bool.self, forKey: .ctrlShiftClickEnabled)
-        cmdOptionClickEnabled = try container.decode(Bool.self, forKey: .cmdOptionClickEnabled)
         debugLoggingEnabled = try container.decode(Bool.self, forKey: .debugLoggingEnabled)
         periodicRescanInterval = try container.decode(TimeInterval.self, forKey: .periodicRescanInterval)
         browsers = try container.decode([BrowserEntry].self, forKey: .browsers)

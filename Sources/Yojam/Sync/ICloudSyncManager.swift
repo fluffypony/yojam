@@ -70,10 +70,6 @@ final class ICloudSyncManager {
         kvStore.set(settingsStore.soundEffectsEnabled, forKey: "sync_soundEffects")
         kvStore.set(settingsStore.globalUTMStrippingEnabled, forKey: "sync_globalUTMStripping")
         kvStore.set(settingsStore.clipboardMonitoringEnabled, forKey: "sync_clipboardMonitoring")
-        kvStore.set(settingsStore.universalClickModifierEnabled, forKey: "sync_universalClickModifier")
-        kvStore.set(settingsStore.cmdShiftClickEnabled, forKey: "sync_cmdShiftClick")
-        kvStore.set(settingsStore.ctrlShiftClickEnabled, forKey: "sync_ctrlShiftClick")
-        kvStore.set(settingsStore.cmdOptionClickEnabled, forKey: "sync_cmdOptionClick")
         kvStore.set(settingsStore.debugLoggingEnabled, forKey: "sync_debugLogging")
         kvStore.set(settingsStore.periodicRescanInterval, forKey: "sync_periodicRescanInterval")
 
@@ -144,18 +140,6 @@ final class ICloudSyncManager {
         }
         if kvStore.object(forKey: "sync_clipboardMonitoring") != nil {
             settingsStore.clipboardMonitoringEnabled = kvStore.bool(forKey: "sync_clipboardMonitoring")
-        }
-        if kvStore.object(forKey: "sync_universalClickModifier") != nil {
-            settingsStore.universalClickModifierEnabled = kvStore.bool(forKey: "sync_universalClickModifier")
-        }
-        if kvStore.object(forKey: "sync_cmdShiftClick") != nil {
-            settingsStore.cmdShiftClickEnabled = kvStore.bool(forKey: "sync_cmdShiftClick")
-        }
-        if kvStore.object(forKey: "sync_ctrlShiftClick") != nil {
-            settingsStore.ctrlShiftClickEnabled = kvStore.bool(forKey: "sync_ctrlShiftClick")
-        }
-        if kvStore.object(forKey: "sync_cmdOptionClick") != nil {
-            settingsStore.cmdOptionClickEnabled = kvStore.bool(forKey: "sync_cmdOptionClick")
         }
         if kvStore.object(forKey: "sync_debugLogging") != nil {
             settingsStore.debugLoggingEnabled = kvStore.bool(forKey: "sync_debugLogging")
