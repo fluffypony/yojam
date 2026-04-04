@@ -8,6 +8,7 @@ struct PickerContentView: View {
     let onSelect: (BrowserEntry) -> Void
     let onCopy: () -> Void
     let onDismiss: () -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(spacing: 6) {
@@ -20,11 +21,15 @@ struct PickerContentView: View {
                 .lineLimit(1).truncationMode(.middle)
         }
         .padding(12)
+        .focusable()
+        .focused($isFocused)
+        .onAppear { isFocused = true }
         .onKeyPress(.leftArrow) { move(-1); return .handled }
         .onKeyPress(.rightArrow) { move(1); return .handled }
         .onKeyPress(.upArrow) { move(-1); return .handled }
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.return) { selectCurrent(); return .handled }
+        .onKeyPress(.space) { selectCurrent(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }
         .onKeyPress(phases: .down) { press in
             if press.modifiers.contains(.command)
@@ -80,6 +85,7 @@ struct PickerContentView: View {
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { if $0 { selectedIndex = index } }
+                    .accessibilityLabel("Open in \(entry.fullDisplayName)")
                 }
             }
         }.frame(maxHeight: 400)
@@ -109,8 +115,11 @@ struct PickerIconView: View {
     private static let sharedIconResolver = IconResolver()
 
     var body: some View {
-        Image(nsImage: Self.sharedIconResolver.icon(
-            forBundleIdentifier: entry.bundleIdentifier))
+        let image: NSImage = {
+            if let data = entry.customIconData, let img = NSImage(data: data) { return img }
+            return Self.sharedIconResolver.icon(forBundleIdentifier: entry.bundleIdentifier)
+        }()
+        Image(nsImage: image)
             .resizable().frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
             .overlay(

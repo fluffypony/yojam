@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class PickerPanel: NSPanel {
     private var globalMonitor: Any?
+    private var localMonitor: Any?
     private let onDismiss: () -> Void
 
     init(url: URL, entries: [BrowserEntry], preselectedIndex: Int,
@@ -12,7 +13,17 @@ final class PickerPanel: NSPanel {
          onCopy: @escaping (URL) -> Void,
          onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
-        let isVertical = entries.count > settingsStore.verticalThreshold
+
+        // Dynamic vertical mode: check threshold and screen width (§4.3)
+        var isVertical = entries.count > settingsStore.verticalThreshold
+        if !isVertical {
+            let horizontalWidth = CGFloat(entries.count) * 48 - 8 + 24
+            let cursor = NSEvent.mouseLocation
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) }) ?? NSScreen.main!
+            if horizontalWidth > screen.visibleFrame.width * 0.8 {
+                isVertical = true
+            }
+        }
 
         super.init(
             contentRect: .zero,
@@ -86,6 +97,8 @@ final class PickerPanel: NSPanel {
         let origin = ScreenEdgeDetector.calculateOrigin(pickerSize: frame.size)
         setFrameOrigin(origin)
 
+        // Activate app for reliable keyboard input (§4.1)
+        NSApp.activate(ignoringOtherApps: true)
         PickerAnimator.animateIn(panel: self)
         makeKey()
 
@@ -94,6 +107,16 @@ final class PickerPanel: NSPanel {
         ) { [weak self] _ in
             self?.dismissAnimated()
         }
+
+        // Local monitor for clicks inside Yojam but outside picker (§4.5)
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .leftMouseDown
+        ) { [weak self] event in
+            if event.window != self {
+                self?.dismissAnimated()
+            }
+            return event
+        }
     }
 
     func dismissAnimated() {
@@ -101,15 +124,18 @@ final class PickerPanel: NSPanel {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
         }
+        if let local = localMonitor {
+            NSEvent.removeMonitor(local)
+            localMonitor = nil
+        }
         PickerAnimator.animateOut(panel: self) { [weak self] in
-            self?.orderOut(nil)
+            // orderOut already called by animateOut
             self?.onDismiss()
         }
     }
 
-    override func keyDown(with event: NSEvent) {
-        super.keyDown(with: event)
-    }
+    // Don't call super to prevent system beep (§4.2)
+    override func keyDown(with event: NSEvent) {}
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
