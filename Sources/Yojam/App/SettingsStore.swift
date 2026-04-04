@@ -52,6 +52,7 @@ final class SettingsStore: ObservableObject {
         static let rules = "rules"
         static let globalRewriteRules = "globalRewriteRules"
         static let utmStripList = "utmStripList"
+        static let suppressedClipboardDomains = "suppressedClipboardDomains"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -113,7 +114,7 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(utmStripList, forKey: Keys.utmStripList) }
     }
     @Published var suppressedClipboardDomains: [String] {
-        didSet { defaults.set(suppressedClipboardDomains, forKey: "suppressedClipboardDomains") }
+        didSet { defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains) }
     }
 
     init() {
@@ -148,7 +149,7 @@ final class SettingsStore: ObservableObject {
             as? TimeInterval ?? 1800
         self.utmStripList = d.stringArray(forKey: Keys.utmStripList)
             ?? UTMStripper.defaultParameters
-        self.suppressedClipboardDomains = d.stringArray(forKey: "suppressedClipboardDomains") ?? []
+        self.suppressedClipboardDomains = d.stringArray(forKey: Keys.suppressedClipboardDomains) ?? []
     }
 
     // MARK: - Complex Data Persistence
@@ -212,9 +213,32 @@ final class SettingsStore: ObservableObject {
             YojamLogger.shared.log("Failed to decode rules: \(error.localizedDescription)")
             return BuiltInRules.all
         }
-        let savedBuiltInIds = Set(savedRules.filter(\.isBuiltIn).map(\.id))
-        let newBuiltIns = BuiltInRules.all.filter { !savedBuiltInIds.contains($0.id) }
-        return savedRules + newBuiltIns
+
+        // Merge saved rules with current built-in definitions:
+        // - Update built-in rule definitions (patterns, bundle IDs) while preserving user's enabled state
+        // - Drop removed built-in rules
+        // - Append brand-new built-in rules
+        let builtInById = Dictionary(uniqueKeysWithValues: BuiltInRules.all.map { ($0.id, $0) })
+        var merged: [Rule] = []
+        var seenBuiltInIds = Set<UUID>()
+
+        for var rule in savedRules {
+            // Drop removed built-ins
+            if rule.isBuiltIn && BuiltInRules.removedIds.contains(rule.id) { continue }
+            // Update existing built-in definitions, preserve user's enabled state
+            if rule.isBuiltIn, let updated = builtInById[rule.id] {
+                let wasEnabled = rule.enabled
+                rule = updated
+                rule.enabled = wasEnabled
+                seenBuiltInIds.insert(rule.id)
+            }
+            merged.append(rule)
+        }
+        // Append brand-new built-in rules
+        for rule in BuiltInRules.all where !seenBuiltInIds.contains(rule.id) {
+            merged.append(rule)
+        }
+        return merged
     }
 
     func saveGlobalRewriteRules(_ rules: [URLRewriteRule]) {
@@ -266,7 +290,8 @@ final class SettingsStore: ObservableObject {
             emailClients: loadEmailClients(),
             rules: loadRules().filter { !$0.isBuiltIn },
             globalRewriteRules: loadGlobalRewriteRules(),
-            utmStripList: utmStripList
+            utmStripList: utmStripList,
+            suppressedClipboardDomains: suppressedClipboardDomains
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -291,11 +316,20 @@ final class SettingsStore: ObservableObject {
         periodicRescanInterval = imported.periodicRescanInterval
         saveBrowsers(imported.browsers)
         saveEmailClients(imported.emailClients)
-        var allRules = BuiltInRules.all
+        // Preserve user's built-in rule enable/disable states during import
+        let currentRules = loadRules()
+        let currentBuiltInStates = Dictionary(
+            uniqueKeysWithValues: currentRules.filter(\.isBuiltIn).map { ($0.id, $0.enabled) })
+        var allRules = BuiltInRules.all.map { rule -> Rule in
+            var r = rule
+            if let state = currentBuiltInStates[r.id] { r.enabled = state }
+            return r
+        }
         allRules.append(contentsOf: imported.rules)
         saveRules(allRules)
         saveGlobalRewriteRules(imported.globalRewriteRules)
         utmStripList = imported.utmStripList
+        suppressedClipboardDomains = imported.suppressedClipboardDomains
     }
 
     func resetToDefaults() {
@@ -320,6 +354,10 @@ final class SettingsStore: ObservableObject {
         self.periodicRescanInterval = 1800
         self.utmStripList = UTMStripper.defaultParameters
         self.suppressedClipboardDomains = []
+        saveBrowsers([])
+        saveEmailClients([])
+        saveRules(BuiltInRules.all)
+        saveGlobalRewriteRules(BuiltInRewriteRules.all)
         objectWillChange.send()
     }
 }
@@ -345,4 +383,72 @@ struct SettingsExport: Codable {
     var rules: [Rule]
     var globalRewriteRules: [URLRewriteRule]
     var utmStripList: [String]
+    var suppressedClipboardDomains: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case version, activationMode, defaultSelection, verticalThreshold
+        case soundEffects, launchAtLogin, globalUTMStripping, clipboardMonitoring
+        case iCloudSync, universalClickModifierEnabled, cmdShiftClickEnabled
+        case ctrlShiftClickEnabled, cmdOptionClickEnabled, debugLoggingEnabled
+        case periodicRescanInterval, browsers, emailClients, rules
+        case globalRewriteRules, utmStripList, suppressedClipboardDomains
+    }
+
+    init(version: Int, activationMode: ActivationMode,
+         defaultSelection: DefaultSelectionBehavior, verticalThreshold: Int,
+         soundEffects: Bool, launchAtLogin: Bool, globalUTMStripping: Bool,
+         clipboardMonitoring: Bool, iCloudSync: Bool,
+         universalClickModifierEnabled: Bool, cmdShiftClickEnabled: Bool,
+         ctrlShiftClickEnabled: Bool, cmdOptionClickEnabled: Bool,
+         debugLoggingEnabled: Bool, periodicRescanInterval: TimeInterval,
+         browsers: [BrowserEntry], emailClients: [BrowserEntry],
+         rules: [Rule], globalRewriteRules: [URLRewriteRule],
+         utmStripList: [String], suppressedClipboardDomains: [String] = []) {
+        self.version = version
+        self.activationMode = activationMode
+        self.defaultSelection = defaultSelection
+        self.verticalThreshold = verticalThreshold
+        self.soundEffects = soundEffects
+        self.launchAtLogin = launchAtLogin
+        self.globalUTMStripping = globalUTMStripping
+        self.clipboardMonitoring = clipboardMonitoring
+        self.iCloudSync = iCloudSync
+        self.universalClickModifierEnabled = universalClickModifierEnabled
+        self.cmdShiftClickEnabled = cmdShiftClickEnabled
+        self.ctrlShiftClickEnabled = ctrlShiftClickEnabled
+        self.cmdOptionClickEnabled = cmdOptionClickEnabled
+        self.debugLoggingEnabled = debugLoggingEnabled
+        self.periodicRescanInterval = periodicRescanInterval
+        self.browsers = browsers
+        self.emailClients = emailClients
+        self.rules = rules
+        self.globalRewriteRules = globalRewriteRules
+        self.utmStripList = utmStripList
+        self.suppressedClipboardDomains = suppressedClipboardDomains
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        activationMode = try container.decode(ActivationMode.self, forKey: .activationMode)
+        defaultSelection = try container.decode(DefaultSelectionBehavior.self, forKey: .defaultSelection)
+        verticalThreshold = try container.decode(Int.self, forKey: .verticalThreshold)
+        soundEffects = try container.decode(Bool.self, forKey: .soundEffects)
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+        globalUTMStripping = try container.decode(Bool.self, forKey: .globalUTMStripping)
+        clipboardMonitoring = try container.decode(Bool.self, forKey: .clipboardMonitoring)
+        iCloudSync = try container.decode(Bool.self, forKey: .iCloudSync)
+        universalClickModifierEnabled = try container.decode(Bool.self, forKey: .universalClickModifierEnabled)
+        cmdShiftClickEnabled = try container.decode(Bool.self, forKey: .cmdShiftClickEnabled)
+        ctrlShiftClickEnabled = try container.decode(Bool.self, forKey: .ctrlShiftClickEnabled)
+        cmdOptionClickEnabled = try container.decode(Bool.self, forKey: .cmdOptionClickEnabled)
+        debugLoggingEnabled = try container.decode(Bool.self, forKey: .debugLoggingEnabled)
+        periodicRescanInterval = try container.decode(TimeInterval.self, forKey: .periodicRescanInterval)
+        browsers = try container.decode([BrowserEntry].self, forKey: .browsers)
+        emailClients = try container.decode([BrowserEntry].self, forKey: .emailClients)
+        rules = try container.decode([Rule].self, forKey: .rules)
+        globalRewriteRules = try container.decode([URLRewriteRule].self, forKey: .globalRewriteRules)
+        utmStripList = try container.decode([String].self, forKey: .utmStripList)
+        suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
+    }
 }
