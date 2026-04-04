@@ -2,7 +2,9 @@ import SwiftUI
 
 struct AdvancedTab: View {
     @ObservedObject var settingsStore: SettingsStore
+    let routingSuggestionEngine: RoutingSuggestionEngine
     @State private var showingResetAlert = false
+    @State private var errorMessage: String?
 
     var body: some View {
         Form {
@@ -41,7 +43,7 @@ struct AdvancedTab: View {
                 Text("Yojam learns which browser you prefer for each domain.")
                     .font(.caption)
                 Button("Clear Learned Preferences") {
-                    RoutingSuggestionEngine().clearAll()
+                    routingSuggestionEngine.clearAll()
                 }
             }
             Section("Settings") {
@@ -50,17 +52,25 @@ struct AdvancedTab: View {
                         let panel = NSSavePanel()
                         panel.allowedContentTypes = [.json]
                         panel.nameFieldStringValue = "yojam-settings.json"
-                        if panel.runModal() == .OK, let url = panel.url,
-                           let data = try? settingsStore.exportJSON() {
-                            try? data.write(to: url)
+                        if panel.runModal() == .OK, let url = panel.url {
+                            do {
+                                let data = try settingsStore.exportJSON()
+                                try data.write(to: url)
+                            } catch {
+                                errorMessage = "Export failed: \(error.localizedDescription)"
+                            }
                         }
                     }
                     Button("Import Settings...") {
                         let panel = NSOpenPanel()
                         panel.allowedContentTypes = [.json]
-                        if panel.runModal() == .OK, let url = panel.url,
-                           let data = try? Data(contentsOf: url) {
-                            try? settingsStore.importJSON(data)
+                        if panel.runModal() == .OK, let url = panel.url {
+                            do {
+                                let data = try Data(contentsOf: url)
+                                try settingsStore.importJSON(data)
+                            } catch {
+                                errorMessage = "Import failed: \(error.localizedDescription)"
+                            }
                         }
                     }
                 }
@@ -74,6 +84,15 @@ struct AdvancedTab: View {
                     Button("Cancel", role: .cancel) {}
                 }
             }
-        }.formStyle(.grouped)
+        }
+        .formStyle(.grouped)
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 }

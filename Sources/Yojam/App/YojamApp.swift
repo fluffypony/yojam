@@ -10,7 +10,8 @@ struct YojamApp: App {
                 settingsStore: appDelegate.settingsStore,
                 browserManager: appDelegate.browserManager,
                 ruleEngine: appDelegate.ruleEngine,
-                rewriteManager: appDelegate.urlRewriter
+                rewriteManager: appDelegate.urlRewriter,
+                routingSuggestionEngine: appDelegate.routingSuggestionEngine
             )
         }
     }

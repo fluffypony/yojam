@@ -28,8 +28,8 @@ struct BrowsersTab: View {
                                 }
                                 Spacer()
                                 Circle()
-                                    .fill(browser.isInstalled
-                                          ? .green : .gray)
+                                    .fill(browser.source == .suggested ? .blue :
+                                          browser.isInstalled ? .green : .gray)
                                     .frame(width: 8, height: 8)
                             }.tag(browser)
                         }
@@ -56,7 +56,29 @@ struct BrowsersTab: View {
                     Button(action: { showingFilePicker = true }) {
                         Image(systemName: "plus")
                     }
+                    Button(action: {
+                        if let browser = selectedBrowser,
+                           let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) {
+                            browserManager.removeBrowser(at: idx)
+                            selectedBrowser = nil
+                        }
+                    }) {
+                        Image(systemName: "minus")
+                    }.disabled(selectedBrowser == nil)
                     Spacer()
+                    Button("Rescan") {
+                        // Re-detect browsers from system
+                        let handlers = NSWorkspace.shared.urlsForApplications(
+                            toOpen: URL(string: "https://example.com")!)
+                        let knownIds = Set(browserManager.browsers.map(\.bundleIdentifier))
+                        for appURL in handlers {
+                            guard let bundle = Bundle(url: appURL),
+                                  let bundleId = bundle.bundleIdentifier,
+                                  bundleId != Bundle.main.bundleIdentifier,
+                                  !knownIds.contains(bundleId) else { continue }
+                            browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
+                        }
+                    }.controlSize(.small)
                 }.padding(8)
             }.frame(minWidth: 250)
 
@@ -76,7 +98,23 @@ struct BrowsersTab: View {
                     Toggle("Open in Private Window",
                            isOn: $browserManager.browsers[index]
                                .openInPrivateWindow)
-                }.formStyle(.grouped).padding()
+                    // Profile selector (§17.3)
+                    let profiles = ProfileDiscovery().discoverProfiles(
+                        for: browserManager.browsers[index].bundleIdentifier)
+                    if !profiles.isEmpty {
+                        Picker("Profile", selection: $browserManager.browsers[index].profileId) {
+                            Text("None").tag(nil as String?)
+                            ForEach(profiles) { profile in
+                                Text(profile.name).tag(profile.id as String?)
+                            }
+                        }
+                    }
+                }
+                .formStyle(.grouped).padding()
+                // Persist form edits (§17.1)
+                .onChange(of: browserManager.browsers) { _, _ in
+                    settingsStore.saveBrowsers(browserManager.browsers)
+                }
             } else {
                 VStack {
                     Spacer()

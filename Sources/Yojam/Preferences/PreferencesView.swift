@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @ObservedObject var browserManager: BrowserManager
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var rewriteManager: URLRewriter
+    let routingSuggestionEngine: RoutingSuggestionEngine
 
     var body: some View {
         TabView {
@@ -32,7 +33,9 @@ struct PreferencesView: View {
                 settingsStore: settingsStore,
                 browserManager: browserManager)
                 .tabItem { Label("Email", systemImage: "envelope") }
-            AdvancedTab(settingsStore: settingsStore)
+            AdvancedTab(
+                settingsStore: settingsStore,
+                routingSuggestionEngine: routingSuggestionEngine)
                 .tabItem {
                     Label("Advanced",
                           systemImage: "wrench.and.screwdriver")

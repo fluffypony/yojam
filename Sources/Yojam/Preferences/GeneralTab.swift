@@ -1,5 +1,4 @@
 import SwiftUI
-import ServiceManagement
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -8,10 +7,6 @@ struct GeneralTab: View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $settingsStore.launchAtLogin)
-                    .onChange(of: settingsStore.launchAtLogin) { _, v in
-                        if v { try? SMAppService.mainApp.register() }
-                        else { try? SMAppService.mainApp.unregister() }
-                    }
                 HStack {
                     Text("Default browser:")
                     if DefaultBrowserManager.isDefaultBrowser {

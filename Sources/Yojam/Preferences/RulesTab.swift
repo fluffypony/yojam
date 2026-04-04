@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RulesTab: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -55,6 +56,11 @@ struct RulesTab: View {
                                     .font(.caption2)
                                     .foregroundStyle(.blue)
                             }
+                            Button(role: .destructive) {
+                                ruleEngine.deleteRule(rule.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }.buttonStyle(.borderless)
                         }
                     }
                 }
@@ -81,7 +87,121 @@ struct RulesTab: View {
             HStack {
                 Button("Add Rule") { showingAddRule = true }
                 Spacer()
+                Button("Import...") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.json]
+                    if panel.runModal() == .OK, let url = panel.url,
+                       let data = try? Data(contentsOf: url) {
+                        try? ruleEngine.importRules(from: data)
+                    }
+                }
+                Button("Export...") {
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [.json]
+                    panel.nameFieldStringValue = "yojam-rules.json"
+                    if panel.runModal() == .OK, let url = panel.url,
+                       let data = try? ruleEngine.exportRules() {
+                        try? data.write(to: url)
+                    }
+                }
             }.padding()
         }
+        .sheet(isPresented: $showingAddRule) {
+            AddRuleSheet(ruleEngine: ruleEngine, onDismiss: { showingAddRule = false })
+        }
+    }
+}
+
+struct AddRuleSheet: View {
+    @ObservedObject var ruleEngine: RuleEngine
+    let onDismiss: () -> Void
+
+    @State private var name = ""
+    @State private var matchType: MatchType = .domain
+    @State private var pattern = ""
+    @State private var targetBundleId = ""
+    @State private var targetAppName = ""
+    @State private var priority = 100
+    @State private var stripUTMParams = false
+    @State private var sourceAppBundleId = ""
+    @State private var testURL = ""
+    @State private var testResult = ""
+
+    private var installedApps: [(String, String)] {
+        let handlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "https://example.com")!)
+        return handlers.compactMap { url in
+            guard let bundle = Bundle(url: url),
+                  let bundleId = bundle.bundleIdentifier else { return nil }
+            let name = bundle.infoDictionary?["CFBundleName"] as? String
+                ?? url.deletingPathExtension().lastPathComponent
+            return (bundleId, name)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                TextField("Name:", text: $name)
+                Picker("Match Type:", selection: $matchType) {
+                    ForEach(MatchType.allCases) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                TextField("Pattern:", text: $pattern)
+                Picker("Target App:", selection: $targetBundleId) {
+                    Text("Select...").tag("")
+                    ForEach(installedApps, id: \.0) { bundleId, appName in
+                        Text(appName).tag(bundleId)
+                    }
+                }.onChange(of: targetBundleId) { _, newValue in
+                    targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
+                }
+                Stepper("Priority: \(priority)", value: $priority, in: 1...1000)
+                Toggle("Strip UTM Parameters", isOn: $stripUTMParams)
+                TextField("Source App (optional):", text: $sourceAppBundleId)
+                    .textFieldStyle(.roundedBorder)
+
+                Section("Test") {
+                    HStack {
+                        TextField("Test URL:", text: $testURL)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Test") {
+                            guard let url = URL(string: testURL) else {
+                                testResult = "Invalid URL"; return
+                            }
+                            let testRule = Rule(
+                                name: name, matchType: matchType,
+                                pattern: pattern, targetBundleId: targetBundleId,
+                                targetAppName: targetAppName)
+                            testResult = ruleEngine.matches(url: url, rule: testRule)
+                                ? "Match" : "No match"
+                        }
+                    }
+                    if !testResult.isEmpty {
+                        Text(testResult).font(.caption)
+                    }
+                }
+            }.formStyle(.grouped)
+
+            HStack {
+                Button("Cancel") { onDismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Add") {
+                    let rule = Rule(
+                        name: name, matchType: matchType,
+                        pattern: pattern, targetBundleId: targetBundleId,
+                        targetAppName: targetAppName,
+                        priority: priority, stripUTMParams: stripUTMParams,
+                        sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId)
+                    ruleEngine.addRule(rule)
+                    onDismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty)
+            }.padding()
+        }
+        .frame(minWidth: 450, minHeight: 400)
     }
 }

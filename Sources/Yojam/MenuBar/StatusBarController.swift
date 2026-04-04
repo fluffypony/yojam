@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class StatusBarController {
+final class StatusBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let browserManager: BrowserManager
     private let recentURLsManager: RecentURLsManager
@@ -24,6 +24,7 @@ final class StatusBarController {
         self.onReopen = onReopen
         self.onOpenPreferences = onOpenPreferences
         self.onToggleEnabled = onToggleEnabled
+        super.init()
         setupStatusItem()
     }
 
@@ -37,7 +38,21 @@ final class StatusBarController {
             image?.isTemplate = true
             button.image = image
         }
-        statusItem.menu = buildMenu()
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    // NSMenuDelegate: rebuild menu every time it opens (§14.1)
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
+        MainActor.assumeIsolated {
+            menu.removeAllItems()
+            let rebuilt = buildMenu()
+            for item in rebuilt.items {
+                rebuilt.removeItem(item)
+                menu.addItem(item)
+            }
+        }
     }
 
     private func buildMenu() -> NSMenu {
@@ -97,7 +112,6 @@ final class StatusBarController {
 
     @objc private func toggleClicked() {
         onToggleEnabled()
-        statusItem.menu = buildMenu()
     }
 
     @objc private func reopenURL(_ sender: NSMenuItem) {
