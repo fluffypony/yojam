@@ -27,9 +27,10 @@ final class ChangeReconciler {
             appDiscovered(bundleId: bundleId, appURL: appURL)
         }
 
-        // mailto: handler discovery (§9.2)
+        // mailto: handler discovery
         let mailtoHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "mailto:test@example.com")!)
+        var emailClientsChanged = false
         for appURL in mailtoHandlers {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
@@ -44,7 +45,11 @@ final class ChangeReconciler {
                     position: browserManager.emailClients.count,
                     source: .autoDetected)
                 browserManager.emailClients.append(entry)
+                emailClientsChanged = true
             }
+        }
+        if emailClientsChanged {
+            browserManager.saveEmailClients()
         }
 
         let removed = knownBundleIds.subtracting(currentIds)

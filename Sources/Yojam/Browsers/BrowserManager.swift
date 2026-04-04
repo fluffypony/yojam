@@ -14,7 +14,6 @@ final class BrowserManager: ObservableObject {
         self.settingsStore = settingsStore
         self.browsers = settingsStore.loadBrowsers()
         self.emailClients = settingsStore.loadEmailClients()
-        // Only detect if never saved before, not if user intentionally emptied (§8.3)
         if UserDefaults.standard.data(forKey: "browsers") == nil { performInitialDetection() }
         if UserDefaults.standard.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
     }
@@ -48,7 +47,6 @@ final class BrowserManager: ObservableObject {
     }
 
     private func addDefaultEmailClients() {
-        // Discover mailto: handlers from the system
         let mailtoHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "mailto:test@example.com")!)
         var seenBundleIds = Set<String>()
@@ -66,10 +64,9 @@ final class BrowserManager: ObservableObject {
                 position: pos, source: .autoDetected))
             pos += 1
         }
-        // Add known clients not already found
+        // Add known clients not already found (no iOS-only bundle IDs)
         let knownMailClients: [(String, String)] = [
             ("com.apple.mail", "Mail"),
-            ("com.google.Gmail", "Gmail"),
             ("com.microsoft.Outlook", "Outlook"),
             ("com.readdle.smartemail-macos", "Spark"),
         ]
@@ -92,6 +89,14 @@ final class BrowserManager: ObservableObject {
         browsers.append(e); save()
     }
 
+    func addBrowsers(_ entries: [BrowserEntry]) {
+        for var entry in entries {
+            entry.position = browsers.count
+            browsers.append(entry)
+        }
+        save()
+    }
+
     func confirmSuggested(_ entry: BrowserEntry) {
         suggestedBrowsers.removeAll { $0.id == entry.id }
         addBrowser(entry)
@@ -108,13 +113,18 @@ final class BrowserManager: ObservableObject {
 
     func toggleBrowser(_ id: UUID) {
         if let idx = browsers.firstIndex(where: { $0.id == id }) {
-            browsers[idx].enabled.toggle(); save()
+            browsers[idx].enabled.toggle()
+            browsers[idx].lastModifiedAt = Date()
+            save()
         }
     }
 
     func updateBrowser(_ entry: BrowserEntry) {
         if let idx = browsers.firstIndex(where: { $0.id == entry.id }) {
-            browsers[idx] = entry; save()
+            var updated = entry
+            updated.lastModifiedAt = Date()
+            browsers[idx] = updated
+            save()
         }
     }
 
@@ -138,12 +148,15 @@ final class BrowserManager: ObservableObject {
 
     func handleAppInstalled(bundleId: String, appURL: URL) {
         iconResolver.invalidateCache(for: bundleId)
-        if let idx = browsers.firstIndex(where: { $0.bundleIdentifier == bundleId }) {
-            browsers[idx].isInstalled = true
-            browsers[idx].lastSeenAt = Date()
-            save()
-            return
+        // Update all matching entries (multiple profiles share a bundle ID)
+        var found = false
+        for i in browsers.indices where browsers[i].bundleIdentifier == bundleId {
+            browsers[i].isInstalled = true
+            browsers[i].lastSeenAt = Date()
+            found = true
         }
+        if found { save(); return }
+
         guard let bundle = Bundle(url: appURL),
               let schemes = bundle.infoDictionary?["CFBundleURLTypes"]
                   as? [[String: Any]]
@@ -168,9 +181,24 @@ final class BrowserManager: ObservableObject {
     }
 
     func handleAppRemoved(bundleId: String) {
-        if let idx = browsers.firstIndex(where: { $0.bundleIdentifier == bundleId }) {
-            browsers[idx].isInstalled = false; save()
+        // Update all matching browser entries
+        for i in browsers.indices where browsers[i].bundleIdentifier == bundleId {
+            browsers[i].isInstalled = false
         }
+        save()
+        // Also update email clients
+        var emailChanged = false
+        for i in emailClients.indices where emailClients[i].bundleIdentifier == bundleId {
+            emailClients[i].isInstalled = false
+            emailChanged = true
+        }
+        if emailChanged {
+            settingsStore.saveEmailClients(emailClients)
+        }
+    }
+
+    func saveEmailClients() {
+        settingsStore.saveEmailClients(emailClients)
     }
 
     private func reindex() {
