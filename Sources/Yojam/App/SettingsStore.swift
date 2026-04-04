@@ -112,6 +112,9 @@ final class SettingsStore: ObservableObject {
     @Published var utmStripList: [String] {
         didSet { defaults.set(utmStripList, forKey: Keys.utmStripList) }
     }
+    @Published var suppressedClipboardDomains: [String] {
+        didSet { defaults.set(suppressedClipboardDomains, forKey: "suppressedClipboardDomains") }
+    }
 
     init() {
         let d = UserDefaults.standard
@@ -145,6 +148,7 @@ final class SettingsStore: ObservableObject {
             as? TimeInterval ?? 1800
         self.utmStripList = d.stringArray(forKey: Keys.utmStripList)
             ?? UTMStripper.defaultParameters
+        self.suppressedClipboardDomains = d.stringArray(forKey: "suppressedClipboardDomains") ?? []
     }
 
     // MARK: - Complex Data Persistence

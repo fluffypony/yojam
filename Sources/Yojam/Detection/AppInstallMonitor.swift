@@ -14,22 +14,25 @@ final class AppInstallMonitor {
 
     init(reconciler: ChangeReconciler) { self.reconciler = reconciler }
 
+    deinit { stopMonitoring() }
+
     func startMonitoring() {
         let pathsCF = watchedPaths as CFArray
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
 
         let callback: FSEventStreamCallback = {
-            _, clientInfo, numEvents, eventPaths, _, _ in
+            _, clientInfo, _, eventPaths, _, _ in
             guard let clientInfo else { return }
-            let monitor = Unmanaged<AppInstallMonitor>
-                .fromOpaque(clientInfo).takeUnretainedValue()
             let paths = Unmanaged<CFArray>
                 .fromOpaque(eventPaths).takeUnretainedValue() as! [String]
             let appPaths = paths.filter {
                 $0.hasSuffix(".app") || $0.contains(".app/")
             }
             if !appPaths.isEmpty {
+                // Dispatch to MainActor for safety (§21.1)
+                let monitor = Unmanaged<AppInstallMonitor>
+                    .fromOpaque(clientInfo).takeUnretainedValue()
                 monitor.debouncer.debounce {
                     Task { @MainActor in monitor.reconciler.reconcile() }
                 }

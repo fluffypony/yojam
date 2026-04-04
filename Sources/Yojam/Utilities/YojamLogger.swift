@@ -30,8 +30,10 @@ final class YojamLogger: @unchecked Sendable {
             let logFile = logDir.appendingPathComponent("yojam.log")
             if let handle = try? FileHandle(forWritingTo: logFile) {
                 handle.seekToEndOfFile()
-                handle.write(entry.data(using: .utf8)!)
-                handle.closeFile()
+                if let data = entry.data(using: .utf8) {
+                    handle.write(data)
+                }
+                try? handle.close()
             } else {
                 try? entry.data(using: .utf8)?.write(to: logFile)
             }

@@ -9,6 +9,6 @@ struct BrowserOptionsProvider: DynamicOptionsProvider {
 
     @MainActor
     func defaultResult() async -> String? {
-        SettingsStore().loadBrowsers().first?.bundleIdentifier
+        SettingsStore().loadBrowsers().first(where: \.enabled)?.bundleIdentifier
     }
 }

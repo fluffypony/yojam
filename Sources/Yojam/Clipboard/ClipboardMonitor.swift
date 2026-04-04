@@ -31,7 +31,12 @@ final class ClipboardMonitor {
               let url = URL(string: string),
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
-              url.host != nil else { return }
+              let host = url.host else { return }
+        // Skip suppressed domains (§23.1)
+        let domain = host.lowercased()
+        if settingsStore.suppressedClipboardDomains.contains(where: {
+            domain == $0 || domain.hasSuffix(".\($0)")
+        }) { return }
         onURLDetected(url)
     }
 }
