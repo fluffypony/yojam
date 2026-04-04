@@ -35,6 +35,8 @@ struct PreferencesView: View {
                 .tabItem { Label("Email", systemImage: "envelope") }
             AdvancedTab(
                 settingsStore: settingsStore,
+                browserManager: browserManager,
+                ruleEngine: ruleEngine,
                 routingSuggestionEngine: routingSuggestionEngine)
                 .tabItem {
                     Label("Advanced",

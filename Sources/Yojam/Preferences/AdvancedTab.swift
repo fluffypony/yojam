@@ -1,7 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AdvancedTab: View {
     @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject var browserManager: BrowserManager
+    @ObservedObject var ruleEngine: RuleEngine
     let routingSuggestionEngine: RoutingSuggestionEngine
     @State private var showingResetAlert = false
     @State private var errorMessage: String?
@@ -68,6 +71,9 @@ struct AdvancedTab: View {
                             do {
                                 let data = try Data(contentsOf: url)
                                 try settingsStore.importJSON(data)
+                                browserManager.browsers = settingsStore.loadBrowsers()
+                                browserManager.emailClients = settingsStore.loadEmailClients()
+                                ruleEngine.reloadRules()
                             } catch {
                                 errorMessage = "Import failed: \(error.localizedDescription)"
                             }
@@ -80,6 +86,9 @@ struct AdvancedTab: View {
                 .alert("Reset?", isPresented: $showingResetAlert) {
                     Button("Reset", role: .destructive) {
                         settingsStore.resetToDefaults()
+                        browserManager.browsers = settingsStore.loadBrowsers()
+                        browserManager.emailClients = settingsStore.loadEmailClients()
+                        ruleEngine.reloadRules()
                     }
                     Button("Cancel", role: .cancel) {}
                 }

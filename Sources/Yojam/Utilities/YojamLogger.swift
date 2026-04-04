@@ -5,11 +5,6 @@ final class YojamLogger: @unchecked Sendable {
     static let shared = YojamLogger()
     private let osLog = os.Logger(subsystem: "com.yojam.app", category: "general")
     private let logDir: URL
-    private let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        return f
-    }()
     private let queue = DispatchQueue(label: "com.yojam.logger")
 
     private init() {
@@ -23,10 +18,13 @@ final class YojamLogger: @unchecked Sendable {
     func log(_ message: String, file: String = #file, line: Int = #line) {
         osLog.info("\(message)")
         guard isEnabled else { return }
-        let timestamp = dateFormatter.string(from: Date())
         let fileName = URL(fileURLWithPath: file).lastPathComponent
-        let entry = "[\(timestamp)] [\(fileName):\(line)] \(message)\n"
         queue.async { [self] in
+            // Create DateFormatter on the serial queue to avoid thread-safety issues
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+            let timestamp = formatter.string(from: Date())
+            let entry = "[\(timestamp)] [\(fileName):\(line)] \(message)\n"
             let logFile = logDir.appendingPathComponent("yojam.log")
             if let handle = try? FileHandle(forWritingTo: logFile) {
                 handle.seekToEndOfFile()

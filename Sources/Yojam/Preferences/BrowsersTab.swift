@@ -6,6 +6,7 @@ struct BrowsersTab: View {
     @ObservedObject var browserManager: BrowserManager
     @State private var selectedBrowser: BrowserEntry?
     @State private var showingFilePicker = false
+    @State private var profileDiscovery = ProfileDiscovery()
 
     var body: some View {
         HSplitView {
@@ -67,7 +68,6 @@ struct BrowsersTab: View {
                     }.disabled(selectedBrowser == nil)
                     Spacer()
                     Button("Rescan") {
-                        // Re-detect browsers from system
                         let handlers = NSWorkspace.shared.urlsForApplications(
                             toOpen: URL(string: "https://example.com")!)
                         let knownIds = Set(browserManager.browsers.map(\.bundleIdentifier))
@@ -98,8 +98,7 @@ struct BrowsersTab: View {
                     Toggle("Open in Private Window",
                            isOn: $browserManager.browsers[index]
                                .openInPrivateWindow)
-                    // Profile selector (§17.3)
-                    let profiles = ProfileDiscovery().discoverProfiles(
+                    let profiles = profileDiscovery.discoverProfiles(
                         for: browserManager.browsers[index].bundleIdentifier)
                     if !profiles.isEmpty {
                         Picker("Profile", selection: $browserManager.browsers[index].profileId) {
@@ -111,10 +110,6 @@ struct BrowsersTab: View {
                     }
                 }
                 .formStyle(.grouped).padding()
-                // Persist form edits (§17.1)
-                .onChange(of: browserManager.browsers) { _, _ in
-                    settingsStore.saveBrowsers(browserManager.browsers)
-                }
             } else {
                 VStack {
                     Spacer()

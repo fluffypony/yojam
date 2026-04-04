@@ -26,13 +26,16 @@ final class GlobalClickMonitor {
     private func handleGlobalClick(_ event: NSEvent) {
         let flags = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
+        // Use exact modifier matching to avoid accidental triggers with extra keys held
+        let relevant: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
+        let activeFlags = flags.intersection(relevant)
         var triggered = false
         if settingsStore.cmdShiftClickEnabled
-            && flags.contains([.command, .shift]) { triggered = true }
+            && activeFlags == [.command, .shift] { triggered = true }
         if settingsStore.ctrlShiftClickEnabled
-            && flags.contains([.control, .shift]) { triggered = true }
+            && activeFlags == [.control, .shift] { triggered = true }
         if settingsStore.cmdOptionClickEnabled
-            && flags.contains([.command, .option]) { triggered = true }
+            && activeFlags == [.command, .option] { triggered = true }
         if triggered { onModifierClick() }
     }
 }

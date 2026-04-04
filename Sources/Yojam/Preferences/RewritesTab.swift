@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct RewritesTab: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -57,6 +58,9 @@ struct RewritesTab: View {
             }.padding()
         }
         .onAppear { rules = settingsStore.loadGlobalRewriteRules() }
+        .onReceive(settingsStore.objectWillChange) {
+            rules = settingsStore.loadGlobalRewriteRules()
+        }
         .sheet(isPresented: $showingAddRewrite) {
             AddRewriteSheet(onAdd: { rule in
                 rules.append(rule)
