@@ -1,10 +1,12 @@
 import Foundation
+import Combine
 
 @MainActor
 final class ICloudSyncManager {
     private let settingsStore: SettingsStore
     private let kvStore = NSUbiquitousKeyValueStore.default
     private var observer: NSObjectProtocol?
+    private var cancellable: AnyCancellable?
 
     init(settingsStore: SettingsStore) { self.settingsStore = settingsStore }
 
@@ -17,10 +19,17 @@ final class ICloudSyncManager {
         }
         kvStore.synchronize()
         pushToCloud()
+
+        // Observe local changes and push continuously (§11.2)
+        cancellable = settingsStore.objectWillChange
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.pushToCloud() }
     }
 
     func stopSync() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        cancellable?.cancel()
+        cancellable = nil
     }
 
     func pushToCloud() {
@@ -55,12 +64,21 @@ final class ICloudSyncManager {
            let remote = try? JSONDecoder().decode(
                [Rule].self, from: data
            ) {
+            // Preserve local user's built-in rule states (§11.3)
+            let localBuiltIns = settingsStore.loadRules().filter { $0.isBuiltIn }
             let local = settingsStore.loadRules().filter { !$0.isBuiltIn }
             let merged = SyncConflictResolver.mergeRules(
                 local: local, remote: remote)
-            var allRules = BuiltInRules.all
+            var allRules = localBuiltIns
             allRules.append(contentsOf: merged)
             settingsStore.saveRules(allRules)
+        }
+        // Pull rewrite rules (§11.1)
+        if let data = kvStore.data(forKey: "sync_rewrites"),
+           let remote = try? JSONDecoder().decode(
+               [URLRewriteRule].self, from: data
+           ) {
+            settingsStore.saveGlobalRewriteRules(remote)
         }
         if let list = kvStore.array(forKey: "sync_utmStripList") as? [String] {
             settingsStore.utmStripList = list

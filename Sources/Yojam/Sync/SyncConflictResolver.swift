@@ -19,10 +19,19 @@ enum SyncConflictResolver {
         return merged.values.sorted { $0.position < $1.position }
     }
 
+    // Use lastModifiedAt for conflict resolution (§24.1)
     static func mergeRules(local: [Rule], remote: [Rule]) -> [Rule] {
         var merged: [UUID: Rule] = [:]
         for rule in local { merged[rule.id] = rule }
-        for rule in remote { merged[rule.id] = rule }
+        for rule in remote {
+            if let existing = merged[rule.id] {
+                if (rule.lastModifiedAt ?? .distantPast) > (existing.lastModifiedAt ?? .distantPast) {
+                    merged[rule.id] = rule
+                }
+            } else {
+                merged[rule.id] = rule
+            }
+        }
         return merged.values.sorted { $0.priority < $1.priority }
     }
 }
