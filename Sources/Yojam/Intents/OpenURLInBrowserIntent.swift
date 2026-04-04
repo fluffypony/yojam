@@ -14,17 +14,43 @@ struct OpenURLInBrowserIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        let store = SettingsStore()
         var processedURL = url
-        if stripUTM {
-            let store = SettingsStore()
-            processedURL = UTMStripper(settingsStore: store).strip(processedURL)
-        }
+
         if let bundleId = browser,
            let appURL = NSWorkspace.shared.urlForApplication(
                withBundleIdentifier: bundleId
            ) {
+            // Resolve BrowserEntry to apply its settings
+            let entry = store.loadBrowsers().first {
+                $0.bundleIdentifier == bundleId && $0.enabled
+            }
+            let rewriter = URLRewriter(settingsStore: store)
+            let stripper = UTMStripper(settingsStore: store)
+
+            if let entry {
+                processedURL = rewriter.applyBrowserRewrites(to: processedURL, browser: entry)
+                if stripUTM || entry.stripUTMParams {
+                    processedURL = stripper.strip(processedURL)
+                } else if store.globalUTMStrippingEnabled {
+                    processedURL = stripper.strip(processedURL)
+                }
+            } else if stripUTM {
+                processedURL = stripper.strip(processedURL)
+            }
+
             let config = NSWorkspace.OpenConfiguration()
             config.activates = true
+            var arguments: [String] = []
+            if let profile = entry?.profileId {
+                arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                    forProfile: profile, browserBundleId: bundleId))
+            }
+            if entry?.openInPrivateWindow == true {
+                arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
+                    browserBundleId: bundleId))
+            }
+            if !arguments.isEmpty { config.arguments = arguments }
             try await NSWorkspace.shared.open(
                 [processedURL], withApplicationAt: appURL,
                 configuration: config)

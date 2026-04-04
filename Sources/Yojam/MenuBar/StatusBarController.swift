@@ -123,7 +123,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     ) {
         clipboardWindow?.dismiss()
         clipboardWindow = ClipboardNotificationWindow(
-            url: url, onOpen: onOpen, onDismiss: {})
+            url: url, onOpen: onOpen, onDismiss: {},
+            settingsStore: settingsStore)
         clipboardWindow?.showWithAutoDismiss()
     }
 }

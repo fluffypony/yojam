@@ -204,9 +204,14 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadRules() -> [Rule] {
-        guard let data = defaults.data(forKey: Keys.rules),
-              let savedRules = try? JSONDecoder().decode([Rule].self, from: data)
-        else { return BuiltInRules.all }
+        guard let data = defaults.data(forKey: Keys.rules) else { return BuiltInRules.all }
+        let savedRules: [Rule]
+        do {
+            savedRules = try JSONDecoder().decode([Rule].self, from: data)
+        } catch {
+            YojamLogger.shared.log("Failed to decode rules: \(error.localizedDescription)")
+            return BuiltInRules.all
+        }
         let savedBuiltInIds = Set(savedRules.filter(\.isBuiltIn).map(\.id))
         let newBuiltIns = BuiltInRules.all.filter { !savedBuiltInIds.contains($0.id) }
         return savedRules + newBuiltIns
@@ -223,9 +228,16 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadGlobalRewriteRules() -> [URLRewriteRule] {
-        guard let data = defaults.data(forKey: Keys.globalRewriteRules),
-              let savedRules = try? JSONDecoder().decode([URLRewriteRule].self, from: data)
-        else { return BuiltInRewriteRules.all }
+        guard let data = defaults.data(forKey: Keys.globalRewriteRules) else {
+            return BuiltInRewriteRules.all
+        }
+        let savedRules: [URLRewriteRule]
+        do {
+            savedRules = try JSONDecoder().decode([URLRewriteRule].self, from: data)
+        } catch {
+            YojamLogger.shared.log("Failed to decode rewrite rules: \(error.localizedDescription)")
+            return BuiltInRewriteRules.all
+        }
         let savedIds = Set(savedRules.map(\.id))
         let newBuiltIns = BuiltInRewriteRules.all.filter { !savedIds.contains($0.id) }
         return savedRules + newBuiltIns
@@ -307,6 +319,7 @@ final class SettingsStore: ObservableObject {
         self.debugLoggingEnabled = false
         self.periodicRescanInterval = 1800
         self.utmStripList = UTMStripper.defaultParameters
+        self.suppressedClipboardDomains = []
         objectWillChange.send()
     }
 }
