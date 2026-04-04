@@ -92,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             iCloudSyncManager?.startSync()
         }
 
-        // Dynamic service toggles (§2.7)
+        // Dynamic service toggles
         settingsStore.$clipboardMonitoringEnabled.dropFirst().sink { [weak self] enabled in
             if enabled { self?.startClipboardMonitor() }
             else { self?.clipboardMonitor?.stop(); self?.clipboardMonitor = nil }
@@ -128,28 +128,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore.isFirstLaunch = false
         }
 
-        // Profile discovery - create profile entries (§2.6)
+        // Profile discovery - async to avoid blocking launch
         let profileDiscovery = ProfileDiscovery()
-        for entry in browserManager.browsers {
-            let profiles = profileDiscovery.discoverProfiles(
-                for: entry.bundleIdentifier)
-            guard profiles.count > 1 else { continue }
-            for profile in profiles {
-                let alreadyExists = browserManager.browsers.contains {
-                    $0.bundleIdentifier == entry.bundleIdentifier && $0.profileId == profile.id
+        Task { @MainActor in
+            var newEntries: [BrowserEntry] = []
+            for entry in browserManager.browsers {
+                let profiles = profileDiscovery.discoverProfiles(
+                    for: entry.bundleIdentifier)
+                guard profiles.count > 1 else { continue }
+                for profile in profiles {
+                    let alreadyExists = browserManager.browsers.contains {
+                        $0.bundleIdentifier == entry.bundleIdentifier && $0.profileId == profile.id
+                    }
+                    guard !alreadyExists else { continue }
+                    var profileEntry = BrowserEntry(
+                        bundleIdentifier: entry.bundleIdentifier,
+                        displayName: entry.displayName,
+                        enabled: true,
+                        position: browserManager.browsers.count + newEntries.count,
+                        profileId: profile.id,
+                        profileName: profile.name,
+                        source: .autoDetected
+                    )
+                    profileEntry.isInstalled = entry.isInstalled
+                    newEntries.append(profileEntry)
                 }
-                guard !alreadyExists else { continue }
-                var profileEntry = BrowserEntry(
-                    bundleIdentifier: entry.bundleIdentifier,
-                    displayName: "\(entry.displayName) — \(profile.name)",
-                    enabled: true,
-                    position: browserManager.browsers.count,
-                    profileId: profile.id,
-                    profileName: profile.name,
-                    source: .autoDetected
-                )
-                profileEntry.isInstalled = entry.isInstalled
-                browserManager.addBrowser(profileEntry)
+            }
+            if !newEntries.isEmpty {
+                browserManager.addBrowsers(newEntries)
             }
         }
     }
@@ -169,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         event: NSAppleEventDescriptor,
         reply: NSAppleEventDescriptor
     ) {
-        // Capture modifiers immediately to avoid race condition (§2.8)
+        // Capture modifiers immediately to avoid race condition
         let modifiers = NSEvent.modifierFlags
         guard let urlString = event.paramDescriptor(
             forKeyword: keyDirectObject)?.stringValue,
@@ -188,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // URL deduplication (§2.14)
+        // URL deduplication
         let urlKey = url.absoluteString
         let now = Date()
         if let lastRouted = recentlyRoutedURLs[urlKey],
@@ -205,17 +211,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Step 1: Global rewrites
         processedURL = urlRewriter.applyGlobalRewrites(to: processedURL)
 
-        // Step 2: Check mailto
-        if processedURL.scheme == "mailto" {
-            handleMailtoURL(processedURL)
-            return
+        // Step 2: Global UTM stripping before rule evaluation (per spec flow step 5)
+        if settingsStore.globalUTMStrippingEnabled {
+            processedURL = utmStripper.strip(processedURL)
         }
 
         // Step 3: Check force-picker from modifier click
         let forcePicker = forcePickerForNextURL
         forcePickerForNextURL = false
 
-        // Step 4: Evaluate rules (with source app context)
+        // Step 4: Check mailto (respects forcePicker and modifiers)
+        if processedURL.scheme == "mailto" {
+            handleMailtoURL(processedURL, forcePicker: forcePicker, modifiers: modifiers)
+            return
+        }
+
+        // Step 5: Evaluate rules (with source app context)
         if !forcePicker,
            let match = ruleEngine.evaluate(
                processedURL, sourceAppBundleId: sourceAppBundleId
@@ -223,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             processedURL = urlRewriter.applyRuleRewrites(
                 to: processedURL, rule: match)
 
-            // Apply UTM stripping: rule > browser > global (§2.11)
+            // Apply UTM stripping: rule > browser > global (already applied globally above)
             let matchedEntry = browserManager.browsers.first {
                 $0.bundleIdentifier == match.targetBundleId
             }
@@ -231,14 +242,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 processedURL = utmStripper.strip(processedURL)
             } else if let entry = matchedEntry, entry.stripUTMParams {
                 processedURL = utmStripper.strip(processedURL)
-            } else if settingsStore.globalUTMStrippingEnabled {
-                processedURL = utmStripper.strip(processedURL)
-            }
-
-            // Apply browser-specific rewrites (§2.5)
-            if let entry = matchedEntry {
-                processedURL = urlRewriter.applyBrowserRewrites(
-                    to: processedURL, browser: entry)
             }
 
             if let appURL = NSWorkspace.shared.urlForApplication(
@@ -250,17 +253,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         for: processedURL,
                         preselectedBundleId: match.targetBundleId)
                 case .holdShift:
-                    if modifiers.contains(.shift) {
+                    if modifiers.contains(.shift) || forcePicker {
                         showPicker(
                             for: processedURL,
                             preselectedBundleId: match.targetBundleId)
                     } else {
+                        // Apply browser-specific rewrites only for direct open
+                        if let entry = matchedEntry {
+                            processedURL = urlRewriter.applyBrowserRewrites(
+                                to: processedURL, browser: entry)
+                        }
                         openURL(processedURL, withAppAt: appURL,
                             profile: matchedEntry?.profileId,
                             bundleId: match.targetBundleId,
                             privateWindow: matchedEntry?.openInPrivateWindow ?? false)
                     }
                 case .smartFallback:
+                    // Apply browser-specific rewrites only for direct open
+                    if let entry = matchedEntry {
+                        processedURL = urlRewriter.applyBrowserRewrites(
+                            to: processedURL, browser: entry)
+                    }
                     openURL(processedURL, withAppAt: appURL,
                         profile: matchedEntry?.profileId,
                         bundleId: match.targetBundleId,
@@ -270,11 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Step 5: No rule matched or force picker — apply global UTM stripping
-        if settingsStore.globalUTMStrippingEnabled {
-            processedURL = utmStripper.strip(processedURL)
-        }
-
+        // Step 6: No rule matched or force picker
         switch settingsStore.activationMode {
         case .always, .smartFallback:
             showPicker(for: processedURL)
@@ -287,9 +296,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func handleMailtoURL(_ url: URL) {
+    private func handleMailtoURL(
+        _ url: URL, forcePicker: Bool, modifiers: NSEvent.ModifierFlags
+    ) {
         let clients = browserManager.emailClients.filter(\.enabled)
-        // Respect activation mode (§2.9)
+
+        if forcePicker || (settingsStore.activationMode == .holdShift && modifiers.contains(.shift)) {
+            showPicker(for: url, isEmail: true)
+            return
+        }
+
         if settingsStore.activationMode != .always,
            clients.count == 1, let client = clients.first,
            let appURL = NSWorkspace.shared.urlForApplication(
@@ -305,9 +321,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for url: URL, preselectedBundleId: String? = nil,
         isEmail: Bool = false
     ) {
-        let entries = isEmail
-            ? browserManager.emailClients.filter(\.enabled)
-            : browserManager.browsers.filter(\.enabled)
+        let entries: [BrowserEntry]
+        if isEmail {
+            entries = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
+        } else {
+            entries = browserManager.browsers.filter {
+                $0.enabled && $0.isInstalled &&
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier) != nil
+            }
+        }
 
         guard !entries.isEmpty else {
             openInDefaultBrowser(url)
@@ -325,10 +347,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 entries: entries, url: url, isEmail: isEmail)
         }
 
+        // Clamp to valid range
+        let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
+
         pickerPanel?.close()
         pickerPanel = PickerPanel(
             url: url, entries: entries,
-            preselectedIndex: preselectedIndex,
+            preselectedIndex: clampedIndex,
             settingsStore: settingsStore,
             onSelect: { [weak self] entry, finalURL in
                 self?.handlePickerSelection(
@@ -383,7 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
 
-        // Combine profile + private window arguments (§2.2)
+        // Combine profile + private window arguments
         var arguments: [String] = []
         if let profile, let bundleId {
             arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
@@ -395,7 +420,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !arguments.isEmpty { config.arguments = arguments }
 
-        // Use async version for @MainActor safety (§2.12)
         Task {
             do {
                 _ = try await NSWorkspace.shared.open(
@@ -408,7 +432,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openInDefaultBrowser(_ url: URL) {
-        // Always target a specific app to avoid recursion (§2.13)
         guard let first = browserManager.browsers.first(where: \.enabled),
               let appURL = NSWorkspace.shared.urlForApplication(
                   withBundleIdentifier: first.bundleIdentifier
@@ -478,7 +501,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore: settingsStore
         ) { [weak self] in
             self?.forcePickerForNextURL = true
-            // Auto-expire after 200ms (§2.1)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.forcePickerForNextURL = false
             }
@@ -487,11 +509,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showPreferences() {
-        NSApp.activate(ignoringOtherApps: true)
-        if #available(macOS 14, *) {
-            NSApp.sendAction(
-                Selector(("showSettingsWindow:")), to: nil, from: nil)
-        }
+        NSApp.activate()
+        NSApp.sendAction(
+            Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 
     func applicationShouldHandleReopen(
