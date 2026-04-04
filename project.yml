@@ -1,0 +1,51 @@
+name: Yojam
+options:
+  bundleIdPrefix: com.yojam
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  Yojam:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Yojam
+        excludes:
+          - Resources/Info.plist
+          - Resources/Yojam.entitlements
+    info:
+      path: Sources/Yojam/Resources/Info.plist
+    entitlements:
+      path: Sources/Yojam/Resources/Yojam.entitlements
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Yojam/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/Yojam/Resources/Yojam.entitlements
+        CODE_SIGN_STYLE: Automatic
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app
+        PRODUCT_NAME: Yojam
+        GENERATE_INFOPLIST_FILE: NO
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+
+  YojamTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/YojamTests
+    dependencies:
+      - target: Yojam
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Yojam.app/Contents/MacOS/Yojam"
+        BUNDLE_LOADER: "$(TEST_HOST)"

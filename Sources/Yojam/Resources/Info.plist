@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <string>com.yojam.app</string>
     <key>CFBundleName</key>
     <string>Yojam</string>
     <key>CFBundleDisplayName</key>
@@ -17,6 +17,8 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>Yojam</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
