@@ -76,9 +76,9 @@ struct AdvancedTab: View {
 
     private var utmParametersSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemeSectionTitle(text: "UTM Parameter List")
+            ThemeSectionTitle(text: "Tracker Parameter List")
             VStack(alignment: .leading, spacing: 8) {
-                Text("Parameters stripped when UTM stripping is enabled:")
+                Text("Parameters stripped when tracking parameter removal is enabled:")
                     .font(.system(size: 11))
                     .foregroundColor(Theme.textSecondary)
                 TextEditor(

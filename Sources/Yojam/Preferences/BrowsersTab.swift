@@ -7,6 +7,7 @@ struct BrowsersTab: View {
     @State private var showingFilePicker = false
     @State private var expandedBrowserId: UUID?
     @State private var profileDiscovery = ProfileDiscovery()
+    @State private var draggedBrowserId: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,6 +62,15 @@ struct BrowsersTab: View {
                 ForEach(Array(browserManager.browsers.enumerated()), id: \.element.id) { index, browser in
                     VStack(spacing: 0) {
                         browserRow(browser: browser, index: index)
+                            .onDrag {
+                                draggedBrowserId = browser.id
+                                return NSItemProvider(object: browser.id.uuidString as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: BrowserDropDelegate(
+                                currentId: browser.id,
+                                draggedId: $draggedBrowserId,
+                                browserManager: browserManager
+                            ))
                         if expandedBrowserId == browser.id {
                             browserDetailView(index: index)
                         }
@@ -79,7 +89,8 @@ struct BrowsersTab: View {
             Text("\u{22EE}\u{22EE}")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textSecondary)
-                .frame(width: 20)
+                .frame(width: 24, height: 36)
+                .contentShape(Rectangle())
                 .padding(.trailing, 8)
 
             // Icon
@@ -89,28 +100,27 @@ struct BrowsersTab: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .padding(.trailing, 12)
 
-            // Name
-            VStack(alignment: .leading, spacing: 1) {
-                Text(browser.fullDisplayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Theme.textPrimary)
-                    .lineLimit(1)
-            }
+            // Name — truncate long names so controls stay put
+            Text(browser.fullDisplayName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer()
+            Spacer(minLength: 16)
 
-            // Inline options
-            HStack(spacing: 16) {
-                inlineCheckbox("Incognito", isOn: Binding(
+            // Inline options — fixed width so they never shift
+            HStack(spacing: 12) {
+                inlineCheckbox("Private", isOn: Binding(
                     get: { browser.openInPrivateWindow },
                     set: { browserManager.browsers[index].openInPrivateWindow = $0; browserManager.save() }
                 ))
-                inlineCheckbox("Strip UTM", isOn: Binding(
+                inlineCheckbox("Strip Trackers", isOn: Binding(
                     get: { browser.stripUTMParams },
                     set: { browserManager.browsers[index].stripUTMParams = $0; browserManager.save() }
                 ))
 
-                // Expand/edit button
+                // Expand/edit button — generous hit target
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         expandedBrowserId = expandedBrowserId == browser.id ? nil : browser.id
@@ -120,15 +130,21 @@ struct BrowsersTab: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(Theme.textSecondary)
                         .rotationEffect(.degrees(expandedBrowserId == browser.id ? 180 : 0))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Theme.bgHover.opacity(0.001)) // invisible but hittable
+                        )
                 }
                 .buttonStyle(.plain)
-                .frame(width: 20)
 
                 ThemeToggle(isOn: Binding(
                     get: { browser.enabled },
                     set: { browserManager.browsers[index].enabled = $0; browserManager.save() }
                 ))
             }
+            .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -273,6 +289,8 @@ struct BrowsersTab: View {
                 Text(label)
                     .font(.system(size: 11))
                     .foregroundColor(Theme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
             }
         }
         .buttonStyle(.plain)
@@ -289,5 +307,40 @@ struct BrowsersTab: View {
                   !knownIds.contains(bundleId) else { continue }
             browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
         }
+    }
+}
+
+// MARK: - Drag & Drop Delegate
+
+struct BrowserDropDelegate: DropDelegate {
+    let currentId: UUID
+    @Binding var draggedId: UUID?
+    let browserManager: BrowserManager
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedId = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != currentId else { return }
+        guard let fromIndex = browserManager.browsers.firstIndex(where: { $0.id == draggedId }),
+              let toIndex = browserManager.browsers.firstIndex(where: { $0.id == currentId })
+        else { return }
+        if fromIndex != toIndex {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                browserManager.moveBrowser(
+                    from: IndexSet(integer: fromIndex),
+                    to: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
     }
 }

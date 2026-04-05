@@ -12,6 +12,7 @@ struct PipelineTab: View {
     @State private var rewriteRules: [URLRewriteRule] = []
     @State private var showingAddRule = false
     @State private var showingAddRewrite = false
+    @State private var showingTrackerList = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -51,6 +52,9 @@ struct PipelineTab: View {
                     settingsStore.saveGlobalRewriteRules(rewriteRules)
                 },
                 onDismiss: { showingAddRewrite = false })
+        }
+        .sheet(isPresented: $showingTrackerList) {
+            TrackerParameterSheet(settingsStore: settingsStore, onDismiss: { showingTrackerList = false })
         }
         .alert("Error", isPresented: Binding(
             get: { errorMessage != nil },
@@ -138,7 +142,7 @@ struct PipelineTab: View {
             ThemePanel {
                 ThemePanelRow(isLast: true) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Strip Analytics Parameters")
+                        Text("Strip Tracking Parameters")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
                         Text("Automatically remove tracking parameters (utm_*, gclid, fbclid) from all URLs before routing.")
@@ -147,7 +151,7 @@ struct PipelineTab: View {
                     }
                     Spacer()
                     ThemeButton("Edit List...") {
-                        // Navigate to advanced tab UTM list - for now, this is handled in Advanced
+                        showingTrackerList = true
                     }
                     .padding(.trailing, 8)
                     ThemeToggle(isOn: $settingsStore.globalUTMStrippingEnabled)
@@ -340,7 +344,7 @@ struct PipelineTab: View {
         if settingsStore.globalUTMStrippingEnabled {
             let stripped = UTMStripper(settingsStore: settingsStore).strip(processedURL)
             let didStrip = stripped.absoluteString != processedURL.absoluteString
-            nodes.append(PipelineNode(label: "Strip UTM", icon: "xmark.rectangle", isActive: didStrip))
+            nodes.append(PipelineNode(label: "Strip Trackers", icon: "xmark.rectangle", isActive: didStrip))
             nodes.append(.arrow)
             processedURL = stripped
         }
@@ -446,9 +450,11 @@ struct AddRuleSheet: View {
     private var installedApps: [(String, String)] {
         let handlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "https://example.com")!)
+        var seen = Set<String>()
         return handlers.compactMap { url in
             guard let bundle = Bundle(url: url),
-                  let bundleId = bundle.bundleIdentifier else { return nil }
+                  let bundleId = bundle.bundleIdentifier,
+                  seen.insert(bundleId).inserted else { return nil }
             let name = bundle.infoDictionary?["CFBundleName"] as? String
                 ?? url.deletingPathExtension().lastPathComponent
             return (bundleId, name)
@@ -524,7 +530,7 @@ struct AddRuleSheet: View {
                                     .labelsHidden()
                             }
                         }
-                        fieldRow("Strip UTM") {
+                        fieldRow("Strip Trackers") {
                             ThemeToggle(isOn: $stripUTMParams)
                         }
                     }
@@ -665,5 +671,72 @@ struct AddRewriteSheet: View {
                 .foregroundColor(Theme.textSecondary)
             content()
         }
+    }
+}
+
+// MARK: - Tracker Parameter List Sheet
+
+struct TrackerParameterSheet: View {
+    @ObservedObject var settingsStore: SettingsStore
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Tracker Parameter List")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(Theme.textInverse)
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            Divider().background(Theme.borderSubtle)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("One parameter per line. These are stripped from URLs when tracking parameter removal is enabled.")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+
+                TextEditor(
+                    text: Binding(
+                        get: {
+                            settingsStore.utmStripList.joined(separator: "\n")
+                        },
+                        set: {
+                            settingsStore.utmStripList = $0
+                                .components(separatedBy: .newlines)
+                                .map { $0.trimmingCharacters(in: .whitespaces) }
+                                .filter { !$0.isEmpty }
+                        }
+                    )
+                )
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Theme.textPrimary)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Theme.bgInput)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.radiusSm)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                )
+            }
+            .padding(24)
+
+            Divider().background(Theme.borderSubtle)
+            HStack {
+                ThemeButton("Reset to Defaults") {
+                    settingsStore.utmStripList = UTMStripper.defaultParameters
+                }
+                Spacer()
+                ThemeButton("Done", isPrimary: true) { onDismiss() }
+            }
+            .padding(16)
+        }
+        .frame(width: 420, height: 400)
+        .background(Theme.bgApp)
+        .preferredColorScheme(.dark)
     }
 }
