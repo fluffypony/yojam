@@ -174,7 +174,7 @@ final class PickerPanel: NSPanel {
             pickerSize: frame.size, cursorTarget: cursorTarget)
         setFrameOrigin(origin)
 
-        orderFrontRegardless()
+        NSApp.activate()
         PickerAnimator.animateIn(panel: self)
         makeKey()
 
