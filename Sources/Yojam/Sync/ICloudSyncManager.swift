@@ -11,6 +11,10 @@ final class ICloudSyncManager {
     // Suppress push-back for 3 seconds after a pull to outlast the 2-second debounce
     private let pullSuppressionWindow: TimeInterval = 3.0
 
+    // §4: Live references for updating in-memory state after remote changes
+    weak var browserManager: BrowserManager?
+    weak var ruleEngine: RuleEngine?
+
     init(settingsStore: SettingsStore) { self.settingsStore = settingsStore }
 
     func startSync() {
@@ -26,8 +30,10 @@ final class ICloudSyncManager {
         kvStore.synchronize()
         handleRemoteChange()
 
-        // 3. Push local state
-        pushToCloud()
+        // §5: Schedule initial push after suppression window so it isn't blocked
+        DispatchQueue.main.asyncAfter(deadline: .now() + pullSuppressionWindow + 0.1) { [weak self] in
+            self?.pushToCloud()
+        }
 
         // 4. Start observing local changes
         cancellable = settingsStore.objectWillChange
@@ -42,11 +48,28 @@ final class ICloudSyncManager {
     }
 
     func pushToCloud() {
-        guard settingsStore.iCloudSyncEnabled,
-              Date().timeIntervalSince(lastPullTime) > pullSuppressionWindow else { return }
+        guard settingsStore.iCloudSyncEnabled else { return }
+
+        // §6: Instead of dropping the push, reschedule it after the suppression window
+        let timeSincePull = Date().timeIntervalSince(lastPullTime)
+        guard timeSincePull > pullSuppressionWindow else {
+            let delay = pullSuppressionWindow - timeSincePull + 0.1
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.pushToCloud()
+            }
+            return
+        }
+
         let encoder = JSONEncoder()
+
+        // §26: Strip customIconData before syncing to avoid iCloud KV store quota exhaustion
         do {
-            kvStore.set(try encoder.encode(settingsStore.loadBrowsers()), forKey: "sync_browsers")
+            let browsersToSync = settingsStore.loadBrowsers().map { entry -> BrowserEntry in
+                var copy = entry
+                copy.customIconData = nil
+                return copy
+            }
+            kvStore.set(try encoder.encode(browsersToSync), forKey: "sync_browsers")
         } catch {
             YojamLogger.shared.log("iCloud push browsers failed: \(error.localizedDescription)")
         }
@@ -62,6 +85,18 @@ final class ICloudSyncManager {
             YojamLogger.shared.log("iCloud push rewrites failed: \(error.localizedDescription)")
         }
         kvStore.set(settingsStore.utmStripList, forKey: "sync_utmStripList")
+
+        // §50: Sync email clients
+        do {
+            let emailToSync = settingsStore.loadEmailClients().map { entry -> BrowserEntry in
+                var copy = entry
+                copy.customIconData = nil
+                return copy
+            }
+            kvStore.set(try encoder.encode(emailToSync), forKey: "sync_emailClients")
+        } catch {
+            YojamLogger.shared.log("iCloud push email clients failed: \(error.localizedDescription)")
+        }
 
         // Sync general preferences
         kvStore.set(settingsStore.activationMode.rawValue, forKey: "sync_activationMode")
@@ -87,6 +122,9 @@ final class ICloudSyncManager {
                 let merged = SyncConflictResolver.mergeBrowserLists(
                     local: settingsStore.loadBrowsers(), remote: remote)
                 settingsStore.saveBrowsers(merged)
+                // §4: Update live in-memory state
+                browserManager?.browsers = merged
+                browserManager?.refreshProfileSuggestions()
             } catch {
                 YojamLogger.shared.log("iCloud pull browsers failed: \(error.localizedDescription)")
             }
@@ -101,6 +139,8 @@ final class ICloudSyncManager {
                 var allRules = localBuiltIns
                 allRules.append(contentsOf: merged)
                 settingsStore.saveRules(allRules)
+                // §4: Update live in-memory state
+                ruleEngine?.rules = allRules
             } catch {
                 YojamLogger.shared.log("iCloud pull rules failed: \(error.localizedDescription)")
             }
@@ -118,6 +158,19 @@ final class ICloudSyncManager {
         }
         if let list = kvStore.array(forKey: "sync_utmStripList") as? [String] {
             settingsStore.utmStripList = list
+        }
+
+        // §50: Pull email clients
+        if let data = kvStore.data(forKey: "sync_emailClients") {
+            do {
+                let remote = try decoder.decode([BrowserEntry].self, from: data)
+                let merged = SyncConflictResolver.mergeBrowserLists(
+                    local: settingsStore.loadEmailClients(), remote: remote)
+                settingsStore.saveEmailClients(merged)
+                browserManager?.emailClients = merged
+            } catch {
+                YojamLogger.shared.log("iCloud pull email clients failed: \(error.localizedDescription)")
+            }
         }
 
         // Pull general preferences

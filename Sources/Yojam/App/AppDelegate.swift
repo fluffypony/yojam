@@ -119,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsStore.iCloudSyncEnabled {
             iCloudSyncManager = ICloudSyncManager(
                 settingsStore: settingsStore)
+            iCloudSyncManager?.browserManager = browserManager
+            iCloudSyncManager?.ruleEngine = ruleEngine
             iCloudSyncManager?.startSync()
         }
 
@@ -132,6 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if enabled {
                 self.iCloudSyncManager = ICloudSyncManager(settingsStore: self.settingsStore)
+                self.iCloudSyncManager?.browserManager = self.browserManager
+                self.iCloudSyncManager?.ruleEngine = self.ruleEngine
                 self.iCloudSyncManager?.startSync()
             } else {
                 self.iCloudSyncManager?.stopSync()
