@@ -150,6 +150,9 @@ struct BrowsersTab: View {
                         .font(.system(size: 11))
                         .foregroundColor(Theme.textSecondary)
                     ThemeTextField(placeholder: "Name", text: $browserManager.browsers[index].displayName)
+                        .onChange(of: browserManager.browsers[index].displayName) { _, _ in
+                            browserManager.save()
+                        }
                 }
 
                 let profiles = profileDiscovery.discoverProfiles(
@@ -159,7 +162,15 @@ struct BrowsersTab: View {
                         Text("Profile")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
-                        Picker("", selection: $browserManager.browsers[index].profileId) {
+                        Picker("", selection: Binding(
+                            get: { browserManager.browsers[index].profileId },
+                            set: { newId in
+                                browserManager.browsers[index].profileId = newId
+                                browserManager.browsers[index].profileName =
+                                    profiles.first(where: { $0.id == newId })?.name
+                                browserManager.save()
+                            }
+                        )) {
                             Text("None").tag(nil as String?)
                             ForEach(profiles) { profile in
                                 Text(profile.name).tag(profile.id as String?)
