@@ -52,11 +52,19 @@ struct BrowsersTab: View {
                 let name = bundle.infoDictionary?["CFBundleName"]
                     as? String
                     ?? url.deletingPathExtension().lastPathComponent
+                // Check if this app handles URLs; if not, set a default
+                // customLaunchArgs so the URL is passed on the CLI.
+                let handlesURLs = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: bundleId) != nil
+                    && NSWorkspace.shared.urlsForApplications(
+                        toOpen: URL(string: "https://example.com")!)
+                        .contains(where: { Bundle(url: $0)?.bundleIdentifier == bundleId })
                 browserManager.addBrowser(BrowserEntry(
                     bundleIdentifier: bundleId,
                     displayName: name,
                     position: browserManager.browsers.count,
-                    source: .manual))
+                    source: .manual,
+                    customLaunchArgs: handlesURLs ? nil : "$URL"))
             }
         }
     }
@@ -186,6 +194,26 @@ struct BrowsersTab: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                     }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Custom Launch Args")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+                HStack(spacing: 8) {
+                    ThemeTextField(
+                        placeholder: "e.g. $URL or --url $URL",
+                        text: Binding(
+                            get: { browserManager.browsers[index].customLaunchArgs ?? "" },
+                            set: {
+                                browserManager.browsers[index].customLaunchArgs = $0.isEmpty ? nil : $0
+                                browserManager.save()
+                            }),
+                        isMono: true)
+                    Text("Use $URL for the link")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textSecondary)
                 }
             }
 

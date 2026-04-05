@@ -5,6 +5,7 @@ import SwiftUI
 final class PickerPanel: NSPanel {
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var deactivationObserver: NSObjectProtocol?
     private let onDismiss: () -> Void
 
     init(url: URL, entries: [BrowserEntry], preselectedIndex: Int,
@@ -113,33 +114,37 @@ final class PickerPanel: NSPanel {
 
     private var cursorTarget: NSPoint = .zero
 
+    // Footer height: 6(spacing) + 16(name) + 6(spacing) + 14(url) + 12(bottom pad) = 54
+    // Top padding: 12. Total non-content = 66.
+    private static let footerAllowance: CGFloat = 66
+
     // MARK: - Layout Metrics
 
     static func panelSize(for layout: PickerLayout, entryCount: Int) -> NSSize {
         let count = CGFloat(entryCount)
+        let footer = footerAllowance
         switch layout {
         case .smallHorizontal:
-            // 36px icons, 6px spacing, 12px padding each side
+            // number(14) + gap(2) + icon(36) = 52
             return NSSize(
                 width: count * 42 - 6 + 24,
-                height: 36 + 60)
+                height: 52 + footer)
         case .bigHorizontal:
-            // 56px icons + 16px label, 10px spacing, 16px padding each side
+            // number(14) + gap(2) + icon(56) + gap(4) + label(14) = 90
             return NSSize(
                 width: count * 76 - 10 + 32,
-                height: 56 + 16 + 60)
+                height: 90 + footer)
         case .smallVertical:
-            // 24px icon, 32px row height, compact
+            // 30px row height + 1px spacing
             return NSSize(
                 width: 200,
-                height: min(count * 32 + 52, 440))
+                height: min(count * 31 + footer, 440))
         case .bigVertical:
-            // 40px icon, 48px row height
+            // 48px row height + 2px spacing
             return NSSize(
                 width: 240,
-                height: min(count * 48 + 60, 540))
+                height: min(count * 50 + footer, 540))
         case .auto:
-            // Should not reach here; resolved before calling
             return NSSize(width: 200, height: 100)
         }
     }
@@ -151,18 +156,20 @@ final class PickerPanel: NSPanel {
         let idx = CGFloat(max(0, min(preselectedIndex, entryCount - 1)))
         switch layout {
         case .smallHorizontal:
-            // 12px padding + idx * 42px stride + 18px icon center
-            return NSPoint(x: 12 + idx * 42 + 18, y: panelSize.height / 2)
+            // 12(pad) + 14(number) + 2(gap) + 18(icon center) = 46 from top
+            let yFromTop: CGFloat = 46
+            return NSPoint(x: 12 + idx * 42 + 18, y: panelSize.height - yFromTop)
         case .bigHorizontal:
-            // 16px padding + idx * 76px stride + 28px icon center
-            return NSPoint(x: 16 + idx * 76 + 28, y: panelSize.height / 2)
+            // 12(pad) + 14(number) + 2(gap) + 28(icon center) = 56 from top
+            let yFromTop: CGFloat = 56
+            return NSPoint(x: 16 + idx * 76 + 33, y: panelSize.height - yFromTop)
         case .smallVertical:
-            // 12px top padding + idx * 32px row height + 16px center
-            let yFromTop = 12 + idx * 32 + 16
+            // 12(pad) + idx * 31(row stride) + 15(row center)
+            let yFromTop = 12 + idx * 31 + 15
             return NSPoint(x: panelSize.width / 2, y: panelSize.height - yFromTop)
         case .bigVertical:
-            // 12px top padding + idx * 48px row height + 24px center
-            let yFromTop = 12 + idx * 48 + 24
+            // 12(pad) + idx * 50(row stride) + 25(row center)
+            let yFromTop = 12 + idx * 50 + 25
             return NSPoint(x: panelSize.width / 2, y: panelSize.height - yFromTop)
         case .auto:
             return NSPoint(x: panelSize.width / 2, y: panelSize.height / 2)
@@ -192,6 +199,14 @@ final class PickerPanel: NSPanel {
             }
             return event
         }
+
+        // Dismiss when the user Cmd+Tabs away
+        deactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.dismissAnimated()
+        }
     }
 
     func dismissAnimated() {
@@ -202,6 +217,10 @@ final class PickerPanel: NSPanel {
         if let local = localMonitor {
             NSEvent.removeMonitor(local)
             localMonitor = nil
+        }
+        if let obs = deactivationObserver {
+            NotificationCenter.default.removeObserver(obs)
+            deactivationObserver = nil
         }
         PickerAnimator.animateOut(panel: self) { [weak self] in
             self?.onDismiss()

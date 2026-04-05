@@ -17,6 +17,7 @@ final class BrowserManager: ObservableObject {
         if UserDefaults.standard.data(forKey: "browsers") == nil { performInitialDetection() }
         if UserDefaults.standard.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
         deduplicateProfileEntries()
+        refreshProfileSuggestions()
     }
 
     /// Remove duplicate profile entries and profile entries with empty names
@@ -124,6 +125,7 @@ final class BrowserManager: ObservableObject {
     func confirmSuggested(_ entry: BrowserEntry) {
         suggestedBrowsers.removeAll { $0.id == entry.id }
         addBrowser(entry)
+        refreshProfileSuggestions()
     }
 
     func removeBrowser(at index: Int) {
@@ -168,6 +170,37 @@ final class BrowserManager: ObservableObject {
         if let idx = list.firstIndex(where: { $0.id == entry.id }) {
             UserDefaults.standard.set(idx, forKey: key)
         }
+    }
+
+    /// Regenerate suggested browser entries for profiles not yet in the active list.
+    func refreshProfileSuggestions() {
+        let discovery = ProfileDiscovery()
+        // Collect all (bundleId, profileId) pairs already active
+        let activeKeys = Set(browsers.map { "\($0.bundleIdentifier)|\($0.profileId ?? "")" })
+
+        // For each unique bundle ID in the active list, discover profiles
+        let activeBundleIds = Set(browsers.map(\.bundleIdentifier))
+        var profileSuggestions: [BrowserEntry] = []
+        for bundleId in activeBundleIds {
+            let profiles = discovery.discoverProfiles(for: bundleId)
+            let named = profiles.filter { !$0.name.isEmpty }
+            guard named.count > 1 else { continue }
+            let baseName = browsers.first(where: { $0.bundleIdentifier == bundleId })?.displayName ?? bundleId
+            for profile in named {
+                let key = "\(bundleId)|\(profile.id)"
+                if !activeKeys.contains(key) {
+                    profileSuggestions.append(BrowserEntry(
+                        bundleIdentifier: bundleId,
+                        displayName: baseName,
+                        profileId: profile.id,
+                        profileName: profile.name,
+                        source: .suggested))
+                }
+            }
+        }
+
+        // Merge: keep non-profile suggestions + add fresh profile suggestions
+        suggestedBrowsers = suggestedBrowsers.filter { $0.profileId == nil } + profileSuggestions
     }
 
     func handleAppInstalled(bundleId: String, appURL: URL) {

@@ -10,6 +10,9 @@ struct PickerContentView: View {
     let onDismiss: () -> Void
     @FocusState private var isFocused: Bool
 
+    private static let selectionColor = Color.white.opacity(0.15)
+    private static let selectionBorder = Color.white.opacity(0.5)
+
     var body: some View {
         VStack(spacing: 6) {
             switch layout {
@@ -51,15 +54,24 @@ struct PickerContentView: View {
         }
     }
 
-    // MARK: - Small Horizontal (icon-only strip)
+    // MARK: - Small Horizontal (icon strip with number badges)
 
     private var smallHorizontalLayout: some View {
         HStack(spacing: 6) {
             ForEach(Array(entries.enumerated()), id: \.element.id) {
                 index, entry in
-                PickerIconView(
-                    entry: entry, isSelected: index == selectedIndex, size: 36
-                )
+                VStack(spacing: 2) {
+                    if index < 9 {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text(" ").font(.system(size: 10))
+                    }
+                    PickerIconView(
+                        entry: entry, isSelected: index == selectedIndex, size: 36
+                    )
+                }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { if $0 { selectedIndex = index } }
                 .accessibilityLabel("Open in \(entry.fullDisplayName)")
@@ -67,21 +79,30 @@ struct PickerContentView: View {
         }
     }
 
-    // MARK: - Big Horizontal (icon + label below)
+    // MARK: - Big Horizontal (icon + label + number badge)
 
     private var bigHorizontalLayout: some View {
         HStack(spacing: 10) {
             ForEach(Array(entries.enumerated()), id: \.element.id) {
                 index, entry in
-                VStack(spacing: 4) {
-                    PickerIconView(
-                        entry: entry, isSelected: index == selectedIndex, size: 56
-                    )
-                    Text(entry.displayName)
-                        .font(.system(size: 10))
-                        .foregroundStyle(index == selectedIndex ? .primary : .secondary)
-                        .lineLimit(1)
-                        .frame(width: 66)
+                VStack(spacing: 2) {
+                    if index < 9 {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text(" ").font(.system(size: 10))
+                    }
+                    VStack(spacing: 4) {
+                        PickerIconView(
+                            entry: entry, isSelected: index == selectedIndex, size: 56
+                        )
+                        Text(entry.displayName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(index == selectedIndex ? .primary : .secondary)
+                            .lineLimit(1)
+                            .frame(width: 66)
+                    }
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { if $0 { selectedIndex = index } }
@@ -114,14 +135,14 @@ struct PickerContentView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 4)
                             .fill(index == selectedIndex
-                                  ? Color.accentColor.opacity(0.15) : .clear)
+                                  ? Self.selectionColor : .clear)
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { if $0 { selectedIndex = index } }
                     .accessibilityLabel("Open in \(entry.fullDisplayName)")
                 }
             }
-        }.frame(maxHeight: 380)
+        }.frame(maxHeight: 370)
     }
 
     // MARK: - Big Vertical (spacious list)
@@ -148,14 +169,14 @@ struct PickerContentView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(index == selectedIndex
-                                  ? Color.accentColor.opacity(0.15) : .clear)
+                                  ? Self.selectionColor : .clear)
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { if $0 { selectedIndex = index } }
                     .accessibilityLabel("Open in \(entry.fullDisplayName)")
                 }
             }
-        }.frame(maxHeight: 460)
+        }.frame(maxHeight: 470)
     }
 
     // MARK: - Navigation
@@ -202,7 +223,7 @@ struct PickerIconView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: size * 0.2)
                     .strokeBorder(
-                        Color.accentColor,
+                        Color.white.opacity(0.6),
                         lineWidth: isSelected ? 2 : 0)
             )
             .scaleEffect(isSelected ? 1.08 : 1.0)

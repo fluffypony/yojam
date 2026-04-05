@@ -16,6 +16,10 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
     var lastSeenAt: Date?
     var lastModifiedAt: Date?
     var customIconData: Data?
+    /// Custom CLI launch arguments. Use $URL as a placeholder for the URL.
+    /// When set, the app is launched via Process with these args instead of
+    /// NSWorkspace URL opening. Examples: "$URL", "--url $URL", "--browse $URL"
+    var customLaunchArgs: String?
 
     init(
         id: UUID = UUID(),
@@ -32,7 +36,8 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         isInstalled: Bool = true,
         lastSeenAt: Date? = Date(),
         lastModifiedAt: Date? = nil,
-        customIconData: Data? = nil
+        customIconData: Data? = nil,
+        customLaunchArgs: String? = nil
     ) {
         self.id = id
         self.bundleIdentifier = bundleIdentifier
@@ -49,6 +54,7 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         self.lastSeenAt = lastSeenAt
         self.lastModifiedAt = lastModifiedAt
         self.customIconData = customIconData
+        self.customLaunchArgs = customLaunchArgs
     }
 
     var fullDisplayName: String {

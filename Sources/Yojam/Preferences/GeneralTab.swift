@@ -254,11 +254,24 @@ struct GeneralTab: View {
                                 .foregroundColor(Theme.textSecondary)
                         }
                         Spacer()
-                        HStack(spacing: 8) {
-                            Text("\(settingsStore.recentURLRetentionMinutes) min")
-                                .font(.system(size: 13, design: .monospaced))
+                        HStack(spacing: 6) {
+                            TextField("", value: $settingsStore.recentURLRetentionMinutes, format: .number)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12, design: .monospaced))
                                 .foregroundColor(Theme.textPrimary)
-                                .frame(width: 60, alignment: .trailing)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .frame(width: 70)
+                                .background(Theme.bgInput)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.radiusSm)
+                                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                                )
+                                .multilineTextAlignment(.trailing)
+                            Text("min")
+                                .font(.system(size: 12))
+                                .foregroundColor(Theme.textSecondary)
                             Stepper("", value: $settingsStore.recentURLRetentionMinutes, in: 1...1440)
                                 .labelsHidden()
                         }

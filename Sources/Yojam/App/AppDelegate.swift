@@ -295,7 +295,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         openURL(processedURL, withAppAt: appURL,
                             profile: matchedEntry?.profileId,
                             bundleId: match.targetBundleId,
-                            privateWindow: matchedEntry?.openInPrivateWindow ?? false)
+                            privateWindow: matchedEntry?.openInPrivateWindow ?? false,
+                            customLaunchArgs: matchedEntry?.customLaunchArgs)
                     }
                 case .smartFallback:
                     // Apply browser-specific rewrites only for direct open
@@ -426,14 +427,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             finalURL, withAppAt: appURL,
             profile: entry.profileId,
             bundleId: entry.bundleIdentifier,
-            privateWindow: entry.openInPrivateWindow)
+            privateWindow: entry.openInPrivateWindow,
+            customLaunchArgs: entry.customLaunchArgs)
     }
 
     func openURL(
         _ url: URL, withAppAt appURL: URL,
         profile: String? = nil, bundleId: String? = nil,
-        privateWindow: Bool = false
+        privateWindow: Bool = false,
+        customLaunchArgs: String? = nil
     ) {
+        // Custom CLI launch: run the app executable with user-defined args
+        if let template = customLaunchArgs, !template.isEmpty {
+            let executablePath = appURL.appendingPathComponent("Contents/MacOS")
+            // Find the actual executable inside the .app bundle
+            let execName: String
+            if let bundle = Bundle(url: appURL),
+               let exec = bundle.executableURL?.lastPathComponent {
+                execName = exec
+            } else {
+                execName = appURL.deletingPathExtension().lastPathComponent
+            }
+            let execURL = executablePath.appendingPathComponent(execName)
+
+            let args = template
+                .replacingOccurrences(of: "$URL", with: url.absoluteString)
+                .components(separatedBy: " ")
+                .filter { !$0.isEmpty }
+
+            let process = Process()
+            process.executableURL = execURL
+            process.arguments = args
+            do {
+                try process.run()
+            } catch {
+                YojamLogger.shared.log(
+                    "Custom launch failed: \(error.localizedDescription)")
+            }
+            return
+        }
+
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
 
@@ -480,7 +513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             processedURL, withAppAt: appURL,
             profile: first.profileId,
             bundleId: first.bundleIdentifier,
-            privateWindow: first.openInPrivateWindow)
+            privateWindow: first.openInPrivateWindow,
+            customLaunchArgs: first.customLaunchArgs)
     }
 
     private func resolveDefaultIndex(
