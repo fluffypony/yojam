@@ -391,7 +391,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSPasteboard.general.setString(
                     url.absoluteString, forType: .string)
             },
-            onDismiss: { [weak self] in self?.pickerPanel = nil })
+            onDismiss: { [weak self] in
+                self?.pickerPanel = nil
+                // Revert to .accessory if preferences isn't open,
+                // so the picker's NSApp.activate() doesn't leave
+                // the app icon lingering in Cmd+Tab.
+                self?.checkWindowServerAndHide()
+            })
         pickerPanel?.showAtCursor()
     }
 
