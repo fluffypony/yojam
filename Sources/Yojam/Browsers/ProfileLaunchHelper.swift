@@ -16,6 +16,10 @@ enum ProfileLaunchHelper {
         }
     }
 
+    static func supportsPrivateWindow(browserBundleId: String) -> Bool {
+        !privateWindowArguments(browserBundleId: browserBundleId).isEmpty
+    }
+
     static func privateWindowArguments(browserBundleId: String) -> [String] {
         switch browserBundleId {
         case "com.google.Chrome", "com.brave.Browser", "org.chromium.Chromium",

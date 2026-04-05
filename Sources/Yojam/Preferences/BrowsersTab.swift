@@ -101,10 +101,12 @@ struct BrowsersTab: View {
 
             // Inline options — fixed width so they never shift
             HStack(spacing: 12) {
-                inlineCheckbox("Private", isOn: Binding(
-                    get: { browser.openInPrivateWindow },
-                    set: { browserManager.browsers[index].openInPrivateWindow = $0; browserManager.save() }
-                ))
+                if ProfileLaunchHelper.supportsPrivateWindow(browserBundleId: browser.bundleIdentifier) {
+                    inlineCheckbox("Private", isOn: Binding(
+                        get: { browser.openInPrivateWindow },
+                        set: { browserManager.browsers[index].openInPrivateWindow = $0; browserManager.save() }
+                    ))
+                }
                 inlineCheckbox("Strip Trackers", isOn: Binding(
                     get: { browser.stripUTMParams },
                     set: { browserManager.browsers[index].stripUTMParams = $0; browserManager.save() }
