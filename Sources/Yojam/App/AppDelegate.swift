@@ -224,6 +224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ url: URL, sourceAppBundleId: String? = nil,
         modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
     ) {
+        guard let url = URLSanitizer.sanitize(url) else { return }
+
         guard settingsStore.isEnabled else {
             openInDefaultBrowser(url)
             return
@@ -461,9 +463,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             var args = template
-                .replacingOccurrences(of: "$URL", with: url.absoluteString)
                 .components(separatedBy: " ")
                 .filter { !$0.isEmpty }
+                .map { $0.replacingOccurrences(of: "$URL", with: url.absoluteString) }
 
             // Also honor profile and private-window settings
             if let profile, let bundleId {

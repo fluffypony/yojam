@@ -42,20 +42,28 @@ enum ProfileLaunchHelper {
         }
     }
 
+    /// Escape a string for safe interpolation into an AppleScript string literal.
+    private static func escapeForAppleScript(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     /// Open a URL in a private window via AppleScript GUI scripting.
     /// Requires Accessibility permissions. Used for Safari and Orion
     /// which have no CLI flags for private browsing.
     static func openPrivateWindowViaAppleScript(
         url: URL, appName: String
     ) {
+        let escapedURL = escapeForAppleScript(url.absoluteString)
+        let escapedAppName = escapeForAppleScript(appName)
         let script = """
-        tell application "\(appName)"
+        tell application "\(escapedAppName)"
             activate
             tell application "System Events"
-                click menu item "New Private Window" of menu "File" of menu bar 1 of application process "\(appName)"
+                click menu item "New Private Window" of menu "File" of menu bar 1 of application process "\(escapedAppName)"
             end tell
             delay 0.3
-            tell window 1 to set URL of current tab to "\(url.absoluteString)"
+            tell window 1 to set URL of current tab to "\(escapedURL)"
         end tell
         """
         if let appleScript = NSAppleScript(source: script) {
