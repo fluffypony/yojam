@@ -143,89 +143,112 @@ struct BrowsersTab: View {
     }
 
     private func browserDetailView(index: Int) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Display Name")
-                        .font(.system(size: 11))
-                        .foregroundColor(Theme.textSecondary)
-                    ThemeTextField(placeholder: "Name", text: $browserManager.browsers[index].displayName)
-                        .onSubmit { browserManager.save() }
-                }
-
-                let profiles = profileDiscovery.discoverProfiles(
-                    for: browserManager.browsers[index].bundleIdentifier)
-                if !profiles.isEmpty {
+        let valid = browserManager.browsers.indices.contains(index)
+        return VStack(spacing: 12) {
+            if valid {
+                HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Profile")
+                        Text("Display Name")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
-                        Picker("", selection: Binding(
-                            get: { browserManager.browsers[index].profileId },
-                            set: { newId in
-                                browserManager.browsers[index].profileId = newId
-                                browserManager.browsers[index].profileName =
-                                    profiles.first(where: { $0.id == newId })?.name
-                                browserManager.save()
+                        ThemeTextField(
+                            placeholder: "Name",
+                            text: Binding(
+                                get: {
+                                    guard browserManager.browsers.indices.contains(index) else { return "" }
+                                    return browserManager.browsers[index].displayName
+                                },
+                                set: {
+                                    guard browserManager.browsers.indices.contains(index) else { return }
+                                    browserManager.browsers[index].displayName = $0
+                                }))
+                            .onSubmit { browserManager.save() }
+                    }
+
+                    let profiles = profileDiscovery.discoverProfiles(
+                        for: browserManager.browsers[index].bundleIdentifier)
+                    if !profiles.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Profile")
+                                .font(.system(size: 11))
+                                .foregroundColor(Theme.textSecondary)
+                            Picker("", selection: Binding<String?>(
+                                get: {
+                                    guard browserManager.browsers.indices.contains(index) else { return nil }
+                                    return browserManager.browsers[index].profileId
+                                },
+                                set: { (newId: String?) in
+                                    guard browserManager.browsers.indices.contains(index) else { return }
+                                    browserManager.browsers[index].profileId = newId
+                                    browserManager.browsers[index].profileName =
+                                        profiles.first(where: { $0.id == newId })?.name
+                                    browserManager.save()
+                                }
+                            )) {
+                                Text("None").tag(nil as String?)
+                                ForEach(profiles) { profile in
+                                    Text(profile.name).tag(profile.id as String?)
+                                }
                             }
-                        )) {
-                            Text("None").tag(nil as String?)
-                            ForEach(profiles) { profile in
-                                Text(profile.name).tag(profile.id as String?)
-                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
                     }
                 }
-            }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Custom Launch Args")
-                    .font(.system(size: 11))
-                    .foregroundColor(Theme.textSecondary)
-                HStack(spacing: 8) {
-                    ThemeTextField(
-                        placeholder: "e.g. $URL or --url $URL",
-                        text: Binding(
-                            get: { browserManager.browsers[index].customLaunchArgs ?? "" },
-                            set: {
-                                browserManager.browsers[index].customLaunchArgs = $0.isEmpty ? nil : $0
-                                browserManager.save()
-                            }),
-                        isMono: true)
-                    Text("Use $URL for the link")
-                        .font(.system(size: 10))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Custom Launch Args")
+                        .font(.system(size: 11))
                         .foregroundColor(Theme.textSecondary)
+                    HStack(spacing: 8) {
+                        ThemeTextField(
+                            placeholder: "e.g. $URL or --url $URL",
+                            text: Binding(
+                                get: {
+                                    guard browserManager.browsers.indices.contains(index) else { return "" }
+                                    return browserManager.browsers[index].customLaunchArgs ?? ""
+                                },
+                                set: {
+                                    guard browserManager.browsers.indices.contains(index) else { return }
+                                    browserManager.browsers[index].customLaunchArgs = $0.isEmpty ? nil : $0
+                                    browserManager.save()
+                                }),
+                            isMono: true)
+                        Text("Use $URL for the link")
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.textSecondary)
+                    }
                 }
-            }
 
-            HStack(spacing: 12) {
-                Text("Bundle: \(browserManager.browsers[index].bundleIdentifier)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Theme.textSecondary)
+                HStack(spacing: 12) {
+                    Text("Bundle: \(browserManager.browsers[index].bundleIdentifier)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(Theme.textSecondary)
 
-                Spacer()
+                    Spacer()
 
-                HStack(spacing: 8) {
-                    if browserManager.browsers[index].customIconData != nil {
-                        ThemeButton("Remove Icon") {
-                            browserManager.browsers[index].customIconData = nil
-                            browserManager.save()
+                    HStack(spacing: 8) {
+                        if browserManager.browsers[index].customIconData != nil {
+                            ThemeButton("Remove Icon") {
+                                guard browserManager.browsers.indices.contains(index) else { return }
+                                browserManager.browsers[index].customIconData = nil
+                                browserManager.save()
+                            }
                         }
-                    }
-                    ThemeButton("Custom Icon...") {
-                        let panel = NSOpenPanel()
-                        panel.allowedContentTypes = [.image]
-                        if panel.runModal() == .OK, let url = panel.url,
-                           let data = try? Data(contentsOf: url) {
-                            browserManager.browsers[index].customIconData = data
-                            browserManager.save()
+                        ThemeButton("Custom Icon...") {
+                            let panel = NSOpenPanel()
+                            panel.allowedContentTypes = [.image]
+                            if panel.runModal() == .OK, let url = panel.url,
+                               let data = try? Data(contentsOf: url) {
+                                guard browserManager.browsers.indices.contains(index) else { return }
+                                browserManager.browsers[index].customIconData = data
+                                browserManager.save()
+                            }
                         }
-                    }
-                    ThemeDangerButton(label: "Remove") {
-                        expandedBrowserId = nil
-                        browserManager.removeBrowser(at: index)
+                        ThemeDangerButton(label: "Remove") {
+                            expandedBrowserId = nil
+                            browserManager.removeBrowser(at: index)
+                        }
                     }
                 }
             }
