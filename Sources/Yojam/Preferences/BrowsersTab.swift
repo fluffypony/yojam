@@ -150,9 +150,7 @@ struct BrowsersTab: View {
                         .font(.system(size: 11))
                         .foregroundColor(Theme.textSecondary)
                     ThemeTextField(placeholder: "Name", text: $browserManager.browsers[index].displayName)
-                        .onChange(of: browserManager.browsers[index].displayName) { _, _ in
-                            browserManager.save()
-                        }
+                        .onSubmit { browserManager.save() }
                 }
 
                 let profiles = profileDiscovery.discoverProfiles(
