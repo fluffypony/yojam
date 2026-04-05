@@ -252,15 +252,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Step 1: Global rewrites
         processedURL = urlRewriter.applyGlobalRewrites(to: processedURL)
 
-        // Step 2: Global UTM stripping before rule evaluation (per spec flow step 5)
-        if settingsStore.globalUTMStrippingEnabled {
-            processedURL = utmStripper.strip(processedURL)
-        }
-
-        // Step 3: Check mailto
+        // §28: Check mailto before UTM stripping to avoid stripping mailto query params
         if processedURL.scheme == "mailto" {
             handleMailtoURL(processedURL, modifiers: modifiers)
             return
+        }
+
+        // Step 2: Global UTM stripping before rule evaluation
+        if settingsStore.globalUTMStrippingEnabled {
+            processedURL = utmStripper.strip(processedURL)
         }
 
         // Step 4: Evaluate rules (with source app context)
@@ -342,10 +342,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // §27: holdShift without Shift → open in first email client (consistent with browser behavior)
+        if settingsStore.activationMode == .holdShift && !modifiers.contains(.shift) {
+            if let client = clients.first,
+               let appURL = appURL(for: client.bundleIdentifier) {
+                openURL(url, withAppAt: appURL,
+                    profile: client.profileId,
+                    bundleId: client.bundleIdentifier,
+                    privateWindow: client.openInPrivateWindow,
+                    customLaunchArgs: client.customLaunchArgs)
+            }
+            return
+        }
+
         if settingsStore.activationMode != .always,
            clients.count == 1, let client = clients.first,
            let appURL = appURL(for: client.bundleIdentifier) {
-            // §21: Pass all client settings (profile, private window, custom args)
             openURL(url, withAppAt: appURL,
                 profile: client.profileId,
                 bundleId: client.bundleIdentifier,
@@ -397,7 +409,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handlePickerSelection(
                     entry: entry, url: finalURL, isEmail: isEmail)
             },
-            onCopy: { url in
+            onCopy: { [weak self] url in
+                // §25: Suppress clipboard monitor detection of our own write
+                self?.clipboardMonitor?.suppressNextChange = true
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(
                     url.absoluteString, forType: .string)

@@ -48,7 +48,12 @@ enum RewriteScope: Codable, Equatable, Hashable, Sendable {
             self = .browser(value)
         case "rule":
             let value = try container.decode(String.self, forKey: .value)
-            self = .rule(UUID(uuidString: value) ?? UUID())
+            // §22: Fall back to .global instead of generating orphan random UUID
+            if let id = UUID(uuidString: value) {
+                self = .rule(id)
+            } else {
+                self = .global
+            }
         default:
             self = .global
         }

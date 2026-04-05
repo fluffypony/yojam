@@ -266,10 +266,10 @@ struct AdvancedTab: View {
         browserManager.suggestedBrowsers = fresh.suggestedBrowsers
     }
 
+    // §16: Re-detect browsers after reset to avoid empty browser list
     private func resetAll() {
         settingsStore.resetToDefaults()
-        browserManager.browsers = settingsStore.loadBrowsers()
-        browserManager.emailClients = settingsStore.loadEmailClients()
+        redetectBrowsers()
         ruleEngine.reloadRules()
     }
 }
