@@ -393,14 +393,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onDismiss: { [weak self] in
                 self?.pickerPanel = nil
-                // Revert to .accessory if preferences isn't open,
-                // so the picker's NSApp.activate() doesn't leave
-                // the app icon lingering in Cmd+Tab.
-                let prefsOpen = NSApp.windows.contains { window in
-                    !(window is NSPanel) && window.isVisible && window.frame.width > 100
-                }
-                if !prefsOpen {
-                    NSApp.setActivationPolicy(.accessory)
+                // Revert to .accessory after a short delay if preferences
+                // isn't open, so the picker doesn't leave an icon in Cmd+Tab.
+                // The delay avoids clashing with the window server's
+                // activation state updates.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    let prefsOpen = NSApp.windows.contains { window in
+                        !(window is NSPanel) && window.isVisible && window.frame.width > 100
+                    }
+                    if !prefsOpen && NSApp.activationPolicy() != .accessory {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
                 }
             })
         pickerPanel?.showAtCursor()
@@ -604,25 +607,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the policy change — otherwise Yojam appears at the end
         // of the Cmd+Tab list instead of as the active app.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.activatePreferencesWindow(retries: 3)
+            NSApp.activate()
+            // Also bring the Settings window to front explicitly,
+            // since activate() alone may not order it above other apps.
+            for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                break
+            }
         }
 
         // Watch for all windows closing to hide from Cmd+Tab again
         startWindowCloseObserver()
-    }
-
-    private func activatePreferencesWindow(retries: Int) {
-        NSApp.activate()
-        for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-        // Window not visible yet (e.g. re-open after Cmd+W), retry
-        if retries > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                self?.activatePreferencesWindow(retries: retries - 1)
-            }
-        }
     }
 
     private var windowCheckTimer: Timer?
