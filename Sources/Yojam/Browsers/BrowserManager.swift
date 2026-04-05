@@ -26,14 +26,14 @@ final class BrowserManager: ObservableObject {
         var seen = Set<String>() // "bundleId|profileId"
         var cleaned: [BrowserEntry] = []
         for entry in browsers {
-            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")"
-            guard seen.insert(key).inserted else { continue }
-            // Drop profile entries with empty profile names (useless in picker)
+            // §20: Check empty name BEFORE inserting into seen set
             if entry.profileId != nil,
                let profileName = entry.profileName,
                profileName.isEmpty {
                 continue
             }
+            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")"
+            guard seen.insert(key).inserted else { continue }
             cleaned.append(entry)
         }
         if cleaned.count != browsers.count {
@@ -160,17 +160,18 @@ final class BrowserManager: ObservableObject {
         return iconResolver.icon(forBundleIdentifier: entry.bundleIdentifier)
     }
 
+    // §11: Store and retrieve by UUID instead of positional index
     func lastUsedIndex(isEmail: Bool) -> Int {
-        let key = isEmail ? "lastUsedEmailIndex" : "lastUsedBrowserIndex"
-        return UserDefaults.standard.integer(forKey: key)
+        let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
+        guard let idString = UserDefaults.standard.string(forKey: key),
+              let uuid = UUID(uuidString: idString) else { return 0 }
+        let list = isEmail ? emailClients : browsers
+        return list.firstIndex(where: { $0.id == uuid }) ?? 0
     }
 
     func recordLastUsed(_ entry: BrowserEntry, isEmail: Bool) {
-        let list = isEmail ? emailClients : browsers
-        let key = isEmail ? "lastUsedEmailIndex" : "lastUsedBrowserIndex"
-        if let idx = list.firstIndex(where: { $0.id == entry.id }) {
-            UserDefaults.standard.set(idx, forKey: key)
-        }
+        let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
+        UserDefaults.standard.set(entry.id.uuidString, forKey: key)
     }
 
     /// Regenerate suggested browser entries for profiles not yet in the active list.

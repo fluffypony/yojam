@@ -9,14 +9,16 @@ final class ChangeReconciler {
     init(browserManager: BrowserManager, ruleEngine: RuleEngine) {
         self.browserManager = browserManager
         self.ruleEngine = ruleEngine
+        // §9: Track both browser and email client bundle IDs
         knownBundleIds = Set(browserManager.browsers.map(\.bundleIdentifier))
+            .union(browserManager.emailClients.map(\.bundleIdentifier))
     }
 
     func reconcile() {
         // HTTP handler discovery
         let httpHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "https://example.com")!)
-        let currentIds = Set(
+        var currentIds = Set(
             httpHandlers.compactMap { Bundle(url: $0)?.bundleIdentifier })
 
         for appURL in httpHandlers {
@@ -35,6 +37,9 @@ final class ChangeReconciler {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
                   bundleId != Bundle.main.bundleIdentifier else { continue }
+            // §9: Add mailto handlers to currentIds
+            currentIds.insert(bundleId)
+            knownBundleIds.insert(bundleId)
             if !browserManager.emailClients.contains(where: {
                 $0.bundleIdentifier == bundleId
             }) {
@@ -52,10 +57,22 @@ final class ChangeReconciler {
             browserManager.saveEmailClients()
         }
 
+        // §9: Verify actual existence before removing — retain manual path-based entries
         let removed = knownBundleIds.subtracting(currentIds)
         for bundleId in removed {
-            browserManager.handleAppRemoved(bundleId: bundleId)
-            ruleEngine.disableRulesForApp(bundleId)
+            let stillExists: Bool
+            if bundleId.hasPrefix("/") {
+                stillExists = FileManager.default.isExecutableFile(atPath: bundleId)
+            } else {
+                stillExists = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
+            }
+
+            if stillExists {
+                currentIds.insert(bundleId)
+            } else {
+                browserManager.handleAppRemoved(bundleId: bundleId)
+                ruleEngine.disableRulesForApp(bundleId)
+            }
         }
         knownBundleIds = currentIds
     }

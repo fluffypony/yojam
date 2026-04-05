@@ -3,12 +3,13 @@ import AppKit
 @MainActor
 final class ClipboardNotificationWindow: NSPanel {
     private var onOpen: (() -> Void)?
-    private var onDismissCallback: (() -> Void)?
+    // §17: Typed callback passes self so caller can check identity
+    private var onDismissCallback: ((ClipboardNotificationWindow) -> Void)?
     private var suppressDomain: String?
     private weak var settingsStoreRef: SettingsStore?
     private var isDismissed = false
 
-    init(url: URL, onOpen: @escaping () -> Void, onDismiss: @escaping () -> Void,
+    init(url: URL, onOpen: @escaping () -> Void, onDismiss: @escaping (ClipboardNotificationWindow) -> Void,
          settingsStore: SettingsStore? = nil) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 60),
@@ -84,7 +85,7 @@ final class ClipboardNotificationWindow: NSPanel {
             completionHandler: {
                 MainActor.assumeIsolated {
                     self.orderOut(nil)
-                    self.onDismissCallback?()
+                    self.onDismissCallback?(self)
                 }
             })
     }

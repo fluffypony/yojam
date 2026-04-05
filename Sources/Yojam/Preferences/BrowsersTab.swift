@@ -99,17 +99,23 @@ struct BrowsersTab: View {
 
             Spacer(minLength: 16)
 
-            // Inline options — fixed width so they never shift
+            // §12: Use id-based lookup in all bindings to prevent staleness after reorder
             HStack(spacing: 12) {
                 if ProfileLaunchHelper.supportsPrivateWindow(browserBundleId: browser.bundleIdentifier) {
                     inlineCheckbox("Private", isOn: Binding(
                         get: { browser.openInPrivateWindow },
-                        set: { browserManager.browsers[index].openInPrivateWindow = $0; browserManager.save() }
+                        set: { newValue in
+                            guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
+                            browserManager.browsers[idx].openInPrivateWindow = newValue; browserManager.save()
+                        }
                     ))
                 }
                 inlineCheckbox("Strip Trackers", isOn: Binding(
                     get: { browser.stripUTMParams },
-                    set: { browserManager.browsers[index].stripUTMParams = $0; browserManager.save() }
+                    set: { newValue in
+                        guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
+                        browserManager.browsers[idx].stripUTMParams = newValue; browserManager.save()
+                    }
                 ))
 
                 // Expand/edit button — generous hit target
@@ -133,7 +139,10 @@ struct BrowsersTab: View {
 
                 ThemeToggle(isOn: Binding(
                     get: { browser.enabled },
-                    set: { browserManager.browsers[index].enabled = $0; browserManager.save() }
+                    set: { newValue in
+                        guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
+                        browserManager.browsers[idx].enabled = newValue; browserManager.save()
+                    }
                 ))
             }
             .fixedSize()
@@ -144,10 +153,11 @@ struct BrowsersTab: View {
         .opacity(browser.enabled ? 1 : 0.5)
     }
 
+    // §12: Rewritten with id-based lookup for all bindings
     private func browserDetailView(index: Int) -> some View {
-        let valid = browserManager.browsers.indices.contains(index)
+        let browserId = browserManager.browsers[safe: index]?.id
         return VStack(spacing: 12) {
-            if valid {
+            if let browserId, let browser = browserManager.browsers.first(where: { $0.id == browserId }) {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Display Name")
@@ -157,18 +167,17 @@ struct BrowsersTab: View {
                             placeholder: "Name",
                             text: Binding(
                                 get: {
-                                    guard browserManager.browsers.indices.contains(index) else { return "" }
-                                    return browserManager.browsers[index].displayName
+                                    browserManager.browsers.first(where: { $0.id == browserId })?.displayName ?? ""
                                 },
-                                set: {
-                                    guard browserManager.browsers.indices.contains(index) else { return }
-                                    browserManager.browsers[index].displayName = $0
+                                set: { newValue in
+                                    guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
+                                    browserManager.browsers[idx].displayName = newValue
                                 }))
                             .onSubmit { browserManager.save() }
                     }
 
                     let profiles = profileDiscovery.discoverProfiles(
-                        for: browserManager.browsers[index].bundleIdentifier)
+                        for: browser.bundleIdentifier)
                     if !profiles.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Profile")
@@ -176,13 +185,12 @@ struct BrowsersTab: View {
                                 .foregroundColor(Theme.textSecondary)
                             Picker("", selection: Binding<String?>(
                                 get: {
-                                    guard browserManager.browsers.indices.contains(index) else { return nil }
-                                    return browserManager.browsers[index].profileId
+                                    browserManager.browsers.first(where: { $0.id == browserId })?.profileId
                                 },
                                 set: { (newId: String?) in
-                                    guard browserManager.browsers.indices.contains(index) else { return }
-                                    browserManager.browsers[index].profileId = newId
-                                    browserManager.browsers[index].profileName =
+                                    guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
+                                    browserManager.browsers[idx].profileId = newId
+                                    browserManager.browsers[idx].profileName =
                                         profiles.first(where: { $0.id == newId })?.name
                                     browserManager.save()
                                 }
@@ -207,12 +215,11 @@ struct BrowsersTab: View {
                             placeholder: "e.g. $URL or --url $URL",
                             text: Binding(
                                 get: {
-                                    guard browserManager.browsers.indices.contains(index) else { return "" }
-                                    return browserManager.browsers[index].customLaunchArgs ?? ""
+                                    browserManager.browsers.first(where: { $0.id == browserId })?.customLaunchArgs ?? ""
                                 },
-                                set: {
-                                    guard browserManager.browsers.indices.contains(index) else { return }
-                                    browserManager.browsers[index].customLaunchArgs = $0.isEmpty ? nil : $0
+                                set: { newValue in
+                                    guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
+                                    browserManager.browsers[idx].customLaunchArgs = newValue.isEmpty ? nil : newValue
                                     browserManager.save()
                                 }),
                             isMono: true)
@@ -223,17 +230,17 @@ struct BrowsersTab: View {
                 }
 
                 HStack(spacing: 12) {
-                    Text("Bundle: \(browserManager.browsers[index].bundleIdentifier)")
+                    Text("Bundle: \(browser.bundleIdentifier)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(Theme.textSecondary)
 
                     Spacer()
 
                     HStack(spacing: 8) {
-                        if browserManager.browsers[index].customIconData != nil {
+                        if browser.customIconData != nil {
                             ThemeButton("Remove Icon") {
-                                guard browserManager.browsers.indices.contains(index) else { return }
-                                browserManager.browsers[index].customIconData = nil
+                                guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
+                                browserManager.browsers[idx].customIconData = nil
                                 browserManager.save()
                             }
                         }
@@ -242,14 +249,16 @@ struct BrowsersTab: View {
                             panel.allowedContentTypes = [.image]
                             if panel.runModal() == .OK, let url = panel.url,
                                let data = try? Data(contentsOf: url) {
-                                guard browserManager.browsers.indices.contains(index) else { return }
-                                browserManager.browsers[index].customIconData = data
+                                guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
+                                browserManager.browsers[idx].customIconData = data
                                 browserManager.save()
                             }
                         }
                         ThemeDangerButton(label: "Remove") {
                             expandedBrowserId = nil
-                            browserManager.removeBrowser(at: index)
+                            if let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) {
+                                browserManager.removeBrowser(at: idx)
+                            }
                         }
                     }
                 }

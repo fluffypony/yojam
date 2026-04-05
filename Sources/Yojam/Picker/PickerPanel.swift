@@ -211,22 +211,31 @@ final class PickerPanel: NSPanel {
         }
     }
 
+    // §10: Shared cleanup to prevent event monitor leaks
+    private func removeMonitors() {
+        if let monitor = globalMonitor { NSEvent.removeMonitor(monitor); globalMonitor = nil }
+        if let local = localMonitor { NSEvent.removeMonitor(local); localMonitor = nil }
+        if let obs = deactivationObserver { NotificationCenter.default.removeObserver(obs); deactivationObserver = nil }
+    }
+
+    override func close() {
+        removeMonitors()
+        super.close()
+        onDismiss()
+    }
+
     func dismissAnimated() {
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
-        }
-        if let local = localMonitor {
-            NSEvent.removeMonitor(local)
-            localMonitor = nil
-        }
-        if let obs = deactivationObserver {
-            NotificationCenter.default.removeObserver(obs)
-            deactivationObserver = nil
-        }
+        removeMonitors()
         PickerAnimator.animateOut(panel: self) { [weak self] in
             self?.onDismiss()
         }
+    }
+
+    deinit {
+        // Safety net: clean up any monitors that survived
+        if let monitor = globalMonitor { NSEvent.removeMonitor(monitor) }
+        if let local = localMonitor { NSEvent.removeMonitor(local) }
+        if let obs = deactivationObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
     override func keyDown(with event: NSEvent) {}

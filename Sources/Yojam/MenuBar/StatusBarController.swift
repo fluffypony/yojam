@@ -113,9 +113,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         for url: URL, onOpen: @escaping () -> Void
     ) {
         clipboardWindow?.dismiss()
+        // §17: Pass window identity to dismiss callback to prevent race on rapid copies
         clipboardWindow = ClipboardNotificationWindow(
             url: url, onOpen: onOpen,
-            onDismiss: { [weak self] in self?.clipboardWindow = nil },
+            onDismiss: { [weak self] window in
+                if self?.clipboardWindow === window {
+                    self?.clipboardWindow = nil
+                }
+            },
             settingsStore: settingsStore)
         clipboardWindow?.showWithAutoDismiss()
     }
