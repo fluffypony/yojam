@@ -4,8 +4,6 @@ import AppKit
 final class WorkspaceObserver {
     private let reconciler: ChangeReconciler
     private var launchObserver: NSObjectProtocol?
-    // §54: Debounce reconciliation to avoid spam during login when many apps launch
-    private let debouncer = Debouncer(delay: 1.0)
 
     init(reconciler: ChangeReconciler) { self.reconciler = reconciler }
 
@@ -20,11 +18,8 @@ final class WorkspaceObserver {
                   let bundleId = app.bundleIdentifier,
                   let url = app.bundleURL else { return }
             Task { @MainActor in
-                guard let self else { return }
-                self.debouncer.debounce {
-                    self.reconciler.appDiscovered(
-                        bundleId: bundleId, appURL: url)
-                }
+                self?.reconciler.appDiscovered(
+                    bundleId: bundleId, appURL: url)
             }
         }
     }

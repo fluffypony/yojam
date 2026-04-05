@@ -73,6 +73,7 @@ enum DefaultSelectionBehavior: String, Codable, CaseIterable, Identifiable, Send
 @MainActor
 final class SettingsStore: ObservableObject {
     private let defaults = UserDefaults.standard
+    private var isRevertingLaunchAtLogin = false
 
     private enum Keys {
         static let isFirstLaunch = "isFirstLaunch"
@@ -119,8 +120,9 @@ final class SettingsStore: ObservableObject {
     }
     @Published var launchAtLogin: Bool {
         didSet {
+            guard !isRevertingLaunchAtLogin else { return }
             defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
-            // §42: Log errors and revert on failure
+            // §42: Log errors and revert both UserDefaults and in-memory state on failure
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.register()
@@ -129,7 +131,9 @@ final class SettingsStore: ObservableObject {
                 }
             } catch {
                 YojamLogger.shared.log("SMAppService \(launchAtLogin ? "register" : "unregister") failed: \(error)")
-                defaults.set(!launchAtLogin, forKey: Keys.launchAtLogin)
+                isRevertingLaunchAtLogin = true
+                launchAtLogin = !launchAtLogin
+                isRevertingLaunchAtLogin = false
             }
         }
     }
@@ -515,7 +519,7 @@ struct SettingsExport: Codable {
         emailClients = try container.decodeIfPresent([BrowserEntry].self, forKey: .emailClients) ?? []
         rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
         globalRewriteRules = try container.decodeIfPresent([URLRewriteRule].self, forKey: .globalRewriteRules) ?? []
-        utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? UTMStripper.defaultParameters
+        utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? []
         suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
         pickerLayout = try container.decodeIfPresent(PickerLayout.self, forKey: .pickerLayout) ?? .auto
         pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false

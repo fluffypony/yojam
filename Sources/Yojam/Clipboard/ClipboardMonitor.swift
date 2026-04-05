@@ -25,9 +25,6 @@ final class ClipboardMonitor {
 
     func stop() { timer?.invalidate(); timer = nil }
 
-    // §41: Clean up timer on deallocation
-    deinit { timer?.invalidate() }
-
     private func checkClipboard() {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastChangeCount else { return }

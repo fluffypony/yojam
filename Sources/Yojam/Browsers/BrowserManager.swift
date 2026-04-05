@@ -161,12 +161,10 @@ final class BrowserManager: ObservableObject {
     }
 
     // §11: Store and retrieve by UUID instead of positional index
-    func lastUsedIndex(isEmail: Bool) -> Int {
+    func lastUsedId(isEmail: Bool) -> UUID? {
         let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
-        guard let idString = UserDefaults.standard.string(forKey: key),
-              let uuid = UUID(uuidString: idString) else { return 0 }
-        let list = isEmail ? emailClients : browsers
-        return list.firstIndex(where: { $0.id == uuid }) ?? 0
+        guard let idString = UserDefaults.standard.string(forKey: key) else { return nil }
+        return UUID(uuidString: idString)
     }
 
     func recordLastUsed(_ entry: BrowserEntry, isEmail: Bool) {

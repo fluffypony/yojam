@@ -23,7 +23,7 @@ final class RoutingSuggestionEngine {
         // §37: Cap unbounded growth
         if domainPreferences.count > 1000 {
             let sorted = domainPreferences.sorted { $0.value.values.reduce(0, +) > $1.value.values.reduce(0, +) }
-            domainPreferences = Dictionary(uniqueKeysWithValues: sorted.prefix(800))
+            domainPreferences = Dictionary(uniqueKeysWithValues: sorted.prefix(800).map { ($0.key, $0.value) })
         }
         save()
     }

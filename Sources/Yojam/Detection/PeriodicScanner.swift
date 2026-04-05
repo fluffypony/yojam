@@ -21,7 +21,4 @@ final class PeriodicScanner {
     }
 
     func stop() { timer?.invalidate(); timer = nil }
-
-    // §41: Clean up timer on deallocation
-    deinit { timer?.invalidate() }
 }

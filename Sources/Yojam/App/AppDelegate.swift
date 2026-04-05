@@ -342,15 +342,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // §27: holdShift without Shift → open in first email client (consistent with browser behavior)
+        // §27: holdShift without Shift → open in first resolvable email client
         if settingsStore.activationMode == .holdShift && !modifiers.contains(.shift) {
-            if let client = clients.first,
-               let appURL = appURL(for: client.bundleIdentifier) {
-                openURL(url, withAppAt: appURL,
+            if let client = clients.first(where: { appURL(for: $0.bundleIdentifier) != nil }),
+               let resolvedURL = appURL(for: client.bundleIdentifier) {
+                openURL(url, withAppAt: resolvedURL,
                     profile: client.profileId,
                     bundleId: client.bundleIdentifier,
                     privateWindow: client.openInPrivateWindow,
                     customLaunchArgs: client.customLaunchArgs)
+            } else {
+                // No resolvable email client — fall through to system handler
+                NSWorkspace.shared.open(url)
             }
             return
         }
@@ -575,7 +578,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .alwaysFirst:
             return 0
         case .lastUsed:
-            return browserManager.lastUsedIndex(isEmail: isEmail)
+            // Look up last-used UUID in the filtered entries list, not the full list
+            if let lastId = browserManager.lastUsedId(isEmail: isEmail),
+               let idx = entries.firstIndex(where: { $0.id == lastId }) {
+                return idx
+            }
+            return 0
         case .smart:
             if let domain = url.host?.lowercased(),
                let suggestedEntryId = routingSuggestionEngine

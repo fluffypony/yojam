@@ -231,13 +231,6 @@ final class PickerPanel: NSPanel {
         }
     }
 
-    deinit {
-        // Safety net: clean up any monitors that survived
-        if let monitor = globalMonitor { NSEvent.removeMonitor(monitor) }
-        if let local = localMonitor { NSEvent.removeMonitor(local) }
-        if let obs = deactivationObserver { NotificationCenter.default.removeObserver(obs) }
-    }
-
     override func keyDown(with event: NSEvent) {}
 
     override var canBecomeKey: Bool { true }
