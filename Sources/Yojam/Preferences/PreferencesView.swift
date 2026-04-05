@@ -232,8 +232,13 @@ struct PreferencesView: View {
                                 ForEach(items) { item in
                                     Button {
                                         selectedTab = item.tab
-                                        scrollToSection = item.section
                                         searchText = ""
+                                        // Delay so the new tab has time to mount
+                                        // before the onChange fires
+                                        let section = item.section
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                            scrollToSection = section
+                                        }
                                     } label: {
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(item.title)

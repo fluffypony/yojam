@@ -105,7 +105,10 @@ final class PickerPanel: NSPanel {
         let size = Self.panelSize(for: resolvedLayout, entryCount: displayEntries.count)
         self.setContentSize(size)
 
-        self.cursorTarget = Self.cursorTarget(for: resolvedLayout, panelSize: size)
+        self.cursorTarget = Self.cursorTarget(
+            for: resolvedLayout, panelSize: size,
+            preselectedIndex: adjustedPreselection,
+            entryCount: displayEntries.count)
     }
 
     private var cursorTarget: NSPoint = .zero
@@ -141,16 +144,26 @@ final class PickerPanel: NSPanel {
         }
     }
 
-    static func cursorTarget(for layout: PickerLayout, panelSize: NSSize) -> NSPoint {
+    static func cursorTarget(
+        for layout: PickerLayout, panelSize: NSSize,
+        preselectedIndex: Int, entryCount: Int
+    ) -> NSPoint {
+        let idx = CGFloat(max(0, min(preselectedIndex, entryCount - 1)))
         switch layout {
         case .smallHorizontal:
-            return NSPoint(x: 30, y: panelSize.height / 2)
+            // 12px padding + idx * 42px stride + 18px icon center
+            return NSPoint(x: 12 + idx * 42 + 18, y: panelSize.height / 2)
         case .bigHorizontal:
-            return NSPoint(x: 54, y: panelSize.height / 2)
+            // 16px padding + idx * 76px stride + 28px icon center
+            return NSPoint(x: 16 + idx * 76 + 28, y: panelSize.height / 2)
         case .smallVertical:
-            return NSPoint(x: panelSize.width / 2, y: panelSize.height - 28)
+            // 12px top padding + idx * 32px row height + 16px center
+            let yFromTop = 12 + idx * 32 + 16
+            return NSPoint(x: panelSize.width / 2, y: panelSize.height - yFromTop)
         case .bigVertical:
-            return NSPoint(x: panelSize.width / 2, y: panelSize.height - 36)
+            // 12px top padding + idx * 48px row height + 24px center
+            let yFromTop = 12 + idx * 48 + 24
+            return NSPoint(x: panelSize.width / 2, y: panelSize.height - yFromTop)
         case .auto:
             return NSPoint(x: panelSize.width / 2, y: panelSize.height / 2)
         }

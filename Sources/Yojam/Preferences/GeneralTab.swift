@@ -82,8 +82,11 @@ struct GeneralTab: View {
         } else {
             ThemeButton("Set Default", isPrimary: true) {
                 DefaultBrowserManager.promptSetDefault()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    isDefault = DefaultBrowserManager.isDefaultBrowser
+                // Poll a few times since the system dialog is async
+                for delay in [1.0, 3.0, 6.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        isDefault = DefaultBrowserManager.isDefaultBrowser
+                    }
                 }
             }
         }
