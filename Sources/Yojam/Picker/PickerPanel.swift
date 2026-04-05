@@ -176,14 +176,30 @@ final class PickerPanel: NSPanel {
         }
     }
 
+    private var didPromotePolicy = false
+
     func showAtCursor() {
         let origin = ScreenEdgeDetector.calculateOrigin(
             pickerSize: frame.size, cursorTarget: cursorTarget)
         setFrameOrigin(origin)
 
+        // Briefly switch to .regular so NSApp.activate() can steal focus,
+        // then revert to .accessory so the picker doesn't show in Cmd+Tab.
+        // Skip if preferences is already open (policy is already .regular).
+        let currentPolicy = NSApp.activationPolicy()
+        if currentPolicy == .accessory {
+            NSApp.setActivationPolicy(.regular)
+            didPromotePolicy = true
+        }
         NSApp.activate()
         PickerAnimator.animateIn(panel: self)
         makeKey()
+        if didPromotePolicy {
+            // Revert after a tick so the window server processes the activation
+            DispatchQueue.main.async {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
