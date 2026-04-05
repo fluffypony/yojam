@@ -49,11 +49,12 @@ enum DefaultBrowserManager {
     static var isDefaultBrowser: Bool {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
 
-        // Check via CoreServices — this is what macOS System Settings reads.
-        // We only use this check (no NSWorkspace fallback) to ensure the status
-        // shown matches what System Settings displays.
-        if let handler = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() as String?,
-           handler.caseInsensitiveCompare(bundleId) == .orderedSame {
+        // Check via NSWorkspace (non-deprecated replacement for
+        // LSCopyDefaultHandlerForURLScheme).
+        if let appURL = NSWorkspace.shared.urlForApplication(
+            toOpen: URL(string: "https://example.com")!
+        ), let defaultBundle = Bundle(url: appURL),
+           defaultBundle.bundleIdentifier == bundleId {
             return true
         }
 

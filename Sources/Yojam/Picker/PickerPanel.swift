@@ -205,7 +205,7 @@ final class PickerPanel: NSPanel {
             forName: NSApplication.didResignActiveNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.dismissAnimated()
+            Task { @MainActor in self?.dismissAnimated() }
         }
     }
 
