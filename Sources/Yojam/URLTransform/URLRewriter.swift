@@ -1,14 +1,30 @@
 import Foundation
+import Combine
 
 @MainActor
 final class URLRewriter: ObservableObject {
     private let settingsStore: SettingsStore
+    // §30: Cache global rewrite rules to avoid JSON deserialization on every URL
+    private var cachedGlobalRules: [URLRewriteRule]?
+    private var cancellable: AnyCancellable?
 
-    init(settingsStore: SettingsStore) { self.settingsStore = settingsStore }
+    init(settingsStore: SettingsStore) {
+        self.settingsStore = settingsStore
+        self.cancellable = settingsStore.objectWillChange.sink { [weak self] _ in
+            self?.cachedGlobalRules = nil
+        }
+    }
 
     func applyGlobalRewrites(to url: URL) -> URL {
-        let rules = settingsStore.loadGlobalRewriteRules().filter {
-            $0.enabled && $0.scope == .global
+        let rules: [URLRewriteRule]
+        if let cached = cachedGlobalRules {
+            rules = cached
+        } else {
+            let loaded = settingsStore.loadGlobalRewriteRules().filter {
+                $0.enabled && $0.scope == .global
+            }
+            cachedGlobalRules = loaded
+            rules = loaded
         }
         return applyRewrites(rules, to: url)
     }

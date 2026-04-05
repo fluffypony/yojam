@@ -8,7 +8,7 @@ final class BrowserManager: ObservableObject {
     @Published var emailClients: [BrowserEntry] = []
 
     private let settingsStore: SettingsStore
-    private let iconResolver = IconResolver()
+    private let iconResolver = IconResolver.shared
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore

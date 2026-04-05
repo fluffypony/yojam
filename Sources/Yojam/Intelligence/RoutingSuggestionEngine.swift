@@ -20,6 +20,11 @@ final class RoutingSuggestionEngine {
         var prefs = domainPreferences[domain, default: [:]]
         prefs[entryId, default: 0] += 1
         domainPreferences[domain] = prefs
+        // §37: Cap unbounded growth
+        if domainPreferences.count > 1000 {
+            let sorted = domainPreferences.sorted { $0.value.values.reduce(0, +) > $1.value.values.reduce(0, +) }
+            domainPreferences = Dictionary(uniqueKeysWithValues: sorted.prefix(800))
+        }
         save()
     }
 

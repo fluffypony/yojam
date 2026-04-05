@@ -211,7 +211,7 @@ struct PickerIconView: View {
     let isSelected: Bool
     let size: CGFloat
 
-    private static let sharedIconResolver = IconResolver()
+    private static let sharedIconResolver = IconResolver.shared
 
     var body: some View {
         let image: NSImage = {

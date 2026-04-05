@@ -1,21 +1,16 @@
 import AppKit
 
 final class IconResolver: @unchecked Sendable {
+    // §36: Shared singleton to avoid duplicate icon caches
+    static let shared = IconResolver()
+
     private var cache: [String: (image: NSImage, modDate: Date)] = [:]
     private let queue = DispatchQueue(label: "com.yojam.iconresolver")
 
     func icon(forBundleIdentifier bundleId: String) -> NSImage {
+        // §31: Trust the cache on hit — AppInstallMonitor calls invalidateCache when apps update
         if let cached = queue.sync(execute: { cache[bundleId] }) {
-            if let appURL = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: bundleId
-            ) {
-                let modDate = (try? FileManager.default.attributesOfItem(
-                    atPath: appURL.path
-                )[.modificationDate] as? Date) ?? Date.distantPast
-                if modDate <= cached.modDate { return cached.image }
-            } else {
-                return cached.image
-            }
+            return cached.image
         }
         guard let appURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: bundleId

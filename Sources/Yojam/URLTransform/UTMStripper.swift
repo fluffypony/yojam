@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class UTMStripper {
@@ -14,13 +15,28 @@ final class UTMStripper {
         "ref", "ref_", "referrer", "source"
     ]
 
-    init(settingsStore: SettingsStore) { self.settingsStore = settingsStore }
+    // §35: Cache the strip set to avoid rebuilding on every URL
+    private var cachedStripSet: Set<String>?
+    private var cancellable: AnyCancellable?
+
+    init(settingsStore: SettingsStore) {
+        self.settingsStore = settingsStore
+        self.cancellable = settingsStore.$utmStripList.sink { [weak self] _ in
+            self?.cachedStripSet = nil
+        }
+    }
 
     func strip(_ url: URL) -> URL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let queryItems = components.queryItems, !queryItems.isEmpty else { return url }
-        // Case-insensitive matching (§12.1)
-        let parametersToStrip = Set(settingsStore.utmStripList.map { $0.lowercased() })
+        let parametersToStrip: Set<String>
+        if let cached = cachedStripSet {
+            parametersToStrip = cached
+        } else {
+            let built = Set(settingsStore.utmStripList.map { $0.lowercased() })
+            cachedStripSet = built
+            parametersToStrip = built
+        }
         let filteredItems = queryItems.filter { !parametersToStrip.contains($0.name.lowercased()) }
         components.queryItems = filteredItems.isEmpty ? nil : filteredItems
         return components.url ?? url
