@@ -498,7 +498,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.sendAction(
                 Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
-        DispatchQueue.main.async {
+
+        // Delay activation until the window server has registered
+        // the policy change — otherwise Yojam appears at the end
+        // of the Cmd+Tab list instead of as the active app.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NSApp.activate()
         }
 
