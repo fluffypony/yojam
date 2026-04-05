@@ -391,21 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSPasteboard.general.setString(
                     url.absoluteString, forType: .string)
             },
-            onDismiss: { [weak self] in
-                self?.pickerPanel = nil
-                // Revert to .accessory after a short delay if preferences
-                // isn't open, so the picker doesn't leave an icon in Cmd+Tab.
-                // The delay avoids clashing with the window server's
-                // activation state updates.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    let prefsOpen = NSApp.windows.contains { window in
-                        !(window is NSPanel) && window.isVisible && window.frame.width > 100
-                    }
-                    if !prefsOpen && NSApp.activationPolicy() != .accessory {
-                        NSApp.setActivationPolicy(.accessory)
-                    }
-                }
-            })
+            onDismiss: { [weak self] in self?.pickerPanel = nil })
         pickerPanel?.showAtCursor()
     }
 
