@@ -274,9 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 processedURL = utmStripper.strip(processedURL)
             }
 
-            if let appURL = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: match.targetBundleId
-            ) {
+            if let appURL = appURL(for: match.targetBundleId) {
                 switch settingsStore.activationMode {
                 case .always:
                     showPicker(
@@ -340,9 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if settingsStore.activationMode != .always,
            clients.count == 1, let client = clients.first,
-           let appURL = NSWorkspace.shared.urlForApplication(
-               withBundleIdentifier: client.bundleIdentifier
-           ) {
+           let appURL = appURL(for: client.bundleIdentifier) {
             openURL(url, withAppAt: appURL)
         } else {
             showPicker(for: url, isEmail: true)
@@ -358,8 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entries = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
         } else {
             entries = browserManager.browsers.filter {
-                $0.enabled && $0.isInstalled &&
-                NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier) != nil
+                $0.enabled && $0.isInstalled && appURL(for: $0.bundleIdentifier) != nil
             }
         }
 
@@ -414,9 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             finalURL = utmStripper.strip(finalURL)
         }
 
-        guard let appURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: entry.bundleIdentifier
-        ) else { return }
+        guard let appURL = appURL(for: entry.bundleIdentifier) else { return }
 
         browserManager.recordLastUsed(entry, isEmail: isEmail)
 
@@ -441,16 +434,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         // Custom CLI launch: run the app executable with user-defined args
         if let template = customLaunchArgs, !template.isEmpty {
-            let execName: String
-            if let bundle = Bundle(url: appURL),
-               let exec = bundle.executableURL?.lastPathComponent {
-                execName = exec
+            let execURL: URL
+            if appURL.pathExtension == "app" {
+                // .app bundle — find the real executable inside
+                if let bundle = Bundle(url: appURL),
+                   let exec = bundle.executableURL {
+                    execURL = exec
+                } else {
+                    let name = appURL.deletingPathExtension().lastPathComponent
+                    execURL = appURL
+                        .appendingPathComponent("Contents/MacOS")
+                        .appendingPathComponent(name)
+                }
             } else {
-                execName = appURL.deletingPathExtension().lastPathComponent
+                // Bare executable (path stored as bundleIdentifier)
+                execURL = appURL
             }
-            let execURL = appURL
-                .appendingPathComponent("Contents/MacOS")
-                .appendingPathComponent(execName)
 
             var args = template
                 .replacingOccurrences(of: "$URL", with: url.absoluteString)
@@ -507,9 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openInDefaultBrowser(_ url: URL) {
         guard let first = browserManager.browsers.first(where: \.enabled),
-              let appURL = NSWorkspace.shared.urlForApplication(
-                  withBundleIdentifier: first.bundleIdentifier
-              ) else {
+              let appURL = appURL(for: first.bundleIdentifier) else {
             YojamLogger.shared.log("No enabled browser available. Cannot open URL.")
             return
         }
@@ -554,6 +551,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return 0
         }
+    }
+
+    /// Resolve a browser entry's identifier to an app/executable URL.
+    /// Handles both real bundle IDs and bare executable paths.
+    private func appURL(for bundleId: String) -> URL? {
+        if bundleId.hasPrefix("/") {
+            let url = URL(fileURLWithPath: bundleId)
+            return FileManager.default.isExecutableFile(atPath: bundleId) ? url : nil
+        }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
     }
 
     // MARK: - Clipboard & Click Monitor

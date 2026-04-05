@@ -5,7 +5,6 @@ struct BrowsersTab: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var browserManager: BrowserManager
     @Binding var scrollToSection: String?
-    @State private var showingFilePicker = false
     @State private var expandedBrowserId: UUID?
     @State private var profileDiscovery = ProfileDiscovery()
     @State private var draggedBrowserId: UUID?
@@ -18,7 +17,7 @@ struct BrowsersTab: View {
             ) {
                 HStack(spacing: 8) {
                     ThemeButton("Rescan") { rescanBrowsers() }
-                    ThemeButton("+ Add", isPrimary: true) { showingFilePicker = true }
+                    ThemeButton("+ Add", isPrimary: true) { addCustomApp() }
                 }
             }
 
@@ -42,31 +41,6 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
-        .fileImporter(
-            isPresented: $showingFilePicker,
-            allowedContentTypes: [.application]
-        ) { result in
-            if case .success(let url) = result,
-               let bundle = Bundle(url: url),
-               let bundleId = bundle.bundleIdentifier {
-                let name = bundle.infoDictionary?["CFBundleName"]
-                    as? String
-                    ?? url.deletingPathExtension().lastPathComponent
-                // Check if this app handles URLs; if not, set a default
-                // customLaunchArgs so the URL is passed on the CLI.
-                let handlesURLs = NSWorkspace.shared.urlForApplication(
-                    withBundleIdentifier: bundleId) != nil
-                    && NSWorkspace.shared.urlsForApplications(
-                        toOpen: URL(string: "https://example.com")!)
-                        .contains(where: { Bundle(url: $0)?.bundleIdentifier == bundleId })
-                browserManager.addBrowser(BrowserEntry(
-                    bundleIdentifier: bundleId,
-                    displayName: name,
-                    position: browserManager.browsers.count,
-                    source: .manual,
-                    customLaunchArgs: handlesURLs ? nil : "$URL"))
-            }
-        }
     }
 
     // MARK: - Browsers List
@@ -309,6 +283,43 @@ struct BrowsersTab: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Add Custom App / Executable
+
+    private func addCustomApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an application or executable"
+        panel.allowedContentTypes = [.application, .unixExecutable, .executable]
+        panel.allowsOtherFileTypes = true
+        panel.treatsFilePackagesAsDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        if let bundle = Bundle(url: url), let bundleId = bundle.bundleIdentifier {
+            // .app bundle
+            let name = bundle.infoDictionary?["CFBundleName"] as? String
+                ?? url.deletingPathExtension().lastPathComponent
+            let handlesURLs = NSWorkspace.shared.urlsForApplications(
+                toOpen: URL(string: "https://example.com")!)
+                .contains { Bundle(url: $0)?.bundleIdentifier == bundleId }
+            browserManager.addBrowser(BrowserEntry(
+                bundleIdentifier: bundleId,
+                displayName: name,
+                position: browserManager.browsers.count,
+                source: .manual,
+                customLaunchArgs: handlesURLs ? nil : "$URL"))
+        } else {
+            // Bare executable — use the absolute path as the "bundle ID"
+            let path = url.path
+            let name = url.lastPathComponent
+            browserManager.addBrowser(BrowserEntry(
+                bundleIdentifier: path,
+                displayName: name,
+                position: browserManager.browsers.count,
+                source: .manual,
+                customLaunchArgs: "$URL"))
         }
     }
 
