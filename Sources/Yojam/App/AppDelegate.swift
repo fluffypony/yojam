@@ -603,21 +603,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Delay activation until the window server has registered
         // the policy change — otherwise Yojam appears at the end
         // of the Cmd+Tab list instead of as the active app.
-        // Two attempts: 0.1s for the common case, 0.4s retry for
-        // re-opens where the window server is slower to process the
-        // .accessory → .regular policy transition.
-        for delay in [0.1, 0.4] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                NSApp.activate()
-                for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
-                    window.makeKeyAndOrderFront(nil)
-                    break
-                }
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.activatePreferencesWindow(retries: 3)
         }
 
         // Watch for all windows closing to hide from Cmd+Tab again
         startWindowCloseObserver()
+    }
+
+    private func activatePreferencesWindow(retries: Int) {
+        NSApp.activate()
+        for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        // Window not visible yet (e.g. re-open after Cmd+W), retry
+        if retries > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.activatePreferencesWindow(retries: retries - 1)
+            }
+        }
     }
 
     private var windowCheckTimer: Timer?
