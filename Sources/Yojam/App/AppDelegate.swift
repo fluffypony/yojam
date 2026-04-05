@@ -2,10 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-extension Notification.Name {
-    static let settingsWindowDidClose = Notification.Name("YojamSettingsWindowDidClose")
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Core Subsystems
@@ -514,63 +510,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWindowCloseObserver()
     }
 
-    private var windowObservers: [NSObjectProtocol] = []
     private var windowCheckTimer: Timer?
+    private var settingsWindowKVO: NSKeyValueObservation?
 
     private func startWindowCloseObserver() {
-        guard windowObservers.isEmpty else { return }
+        stopWindowCloseObserver()
 
-        // Primary signal: SwiftUI .onDisappear posts this when the
-        // Settings view is torn down (covers Cmd+W / close button).
-        let settingsObs = NotificationCenter.default.addObserver(
-            forName: .settingsWindowDidClose, object: nil, queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self?.hideFromDockIfNoWindows()
+        // Find the Settings window after a short delay (gives SwiftUI
+        // time to present it) and observe its visibility via KVO.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            let settingsWindow = NSApp.windows.first { window in
+                !(window is NSPanel)
+                    && window.isVisible
+                    && window.frame.width > 100
             }
-        }
-        windowObservers.append(settingsObs)
-
-        // Secondary signals for edge cases (e.g. app hidden, window
-        // closed programmatically, user switches away).
-        let names: [Notification.Name] = [
-            NSWindow.willCloseNotification,
-            NSApplication.didResignActiveNotification,
-            NSApplication.didHideNotification,
-        ]
-        for name in names {
-            let obs = NotificationCenter.default.addObserver(
-                forName: name, object: nil, queue: .main
-            ) { [weak self] _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self?.hideFromDockIfNoWindows()
+            if let settingsWindow {
+                self.settingsWindowKVO = settingsWindow.observe(
+                    \.isVisible, options: [.new]
+                ) { [weak self] _, change in
+                    if change.newValue == false {
+                        DispatchQueue.main.async {
+                            self?.hideFromCmdTab()
+                        }
+                    }
                 }
             }
-            windowObservers.append(obs)
         }
 
-        // Fallback: poll every 0.5s in case all notifications miss.
+        // Belt-and-suspenders: poll every 0.5s using the window server
+        // as the source of truth (bypasses any stale isVisible state).
         windowCheckTimer = Timer.scheduledTimer(
             withTimeInterval: 0.5, repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in self?.hideFromDockIfNoWindows() }
+            Task { @MainActor in self?.checkWindowServerAndHide() }
         }
     }
 
-    private func hideFromDockIfNoWindows() {
-        let hasVisibleWindows = NSApp.windows.contains { window in
-            guard !(window is NSPanel) else { return false }
-            guard window.frame.width > 1, window.frame.height > 1 else { return false }
-            return window.isVisible
+    /// Ask the window server directly whether this process has any
+    /// normal-layer (non-panel) windows on screen.
+    private func checkWindowServerAndHide() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        guard let infoList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[CFString: Any]] else { return }
+
+        let hasOnScreenWindow = infoList.contains { info in
+            guard let ownerPID = info[kCGWindowOwnerPID] as? Int32,
+                  ownerPID == pid,
+                  let layer = info[kCGWindowLayer] as? Int,
+                  layer == 0  // kCGNormalWindowLevel
+            else { return false }
+            // Ignore tiny internal windows
+            if let bounds = info[kCGWindowBounds] as? [String: CGFloat],
+               let w = bounds["Width"], let h = bounds["Height"],
+               w <= 1 || h <= 1 {
+                return false
+            }
+            return true
         }
-        guard !hasVisibleWindows else { return }
+
+        if !hasOnScreenWindow {
+            hideFromCmdTab()
+        }
+    }
+
+    private func hideFromCmdTab() {
         NSApp.setActivationPolicy(.accessory)
+        stopWindowCloseObserver()
+    }
+
+    private func stopWindowCloseObserver() {
         windowCheckTimer?.invalidate()
         windowCheckTimer = nil
-        for obs in windowObservers {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        windowObservers.removeAll()
+        settingsWindowKVO?.invalidate()
+        settingsWindowKVO = nil
     }
 
     func applicationShouldHandleReopen(

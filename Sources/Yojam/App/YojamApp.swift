@@ -18,10 +18,6 @@ struct YojamApp: App {
                 rewriteManager: appDelegate.urlRewriter,
                 routingSuggestionEngine: appDelegate.routingSuggestionEngine
             )
-            .onDisappear {
-                NotificationCenter.default.post(
-                    name: .settingsWindowDidClose, object: nil)
-            }
         }
     }
 }
