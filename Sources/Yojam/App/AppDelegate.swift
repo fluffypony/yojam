@@ -604,24 +604,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Watch for all windows closing to hide from Cmd+Tab again
         startWindowCloseObserver()
-
-        // Intercept Cmd+Q to close preferences instead of quitting
-        if cmdQMonitor == nil {
-            cmdQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "q" {
-                    for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
-                        window.close()
-                    }
-                    return nil // swallow the event
-                }
-                return event
-            }
-        }
     }
 
     private var windowCheckTimer: Timer?
     private var settingsWindowKVO: NSKeyValueObservation?
-    private var cmdQMonitor: Any?
 
     private func startWindowCloseObserver() {
         stopWindowCloseObserver()
@@ -689,10 +675,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hideFromCmdTab() {
         NSApp.setActivationPolicy(.accessory)
         stopWindowCloseObserver()
-        if let monitor = cmdQMonitor {
-            NSEvent.removeMonitor(monitor)
-            cmdQMonitor = nil
-        }
     }
 
     private func stopWindowCloseObserver() {
@@ -700,6 +682,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowCheckTimer = nil
         settingsWindowKVO?.invalidate()
         settingsWindowKVO = nil
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // If preferences is open, Cmd+Q closes it instead of quitting.
+        // Quit is only via "Quit Yojam" in the status bar menu (which
+        // bypasses this because no preferences window will be visible).
+        let hasPreferencesWindow = NSApp.windows.contains { window in
+            !(window is NSPanel) && window.isVisible && window.frame.width > 100
+        }
+        guard hasPreferencesWindow else { return .terminateNow }
+
+        for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+            window.close()
+        }
+        // Immediately revert to .accessory — don't wait for async observer
+        hideFromCmdTab()
+        return .terminateCancel
     }
 
     func applicationShouldHandleReopen(
