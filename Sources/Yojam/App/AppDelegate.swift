@@ -684,23 +684,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowKVO = nil
     }
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // If preferences is open, Cmd+Q closes it instead of quitting.
-        // Quit is only via "Quit Yojam" in the status bar menu (which
-        // bypasses this because no preferences window will be visible).
-        let hasPreferencesWindow = NSApp.windows.contains { window in
-            !(window is NSPanel) && window.isVisible && window.frame.width > 100
-        }
-        guard hasPreferencesWindow else { return .terminateNow }
-
-        for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
-            window.close()
-        }
-        // Immediately revert to .accessory — don't wait for async observer
-        hideFromCmdTab()
-        return .terminateCancel
-    }
-
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {

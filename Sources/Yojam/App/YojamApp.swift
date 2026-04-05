@@ -19,5 +19,18 @@ struct YojamApp: App {
                 routingSuggestionEngine: appDelegate.routingSuggestionEngine
             )
         }
+        // Replace Cmd+Q "Quit" with "Close Window" so preferences
+        // closes without quitting the menu bar app. Actual quit is
+        // via "Quit Yojam" in the status bar menu.
+        .commands {
+            CommandGroup(replacing: .appTermination) {
+                Button("Close Window") {
+                    for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+                        window.close()
+                    }
+                }
+                .keyboardShortcut("q")
+            }
+        }
     }
 }
