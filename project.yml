@@ -22,6 +22,7 @@ targets:
         excludes:
           - Resources/Info.plist
           - Resources/Yojam.entitlements
+          - Resources/menubar.svg
     info:
       path: Sources/Yojam/Resources/Info.plist
     entitlements:

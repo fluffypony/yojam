@@ -17,7 +17,7 @@ let package = Package(
         .executableTarget(
             name: "Yojam",
             path: "Sources/Yojam",
-            exclude: ["Resources/Info.plist", "Resources/Yojam.entitlements"],
+            exclude: ["Resources/Info.plist", "Resources/Yojam.entitlements", "Resources/menubar.svg"],
             resources: [.process("Resources")]
         ),
         .testTarget(

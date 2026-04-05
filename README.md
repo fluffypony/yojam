@@ -1,4 +1,6 @@
-# Yojam
+<p align="center">
+  <img src="logo.png" alt="Yojam" width="400">
+</p>
 
 macOS has one default browser slot. If you use more than one browser, that's a problem.
 

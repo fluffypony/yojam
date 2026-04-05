@@ -32,9 +32,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            let image = NSImage(
-                systemSymbolName: "globe",
-                accessibilityDescription: "Yojam")
+            let image = NSImage(named: "MenuBarIcon")
             image?.isTemplate = true
             button.image = image
         }
