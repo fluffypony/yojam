@@ -35,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var recentlyRoutedURLs: [String: Date] = [:]
     private let deduplicationWindow: TimeInterval = 0.5
+    private var pendingURLs: [(URL, String?, NSEvent.ModifierFlags)] = []
+    private var isFinishedLaunching = false
 
     override init() {
         let store = settingsStore
@@ -50,16 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two-step: .prohibited first to avoid a brief Dock icon flash,
         // then .accessory in didFinishLaunching so we can show windows.
         NSApp.setActivationPolicy(.prohibited)
-    }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-
+        // Register URL handler early so cold-launch URLs aren't lost.
+        // URLs arriving before didFinishLaunching are queued in pendingURLs.
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURL(event:reply:)),
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL))
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
 
         // Detection layer
         changeReconciler = ChangeReconciler(
@@ -175,6 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
             }
         }
+
+        // Process any URLs that arrived during cold launch
+        isFinishedLaunching = true
+        for (url, source, mods) in pendingURLs {
+            routeURL(url, sourceAppBundleId: source, modifiers: mods)
+        }
+        pendingURLs.removeAll()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -198,6 +209,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let url = URL(string: urlString) else { return }
         let sourceAppBundleId = SourceAppResolver.resolveSourceApp(
             from: event)
+
+        // Queue URLs that arrive before subsystems are ready (cold launch)
+        guard isFinishedLaunching else {
+            pendingURLs.append((url, sourceAppBundleId, modifiers))
+            return
+        }
+
         routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
     }
 
