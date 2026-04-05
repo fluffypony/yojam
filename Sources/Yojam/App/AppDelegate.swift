@@ -396,7 +396,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Revert to .accessory if preferences isn't open,
                 // so the picker's NSApp.activate() doesn't leave
                 // the app icon lingering in Cmd+Tab.
-                self?.checkWindowServerAndHide()
+                let prefsOpen = NSApp.windows.contains { window in
+                    !(window is NSPanel) && window.isVisible && window.frame.width > 100
+                }
+                if !prefsOpen {
+                    NSApp.setActivationPolicy(.accessory)
+                }
             })
         pickerPanel?.showAtCursor()
     }
