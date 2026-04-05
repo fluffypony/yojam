@@ -177,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if changed {
                 browserManager.save()
+                browserManager.refreshProfileSuggestions()
             }
         }
 
@@ -307,7 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     openURL(processedURL, withAppAt: appURL,
                         profile: matchedEntry?.profileId,
                         bundleId: match.targetBundleId,
-                        privateWindow: matchedEntry?.openInPrivateWindow ?? false)
+                        privateWindow: matchedEntry?.openInPrivateWindow ?? false,
+                        customLaunchArgs: matchedEntry?.customLaunchArgs)
                 }
                 return
             }
@@ -439,8 +441,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         // Custom CLI launch: run the app executable with user-defined args
         if let template = customLaunchArgs, !template.isEmpty {
-            let executablePath = appURL.appendingPathComponent("Contents/MacOS")
-            // Find the actual executable inside the .app bundle
             let execName: String
             if let bundle = Bundle(url: appURL),
                let exec = bundle.executableURL?.lastPathComponent {
@@ -448,12 +448,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 execName = appURL.deletingPathExtension().lastPathComponent
             }
-            let execURL = executablePath.appendingPathComponent(execName)
+            let execURL = appURL
+                .appendingPathComponent("Contents/MacOS")
+                .appendingPathComponent(execName)
 
-            let args = template
+            var args = template
                 .replacingOccurrences(of: "$URL", with: url.absoluteString)
                 .components(separatedBy: " ")
                 .filter { !$0.isEmpty }
+
+            // Also honor profile and private-window settings
+            if let profile, let bundleId {
+                args.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                    forProfile: profile, browserBundleId: bundleId))
+            }
+            if privateWindow, let bundleId {
+                args.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
+                    browserBundleId: bundleId))
+            }
 
             let process = Process()
             process.executableURL = execURL

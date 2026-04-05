@@ -112,6 +112,7 @@ final class BrowserManager: ObservableObject {
     func addBrowser(_ entry: BrowserEntry) {
         var e = entry; e.position = browsers.count
         browsers.append(e); save()
+        refreshProfileSuggestions()
     }
 
     func addBrowsers(_ entries: [BrowserEntry]) {
@@ -124,12 +125,12 @@ final class BrowserManager: ObservableObject {
 
     func confirmSuggested(_ entry: BrowserEntry) {
         suggestedBrowsers.removeAll { $0.id == entry.id }
-        addBrowser(entry)
-        refreshProfileSuggestions()
+        addBrowser(entry)  // addBrowser calls refreshProfileSuggestions()
     }
 
     func removeBrowser(at index: Int) {
         browsers.remove(at: index); reindex(); save()
+        refreshProfileSuggestions()
     }
 
     func moveBrowser(from source: IndexSet, to destination: Int) {

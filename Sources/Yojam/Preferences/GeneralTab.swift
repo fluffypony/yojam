@@ -269,6 +269,9 @@ struct GeneralTab: View {
                                         .stroke(Theme.borderSubtle, lineWidth: 1)
                                 )
                                 .multilineTextAlignment(.trailing)
+                                .onChange(of: settingsStore.recentURLRetentionMinutes) { _, val in
+                                    settingsStore.recentURLRetentionMinutes = max(1, min(val, 1440))
+                                }
                             Text("min")
                                 .font(.system(size: 12))
                                 .foregroundColor(Theme.textSecondary)
