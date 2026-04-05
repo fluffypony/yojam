@@ -6,6 +6,7 @@ struct AdvancedTab: View {
     @ObservedObject var browserManager: BrowserManager
     @ObservedObject var ruleEngine: RuleEngine
     let routingSuggestionEngine: RoutingSuggestionEngine
+    @Binding var scrollToSection: String?
 
     @State private var showingResetAlert = false
     @State private var showingResetBrowsersAlert = false
@@ -15,16 +16,23 @@ struct AdvancedTab: View {
         VStack(spacing: 0) {
             ThemeContentHeader(title: "Advanced", subtitle: "Debug, data management, and maintenance.")
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    debugSection
-                    utmParametersSection
-                    smartRoutingSection
-                    dataSection
-                    dangerZoneSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        debugSection.id("Diagnostics")
+                        utmParametersSection.id("Tracker Parameter List")
+                        smartRoutingSection.id("Smart Routing")
+                        dataSection.id("Settings Data")
+                        dangerZoneSection.id("Danger Zone")
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
                 }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
+                .onChange(of: scrollToSection) { _, section in
+                    guard let section else { return }
+                    withAnimation { proxy.scrollTo(section, anchor: .top) }
+                    scrollToSection = nil
+                }
             }
         }
         .background(Theme.bgApp)

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct BrowsersTab: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var browserManager: BrowserManager
+    @Binding var scrollToSection: String?
     @State private var showingFilePicker = false
     @State private var expandedBrowserId: UUID?
     @State private var profileDiscovery = ProfileDiscovery()
@@ -21,16 +22,23 @@ struct BrowsersTab: View {
                 }
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    browsersSection
-                    if !browserManager.suggestedBrowsers.isEmpty {
-                        suggestedSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        browsersSection.id("Active Browsers")
+                        if !browserManager.suggestedBrowsers.isEmpty {
+                            suggestedSection.id("Suggested Browsers")
+                        }
+                        emailSection.id("Email Clients")
                     }
-                    emailSection
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
                 }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
+                .onChange(of: scrollToSection) { _, section in
+                    guard let section else { return }
+                    withAnimation { proxy.scrollTo(section, anchor: .top) }
+                    scrollToSection = nil
+                }
             }
         }
         .background(Theme.bgApp)

@@ -87,6 +87,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.settingsStore.isEnabled.toggle()
             })
 
+        // Recent URL retention
+        recentURLsManager.configure(
+            retention: settingsStore.recentURLRetention,
+            retentionMinutes: settingsStore.recentURLRetentionMinutes)
+
+        settingsStore.$recentURLRetention.dropFirst().sink { [weak self] retention in
+            guard let self else { return }
+            self.recentURLsManager.configure(
+                retention: retention,
+                retentionMinutes: self.settingsStore.recentURLRetentionMinutes)
+        }.store(in: &cancellables)
+
+        settingsStore.$recentURLRetentionMinutes.dropFirst().sink { [weak self] minutes in
+            guard let self else { return }
+            self.recentURLsManager.configure(
+                retention: self.settingsStore.recentURLRetention,
+                retentionMinutes: minutes)
+        }.store(in: &cancellables)
+
         // Clipboard
         if settingsStore.clipboardMonitoringEnabled {
             startClipboardMonitor()
@@ -201,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recentlyRoutedURLs[urlKey] = now
         recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
 
-        recentURLsManager.add(url)
+        recentURLsManager.add(url, retention: settingsStore.recentURLRetention)
 
         var processedURL = url
 

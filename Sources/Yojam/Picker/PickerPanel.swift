@@ -14,16 +14,34 @@ final class PickerPanel: NSPanel {
          onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
 
-        // Dynamic vertical mode: check threshold and screen width
-        var isVertical = entries.count > settingsStore.verticalThreshold
-        if !isVertical {
-            let horizontalWidth = CGFloat(entries.count) * 48 - 8 + 24
-            let cursor = NSEvent.mouseLocation
-            if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) }) ?? NSScreen.main {
-                if horizontalWidth > screen.visibleFrame.width * 0.8 {
-                    isVertical = true
+        // Resolve effective layout
+        let layout = settingsStore.pickerLayout
+        let resolvedLayout: PickerLayout
+        if layout == .auto {
+            var useVertical = entries.count > settingsStore.verticalThreshold
+            if !useVertical {
+                let horizontalWidth = CGFloat(entries.count) * 48 - 8 + 24
+                let cursor = NSEvent.mouseLocation
+                if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) }) ?? NSScreen.main {
+                    if horizontalWidth > screen.visibleFrame.width * 0.8 {
+                        useVertical = true
+                    }
                 }
             }
+            resolvedLayout = useVertical ? .bigVertical : .smallHorizontal
+        } else {
+            resolvedLayout = layout
+        }
+
+        // Apply order inversion
+        let displayEntries: [BrowserEntry]
+        let adjustedPreselection: Int
+        if settingsStore.pickerInvertOrder {
+            displayEntries = entries.reversed()
+            adjustedPreselection = entries.count - 1 - preselectedIndex
+        } else {
+            displayEntries = entries
+            adjustedPreselection = preselectedIndex
         }
 
         super.init(
@@ -41,9 +59,9 @@ final class PickerPanel: NSPanel {
         ]
 
         let contentView = PickerContentView(
-            url: url, entries: entries,
-            selectedIndex: preselectedIndex,
-            isVertical: isVertical,
+            url: url, entries: displayEntries,
+            selectedIndex: adjustedPreselection,
+            layout: resolvedLayout,
             onSelect: { [weak self] entry in
                 self?.dismissAnimated()
                 if settingsStore.soundEffectsEnabled {
@@ -84,42 +102,66 @@ final class PickerPanel: NSPanel {
         ])
         self.contentView = visualEffect
 
-        // 42px per vertical entry (32px icon + 8px padding + 2px spacing)
-        let size = isVertical
-            ? NSSize(
-                width: 220,
-                height: min(CGFloat(entries.count) * 42 + 60, 500))
-            : NSSize(
-                width: CGFloat(entries.count) * 48 - 8 + 24,
-                height: 40 + 60)
+        let size = Self.panelSize(for: resolvedLayout, entryCount: displayEntries.count)
         self.setContentSize(size)
 
-        // Calculate cursor target: the point within the picker (bottom-left
-        // origin) where the first item's center is, so the cursor lands on
-        // the first/default entry for a quick double-click.
-        if isVertical {
-            // First entry is at top: 12px padding + 21px center of 42px row.
-            // In flipped (top-left) coords that's 33px from top.
-            // Convert to bottom-left: size.height - 33
-            self.cursorTarget = NSPoint(
-                x: size.width / 2,
-                y: size.height - 33)
-        } else {
-            // First icon: 12px padding + 20px center of 40px icon
-            self.cursorTarget = NSPoint(
-                x: 32,
-                y: size.height / 2)
-        }
+        self.cursorTarget = Self.cursorTarget(for: resolvedLayout, panelSize: size)
     }
 
     private var cursorTarget: NSPoint = .zero
+
+    // MARK: - Layout Metrics
+
+    static func panelSize(for layout: PickerLayout, entryCount: Int) -> NSSize {
+        let count = CGFloat(entryCount)
+        switch layout {
+        case .smallHorizontal:
+            // 36px icons, 6px spacing, 12px padding each side
+            return NSSize(
+                width: count * 42 - 6 + 24,
+                height: 36 + 60)
+        case .bigHorizontal:
+            // 56px icons + 16px label, 10px spacing, 16px padding each side
+            return NSSize(
+                width: count * 76 - 10 + 32,
+                height: 56 + 16 + 60)
+        case .smallVertical:
+            // 24px icon, 32px row height, compact
+            return NSSize(
+                width: 200,
+                height: min(count * 32 + 52, 440))
+        case .bigVertical:
+            // 40px icon, 48px row height
+            return NSSize(
+                width: 240,
+                height: min(count * 48 + 60, 540))
+        case .auto:
+            // Should not reach here; resolved before calling
+            return NSSize(width: 200, height: 100)
+        }
+    }
+
+    static func cursorTarget(for layout: PickerLayout, panelSize: NSSize) -> NSPoint {
+        switch layout {
+        case .smallHorizontal:
+            return NSPoint(x: 30, y: panelSize.height / 2)
+        case .bigHorizontal:
+            return NSPoint(x: 54, y: panelSize.height / 2)
+        case .smallVertical:
+            return NSPoint(x: panelSize.width / 2, y: panelSize.height - 28)
+        case .bigVertical:
+            return NSPoint(x: panelSize.width / 2, y: panelSize.height - 36)
+        case .auto:
+            return NSPoint(x: panelSize.width / 2, y: panelSize.height / 2)
+        }
+    }
 
     func showAtCursor() {
         let origin = ScreenEdgeDetector.calculateOrigin(
             pickerSize: frame.size, cursorTarget: cursorTarget)
         setFrameOrigin(origin)
 
-        NSApp.activate()
+        orderFrontRegardless()
         PickerAnimator.animateIn(panel: self)
         makeKey()
 

@@ -6,6 +6,7 @@ struct PipelineTab: View {
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var rewriteManager: URLRewriter
     @ObservedObject var browserManager: BrowserManager
+    @Binding var scrollToSection: String?
 
     @State private var testURL = ""
     @State private var testPipeline: [PipelineNode] = []
@@ -27,14 +28,21 @@ struct PipelineTab: View {
                 }
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    testerSection
-                    globalProcessingSection
-                    pipelineTableSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        testerSection.id("URL Tester")
+                        globalProcessingSection.id("Global Processing")
+                        pipelineTableSection.id("Pipeline")
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
                 }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
+                .onChange(of: scrollToSection) { _, section in
+                    guard let section else { return }
+                    withAnimation { proxy.scrollTo(section, anchor: .top) }
+                    scrollToSection = nil
+                }
             }
         }
         .background(Theme.bgApp)

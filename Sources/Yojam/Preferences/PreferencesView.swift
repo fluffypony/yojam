@@ -23,6 +23,104 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Searchable Settings Index
+
+struct SettingsSearchItem: Identifiable {
+    let id = UUID()
+    let tab: PreferencesTab
+    let section: String
+    let title: String
+    let subtitle: String
+
+    var searchText: String { "\(title) \(subtitle) \(section)".lowercased() }
+}
+
+enum SettingsSearchIndex {
+    static let items: [SettingsSearchItem] = [
+        // General > Startup
+        SettingsSearchItem(tab: .general, section: "Startup", title: "Launch at Login",
+                           subtitle: "Automatically start Yojam when you log in"),
+        SettingsSearchItem(tab: .general, section: "Startup", title: "Default Browser",
+                           subtitle: "Set Yojam as your system default browser to intercept all links"),
+
+        // General > Activation
+        SettingsSearchItem(tab: .general, section: "Activation", title: "Activation Mode",
+                           subtitle: "Controls when the browser picker appears always hold shift smart fallback"),
+        SettingsSearchItem(tab: .general, section: "Activation", title: "Default Selection",
+                           subtitle: "Which browser is pre-selected when the picker opens first last used smart"),
+
+        // General > Picker
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Layout",
+                           subtitle: "Choose the picker appearance auto small big horizontal vertical"),
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Vertical Threshold",
+                           subtitle: "Switch to vertical layout when this many browsers are shown"),
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Reverse Order",
+                           subtitle: "Show browsers from right to left bottom to top invert"),
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Sound Effects",
+                           subtitle: "Play a sound when the picker opens"),
+
+        // General > History
+        SettingsSearchItem(tab: .general, section: "History", title: "Recent URLs",
+                           subtitle: "How long to keep recently opened URLs never timed forever auto-delete"),
+        SettingsSearchItem(tab: .general, section: "History", title: "Auto-delete After",
+                           subtitle: "Minutes before recent URLs are automatically removed retention"),
+
+        // General > Services
+        SettingsSearchItem(tab: .general, section: "Services", title: "Clipboard Monitoring",
+                           subtitle: "Show a notification when a URL is copied to the clipboard"),
+        SettingsSearchItem(tab: .general, section: "Services", title: "iCloud Sync",
+                           subtitle: "Sync settings across your devices via iCloud"),
+
+        // Browsers
+        SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Browser List",
+                           subtitle: "Manage installed browsers drag reorder enable disable private strip trackers"),
+        SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Display Name",
+                           subtitle: "Custom display name for browser profile bundle"),
+        SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Custom Icon",
+                           subtitle: "Set a custom icon for a browser"),
+        SettingsSearchItem(tab: .browsers, section: "Suggested Browsers", title: "Suggested Browsers",
+                           subtitle: "Auto-detected browsers not yet added"),
+        SettingsSearchItem(tab: .browsers, section: "Email Clients", title: "Email Clients",
+                           subtitle: "Manage email clients for mailto links"),
+
+        // Pipeline
+        SettingsSearchItem(tab: .pipeline, section: "URL Tester", title: "URL Tester",
+                           subtitle: "Test how a URL will be processed through the pipeline"),
+        SettingsSearchItem(tab: .pipeline, section: "Global Processing", title: "Strip Tracking Parameters",
+                           subtitle: "Automatically remove tracking parameters utm gclid fbclid from all URLs"),
+        SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Routing Rules",
+                           subtitle: "URL routing rules match pattern target browser domain path regex"),
+        SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Rewrite Rules",
+                           subtitle: "URL rewrite rules find replace regex transform"),
+        SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Import Export Rules",
+                           subtitle: "Import or export routing rules as JSON"),
+
+        // Advanced
+        SettingsSearchItem(tab: .advanced, section: "Diagnostics", title: "Debug Logging",
+                           subtitle: "Logs to ~/Library/Logs/Yojam/ debug diagnostics"),
+        SettingsSearchItem(tab: .advanced, section: "Tracker Parameter List", title: "Tracker Parameter List",
+                           subtitle: "Parameters stripped when tracking parameter removal is enabled utm"),
+        SettingsSearchItem(tab: .advanced, section: "Smart Routing", title: "Learned Preferences",
+                           subtitle: "Yojam learns which browser you prefer for each domain clear smart routing"),
+        SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Export Settings",
+                           subtitle: "Save all settings to a JSON file for backup or transfer"),
+        SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Import Settings",
+                           subtitle: "Load settings from a previously exported JSON file"),
+        SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Re-detect Browsers",
+                           subtitle: "Clear all browser data and detect installed browsers from scratch"),
+        SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Reset All Settings",
+                           subtitle: "Restore all settings to their factory defaults"),
+    ]
+
+    static func search(_ query: String) -> [SettingsSearchItem] {
+        guard !query.isEmpty else { return [] }
+        let q = query.lowercased()
+        return items.filter { $0.searchText.contains(q) }
+    }
+}
+
+// MARK: - Main Preferences View
+
 struct PreferencesView: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var browserManager: BrowserManager
@@ -32,6 +130,13 @@ struct PreferencesView: View {
 
     @State private var selectedTab: PreferencesTab = .general
     @State private var searchText = ""
+    @State private var scrollToSection: String?
+
+    private var searchResults: [SettingsSearchItem] {
+        SettingsSearchIndex.search(searchText)
+    }
+
+    private var isSearching: Bool { !searchText.isEmpty }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -56,6 +161,16 @@ struct PreferencesView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundColor(Theme.textPrimary)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -67,13 +182,17 @@ struct PreferencesView: View {
             )
             .padding(16)
 
-            // Nav items
-            VStack(spacing: 2) {
-                ForEach(filteredTabs) { tab in
-                    sidebarItem(tab)
+            if isSearching {
+                searchResultsList
+            } else {
+                // Nav items
+                VStack(spacing: 2) {
+                    ForEach(PreferencesTab.allCases) { tab in
+                        sidebarItem(tab)
+                    }
                 }
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal, 8)
 
             Spacer()
         }
@@ -86,10 +205,62 @@ struct PreferencesView: View {
         }
     }
 
-    private var filteredTabs: [PreferencesTab] {
-        if searchText.isEmpty { return PreferencesTab.allCases }
-        return PreferencesTab.allCases.filter {
-            $0.label.localizedCaseInsensitiveContains(searchText)
+    @ViewBuilder
+    private var searchResultsList: some View {
+        let results = searchResults
+        if results.isEmpty {
+            VStack(spacing: 8) {
+                Text("No results")
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .padding(.horizontal, 16)
+        } else {
+            let grouped = Dictionary(grouping: results, by: \.tab)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(PreferencesTab.allCases) { tab in
+                        if let items = grouped[tab], !items.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tab.label.uppercased())
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .tracking(0.5)
+                                    .foregroundColor(Theme.textSecondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 2)
+
+                                ForEach(items) { item in
+                                    Button {
+                                        selectedTab = item.tab
+                                        scrollToSection = item.section
+                                        searchText = ""
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(item.title)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(Theme.textPrimary)
+                                            Text(item.section)
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Theme.textSecondary)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 5)
+                                        .background(Theme.bgHover.opacity(0.001))
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .onHover { hovering in
+                                        // SwiftUI handles highlight automatically
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+            }
         }
     }
 
@@ -123,21 +294,23 @@ struct PreferencesView: View {
     private var content: some View {
         switch selectedTab {
         case .general:
-            GeneralTab(settingsStore: settingsStore)
+            GeneralTab(settingsStore: settingsStore, scrollToSection: $scrollToSection)
         case .browsers:
-            BrowsersTab(settingsStore: settingsStore, browserManager: browserManager)
+            BrowsersTab(settingsStore: settingsStore, browserManager: browserManager, scrollToSection: $scrollToSection)
         case .pipeline:
             PipelineTab(
                 settingsStore: settingsStore,
                 ruleEngine: ruleEngine,
                 rewriteManager: rewriteManager,
-                browserManager: browserManager)
+                browserManager: browserManager,
+                scrollToSection: $scrollToSection)
         case .advanced:
             AdvancedTab(
                 settingsStore: settingsStore,
                 browserManager: browserManager,
                 ruleEngine: ruleEngine,
-                routingSuggestionEngine: routingSuggestionEngine)
+                routingSuggestionEngine: routingSuggestionEngine,
+                scrollToSection: $scrollToSection)
         }
     }
 }

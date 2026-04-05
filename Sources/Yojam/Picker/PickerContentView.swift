@@ -4,7 +4,7 @@ struct PickerContentView: View {
     let url: URL
     let entries: [BrowserEntry]
     @State var selectedIndex: Int
-    let isVertical: Bool
+    let layout: PickerLayout
     let onSelect: (BrowserEntry) -> Void
     let onCopy: () -> Void
     let onDismiss: () -> Void
@@ -12,7 +12,13 @@ struct PickerContentView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if isVertical { verticalLayout } else { horizontalLayout }
+            switch layout {
+            case .smallHorizontal:  smallHorizontalLayout
+            case .bigHorizontal:    bigHorizontalLayout
+            case .smallVertical:    smallVerticalLayout
+            case .bigVertical:      bigVerticalLayout
+            case .auto:             smallHorizontalLayout
+            }
             Text(entries[safe: selectedIndex]?.fullDisplayName ?? "")
                 .font(.system(size: 12, weight: .medium))
             Text(url.absoluteString)
@@ -45,12 +51,14 @@ struct PickerContentView: View {
         }
     }
 
-    private var horizontalLayout: some View {
-        HStack(spacing: 8) {
+    // MARK: - Small Horizontal (icon-only strip)
+
+    private var smallHorizontalLayout: some View {
+        HStack(spacing: 6) {
             ForEach(Array(entries.enumerated()), id: \.element.id) {
                 index, entry in
                 PickerIconView(
-                    entry: entry, isSelected: index == selectedIndex, size: 40
+                    entry: entry, isSelected: index == selectedIndex, size: 36
                 )
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { if $0 { selectedIndex = index } }
@@ -59,15 +67,74 @@ struct PickerContentView: View {
         }
     }
 
-    private var verticalLayout: some View {
+    // MARK: - Big Horizontal (icon + label below)
+
+    private var bigHorizontalLayout: some View {
+        HStack(spacing: 10) {
+            ForEach(Array(entries.enumerated()), id: \.element.id) {
+                index, entry in
+                VStack(spacing: 4) {
+                    PickerIconView(
+                        entry: entry, isSelected: index == selectedIndex, size: 56
+                    )
+                    Text(entry.displayName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(index == selectedIndex ? .primary : .secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: 66)
+                }
+                .onTapGesture { selectedIndex = index; selectCurrent() }
+                .onHover { if $0 { selectedIndex = index } }
+                .accessibilityLabel("Open in \(entry.fullDisplayName)")
+            }
+        }
+    }
+
+    // MARK: - Small Vertical (compact list)
+
+    private var smallVerticalLayout: some View {
+        ScrollView {
+            VStack(spacing: 1) {
+                ForEach(Array(entries.enumerated()), id: \.element.id) {
+                    index, entry in
+                    HStack(spacing: 6) {
+                        PickerIconView(
+                            entry: entry,
+                            isSelected: index == selectedIndex, size: 24)
+                        Text(entry.fullDisplayName)
+                            .font(.system(size: 12))
+                        Spacer()
+                        if index < 9 {
+                            Text("\(index + 1)")
+                                .font(.system(size: 10).monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(index == selectedIndex
+                                  ? Color.accentColor.opacity(0.15) : .clear)
+                    )
+                    .onTapGesture { selectedIndex = index; selectCurrent() }
+                    .onHover { if $0 { selectedIndex = index } }
+                    .accessibilityLabel("Open in \(entry.fullDisplayName)")
+                }
+            }
+        }.frame(maxHeight: 380)
+    }
+
+    // MARK: - Big Vertical (spacious list)
+
+    private var bigVerticalLayout: some View {
         ScrollView {
             VStack(spacing: 2) {
                 ForEach(Array(entries.enumerated()), id: \.element.id) {
                     index, entry in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         PickerIconView(
                             entry: entry,
-                            isSelected: index == selectedIndex, size: 32)
+                            isSelected: index == selectedIndex, size: 40)
                         Text(entry.fullDisplayName)
                             .font(.system(size: 13))
                         Spacer()
@@ -88,8 +155,10 @@ struct PickerContentView: View {
                     .accessibilityLabel("Open in \(entry.fullDisplayName)")
                 }
             }
-        }.frame(maxHeight: 400)
+        }.frame(maxHeight: 460)
     }
+
+    // MARK: - Navigation
 
     private func move(_ delta: Int) {
         let newIndex = selectedIndex + delta

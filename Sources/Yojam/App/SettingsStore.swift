@@ -14,6 +14,50 @@ enum ActivationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum PickerLayout: String, Codable, CaseIterable, Identifiable, Sendable {
+    case auto, smallHorizontal, bigHorizontal, smallVertical, bigVertical
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .auto: "Auto"
+        case .smallHorizontal: "Small Horizontal"
+        case .bigHorizontal: "Big Horizontal"
+        case .smallVertical: "Small Vertical"
+        case .bigVertical: "Big Vertical"
+        }
+    }
+    var isVertical: Bool {
+        switch self {
+        case .smallVertical, .bigVertical: true
+        default: false
+        }
+    }
+    var isHorizontal: Bool {
+        switch self {
+        case .smallHorizontal, .bigHorizontal: true
+        default: false
+        }
+    }
+    var isBig: Bool {
+        switch self {
+        case .bigHorizontal, .bigVertical: true
+        default: false
+        }
+    }
+}
+
+enum RecentURLRetention: String, Codable, CaseIterable, Identifiable, Sendable {
+    case never, timed, forever
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .never: "Never save"
+        case .timed: "Auto-delete after..."
+        case .forever: "Keep forever"
+        }
+    }
+}
+
 enum DefaultSelectionBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
     case alwaysFirst, lastUsed, smart
     var id: String { rawValue }
@@ -49,6 +93,10 @@ final class SettingsStore: ObservableObject {
         static let globalRewriteRules = "globalRewriteRules"
         static let utmStripList = "utmStripList"
         static let suppressedClipboardDomains = "suppressedClipboardDomains"
+        static let pickerLayout = "pickerLayout"
+        static let pickerInvertOrder = "pickerInvertOrder"
+        static let recentURLRetention = "recentURLRetention"
+        static let recentURLRetentionMinutes = "recentURLRetentionMinutes"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -100,6 +148,18 @@ final class SettingsStore: ObservableObject {
     @Published var suppressedClipboardDomains: [String] {
         didSet { defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains) }
     }
+    @Published var pickerLayout: PickerLayout {
+        didSet { defaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout) }
+    }
+    @Published var pickerInvertOrder: Bool {
+        didSet { defaults.set(pickerInvertOrder, forKey: Keys.pickerInvertOrder) }
+    }
+    @Published var recentURLRetention: RecentURLRetention {
+        didSet { defaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention) }
+    }
+    @Published var recentURLRetentionMinutes: Int {
+        didSet { defaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
+    }
 
     init() {
         let d = UserDefaults.standard
@@ -130,6 +190,12 @@ final class SettingsStore: ObservableObject {
         self.utmStripList = d.stringArray(forKey: Keys.utmStripList)
             ?? UTMStripper.defaultParameters
         self.suppressedClipboardDomains = d.stringArray(forKey: Keys.suppressedClipboardDomains) ?? []
+        self.pickerLayout = PickerLayout(
+            rawValue: d.string(forKey: Keys.pickerLayout) ?? "") ?? .auto
+        self.pickerInvertOrder = d.bool(forKey: Keys.pickerInvertOrder)
+        self.recentURLRetention = RecentURLRetention(
+            rawValue: d.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
+        self.recentURLRetentionMinutes = d.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
     }
 
     // MARK: - Complex Data Persistence
@@ -266,7 +332,7 @@ final class SettingsStore: ObservableObject {
 
     func exportJSON() throws -> Data {
         let export = SettingsExport(
-            version: 3,
+            version: 4,
             activationMode: activationMode,
             defaultSelection: defaultSelectionBehavior,
             verticalThreshold: verticalThreshold,
@@ -282,7 +348,11 @@ final class SettingsStore: ObservableObject {
             rules: loadRules().filter { !$0.isBuiltIn },
             globalRewriteRules: loadGlobalRewriteRules(),
             utmStripList: utmStripList,
-            suppressedClipboardDomains: suppressedClipboardDomains
+            suppressedClipboardDomains: suppressedClipboardDomains,
+            pickerLayout: pickerLayout,
+            pickerInvertOrder: pickerInvertOrder,
+            recentURLRetention: recentURLRetention,
+            recentURLRetentionMinutes: recentURLRetentionMinutes
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -301,6 +371,10 @@ final class SettingsStore: ObservableObject {
         iCloudSyncEnabled = imported.iCloudSync
         debugLoggingEnabled = imported.debugLoggingEnabled
         periodicRescanInterval = imported.periodicRescanInterval
+        pickerLayout = imported.pickerLayout
+        pickerInvertOrder = imported.pickerInvertOrder
+        recentURLRetention = imported.recentURLRetention
+        recentURLRetentionMinutes = imported.recentURLRetentionMinutes
         saveBrowsers(imported.browsers)
         saveEmailClients(imported.emailClients)
         // Preserve user's built-in rule enable/disable states during import
@@ -337,6 +411,10 @@ final class SettingsStore: ObservableObject {
         self.periodicRescanInterval = 1800
         self.utmStripList = UTMStripper.defaultParameters
         self.suppressedClipboardDomains = []
+        self.pickerLayout = .auto
+        self.pickerInvertOrder = false
+        self.recentURLRetention = .forever
+        self.recentURLRetentionMinutes = 30
         saveBrowsers([])
         saveEmailClients([])
         saveRules(BuiltInRules.all)
@@ -363,6 +441,10 @@ struct SettingsExport: Codable {
     var globalRewriteRules: [URLRewriteRule]
     var utmStripList: [String]
     var suppressedClipboardDomains: [String]
+    var pickerLayout: PickerLayout
+    var pickerInvertOrder: Bool
+    var recentURLRetention: RecentURLRetention
+    var recentURLRetentionMinutes: Int
 
     enum CodingKeys: String, CodingKey {
         case version, activationMode, defaultSelection, verticalThreshold
@@ -370,6 +452,8 @@ struct SettingsExport: Codable {
         case iCloudSync, debugLoggingEnabled
         case periodicRescanInterval, browsers, emailClients, rules
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
+        case pickerLayout, pickerInvertOrder
+        case recentURLRetention, recentURLRetentionMinutes
     }
 
     init(version: Int, activationMode: ActivationMode,
@@ -379,7 +463,10 @@ struct SettingsExport: Codable {
          debugLoggingEnabled: Bool, periodicRescanInterval: TimeInterval,
          browsers: [BrowserEntry], emailClients: [BrowserEntry],
          rules: [Rule], globalRewriteRules: [URLRewriteRule],
-         utmStripList: [String], suppressedClipboardDomains: [String] = []) {
+         utmStripList: [String], suppressedClipboardDomains: [String] = [],
+         pickerLayout: PickerLayout = .auto, pickerInvertOrder: Bool = false,
+         recentURLRetention: RecentURLRetention = .forever,
+         recentURLRetentionMinutes: Int = 30) {
         self.version = version
         self.activationMode = activationMode
         self.defaultSelection = defaultSelection
@@ -397,6 +484,10 @@ struct SettingsExport: Codable {
         self.globalRewriteRules = globalRewriteRules
         self.utmStripList = utmStripList
         self.suppressedClipboardDomains = suppressedClipboardDomains
+        self.pickerLayout = pickerLayout
+        self.pickerInvertOrder = pickerInvertOrder
+        self.recentURLRetention = recentURLRetention
+        self.recentURLRetentionMinutes = recentURLRetentionMinutes
     }
 
     init(from decoder: Decoder) throws {
@@ -418,5 +509,9 @@ struct SettingsExport: Codable {
         globalRewriteRules = try container.decode([URLRewriteRule].self, forKey: .globalRewriteRules)
         utmStripList = try container.decode([String].self, forKey: .utmStripList)
         suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
+        pickerLayout = try container.decodeIfPresent(PickerLayout.self, forKey: .pickerLayout) ?? .auto
+        pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false
+        recentURLRetention = try container.decodeIfPresent(RecentURLRetention.self, forKey: .recentURLRetention) ?? .forever
+        recentURLRetentionMinutes = try container.decodeIfPresent(Int.self, forKey: .recentURLRetentionMinutes) ?? 30
     }
 }

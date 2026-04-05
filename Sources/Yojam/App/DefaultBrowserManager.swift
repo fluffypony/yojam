@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 
 enum DefaultBrowserManager {
     static func promptSetDefault() {
@@ -11,6 +12,9 @@ enum DefaultBrowserManager {
                 + "Build via Xcode (xcodegen generate) for full functionality.")
             return
         }
+        guard let bundleId = Bundle.main.bundleIdentifier else { return }
+
+        // Primary: modern async API (shows system confirmation on first call)
         Task {
             do {
                 try await NSWorkspace.shared.setDefaultApplication(
@@ -19,11 +23,23 @@ enum DefaultBrowserManager {
                     at: bundleURL, toOpenURLsWithScheme: "https")
                 try await NSWorkspace.shared.setDefaultApplication(
                     at: bundleURL, toOpenURLsWithScheme: "mailto")
-                YojamLogger.shared.log("Registered as default browser")
+                YojamLogger.shared.log("Registered as default browser (NSWorkspace)")
             } catch {
-                YojamLogger.shared.log("Failed to register: \(error)")
+                YojamLogger.shared.log("NSWorkspace registration failed: \(error)")
             }
         }
+
+        // Supplementary: older CoreServices API for robustness.
+        // This ensures macOS System Settings reflects the change.
+        let cfBundleId = bundleId as CFString
+        LSSetDefaultHandlerForURLScheme("http" as CFString, cfBundleId)
+        LSSetDefaultHandlerForURLScheme("https" as CFString, cfBundleId)
+        LSSetDefaultHandlerForURLScheme("mailto" as CFString, cfBundleId)
+        LSSetDefaultRoleHandlerForContentType(
+            "public.html" as CFString, .viewer, cfBundleId)
+        LSSetDefaultRoleHandlerForContentType(
+            "public.xhtml" as CFString, .viewer, cfBundleId)
+        YojamLogger.shared.log("Registered as default browser (CoreServices)")
     }
 
     static var isAppBundle: Bool {
@@ -31,10 +47,22 @@ enum DefaultBrowserManager {
     }
 
     static var isDefaultBrowser: Bool {
-        guard let defaultHTTP = NSWorkspace.shared.urlForApplication(
+        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
+
+        // Check via NSWorkspace (modern)
+        if let defaultHTTP = NSWorkspace.shared.urlForApplication(
             toOpen: URL(string: "https://example.com")!
-        ) else { return false }
-        guard let defaultBundle = Bundle(url: defaultHTTP) else { return false }
-        return defaultBundle.bundleIdentifier == Bundle.main.bundleIdentifier
+        ), let defaultBundle = Bundle(url: defaultHTTP),
+           defaultBundle.bundleIdentifier == bundleId {
+            return true
+        }
+
+        // Check via CoreServices (what System Settings reads)
+        if let handler = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() as String?,
+           handler == bundleId {
+            return true
+        }
+
+        return false
     }
 }
