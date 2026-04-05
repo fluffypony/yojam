@@ -376,9 +376,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isEmail {
             entries = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
         } else {
-            entries = browserManager.browsers.filter {
-                $0.enabled && $0.isInstalled && appURL(for: $0.bundleIdentifier) != nil
-            }
+            // §55: Use isInstalled flag instead of redundant appURL IPC per entry
+            entries = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
         }
 
         guard !entries.isEmpty else {
@@ -503,6 +502,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let process = Process()
             process.executableURL = execURL
             process.arguments = args
+            // §51: Set termination handler to log completion/failure
+            process.terminationHandler = { proc in
+                if proc.terminationStatus != 0 {
+                    YojamLogger.shared.log(
+                        "Custom launch exited with status \(proc.terminationStatus)")
+                }
+            }
             do {
                 try process.run()
             } catch {
@@ -579,12 +585,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                }) {
                 return idx
             }
-            if let match = ruleEngine.evaluate(url),
-               let idx = entries.firstIndex(where: {
-                   $0.bundleIdentifier == match.targetBundleId
-               }) {
-                return idx
-            }
+            // §53: Removed redundant ruleEngine.evaluate — this block is only reachable
+            // when the global evaluate in Step 4 already failed to find a match.
             return 0
         }
     }
@@ -673,8 +675,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Belt-and-suspenders: poll every 0.5s using the window server
         // as the source of truth (bypasses any stale isVisible state).
+        // §47: Reduced polling frequency (was 0.5s)
         windowCheckTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.5, repeats: true
+            withTimeInterval: 2.0, repeats: true
         ) { [weak self] _ in
             Task { @MainActor in self?.checkWindowServerAndHide() }
         }

@@ -120,10 +120,16 @@ final class SettingsStore: ObservableObject {
     @Published var launchAtLogin: Bool {
         didSet {
             defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
-            if launchAtLogin {
-                try? SMAppService.mainApp.register()
-            } else {
-                try? SMAppService.mainApp.unregister()
+            // §42: Log errors and revert on failure
+            do {
+                if launchAtLogin {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                YojamLogger.shared.log("SMAppService \(launchAtLogin ? "register" : "unregister") failed: \(error)")
+                defaults.set(!launchAtLogin, forKey: Keys.launchAtLogin)
             }
         }
     }
@@ -363,18 +369,19 @@ final class SettingsStore: ObservableObject {
         let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
         activationMode = imported.activationMode
         defaultSelectionBehavior = imported.defaultSelection
-        verticalThreshold = imported.verticalThreshold
+        // §43: Clamp imported values to valid ranges
+        verticalThreshold = max(4, min(imported.verticalThreshold, 20))
         soundEffectsEnabled = imported.soundEffects
         launchAtLogin = imported.launchAtLogin
         globalUTMStrippingEnabled = imported.globalUTMStripping
         clipboardMonitoringEnabled = imported.clipboardMonitoring
         iCloudSyncEnabled = imported.iCloudSync
         debugLoggingEnabled = imported.debugLoggingEnabled
-        periodicRescanInterval = imported.periodicRescanInterval
+        periodicRescanInterval = max(60, min(imported.periodicRescanInterval, 86400))
         pickerLayout = imported.pickerLayout
         pickerInvertOrder = imported.pickerInvertOrder
         recentURLRetention = imported.recentURLRetention
-        recentURLRetentionMinutes = imported.recentURLRetentionMinutes
+        recentURLRetentionMinutes = max(1, min(imported.recentURLRetentionMinutes, 1440))
         saveBrowsers(imported.browsers)
         saveEmailClients(imported.emailClients)
         // Preserve user's built-in rule enable/disable states during import
@@ -490,24 +497,25 @@ struct SettingsExport: Codable {
         self.recentURLRetentionMinutes = recentURLRetentionMinutes
     }
 
+    // §52: Use decodeIfPresent for all fields to tolerate version migration
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decode(Int.self, forKey: .version)
-        activationMode = try container.decode(ActivationMode.self, forKey: .activationMode)
-        defaultSelection = try container.decode(DefaultSelectionBehavior.self, forKey: .defaultSelection)
-        verticalThreshold = try container.decode(Int.self, forKey: .verticalThreshold)
-        soundEffects = try container.decode(Bool.self, forKey: .soundEffects)
-        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
-        globalUTMStripping = try container.decode(Bool.self, forKey: .globalUTMStripping)
-        clipboardMonitoring = try container.decode(Bool.self, forKey: .clipboardMonitoring)
-        iCloudSync = try container.decode(Bool.self, forKey: .iCloudSync)
-        debugLoggingEnabled = try container.decode(Bool.self, forKey: .debugLoggingEnabled)
-        periodicRescanInterval = try container.decode(TimeInterval.self, forKey: .periodicRescanInterval)
-        browsers = try container.decode([BrowserEntry].self, forKey: .browsers)
-        emailClients = try container.decode([BrowserEntry].self, forKey: .emailClients)
-        rules = try container.decode([Rule].self, forKey: .rules)
-        globalRewriteRules = try container.decode([URLRewriteRule].self, forKey: .globalRewriteRules)
-        utmStripList = try container.decode([String].self, forKey: .utmStripList)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 4
+        activationMode = try container.decodeIfPresent(ActivationMode.self, forKey: .activationMode) ?? .always
+        defaultSelection = try container.decodeIfPresent(DefaultSelectionBehavior.self, forKey: .defaultSelection) ?? .alwaysFirst
+        verticalThreshold = try container.decodeIfPresent(Int.self, forKey: .verticalThreshold) ?? 8
+        soundEffects = try container.decodeIfPresent(Bool.self, forKey: .soundEffects) ?? true
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        globalUTMStripping = try container.decodeIfPresent(Bool.self, forKey: .globalUTMStripping) ?? false
+        clipboardMonitoring = try container.decodeIfPresent(Bool.self, forKey: .clipboardMonitoring) ?? false
+        iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
+        debugLoggingEnabled = try container.decodeIfPresent(Bool.self, forKey: .debugLoggingEnabled) ?? false
+        periodicRescanInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .periodicRescanInterval) ?? 1800
+        browsers = try container.decodeIfPresent([BrowserEntry].self, forKey: .browsers) ?? []
+        emailClients = try container.decodeIfPresent([BrowserEntry].self, forKey: .emailClients) ?? []
+        rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
+        globalRewriteRules = try container.decodeIfPresent([URLRewriteRule].self, forKey: .globalRewriteRules) ?? []
+        utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? UTMStripper.defaultParameters
         suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
         pickerLayout = try container.decodeIfPresent(PickerLayout.self, forKey: .pickerLayout) ?? .auto
         pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false

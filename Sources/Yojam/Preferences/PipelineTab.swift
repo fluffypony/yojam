@@ -461,6 +461,8 @@ struct AddRuleSheet: View {
         return handlers.compactMap { url in
             guard let bundle = Bundle(url: url),
                   let bundleId = bundle.bundleIdentifier,
+                  // §49: Exclude Yojam itself from rule targets
+                  bundleId != Bundle.main.bundleIdentifier,
                   seen.insert(bundleId).inserted else { return nil }
             let name = bundle.infoDictionary?["CFBundleName"] as? String
                 ?? url.deletingPathExtension().lastPathComponent

@@ -39,7 +39,8 @@ struct PickerContentView: View {
         .onKeyPress(.upArrow) { move(-1); return .handled }
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.return) { selectCurrent(); return .handled }
-        .onKeyPress(.space) { selectFirst(); return .handled }
+        // §48: Space opens selected entry (same as Return), not always first
+        .onKeyPress(.space) { selectCurrent(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }
         .onKeyPress(phases: .down) { press in
             if press.modifiers.contains(.command)

@@ -22,8 +22,9 @@ final class AppInstallMonitor {
         let callback: FSEventStreamCallback = {
             _, clientInfo, _, eventPaths, _, _ in
             guard let clientInfo else { return }
-            let paths = Unmanaged<CFArray>
-                .fromOpaque(eventPaths).takeUnretainedValue() as! [String]
+            // §44: Safe cast instead of force-cast
+            guard let paths = Unmanaged<CFArray>
+                .fromOpaque(eventPaths).takeUnretainedValue() as? [String] else { return }
             let appPaths = paths.filter {
                 $0.hasSuffix(".app") || $0.contains(".app/")
             }

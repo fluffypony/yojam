@@ -341,6 +341,8 @@ struct BrowsersTab: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         if let bundle = Bundle(url: url), let bundleId = bundle.bundleIdentifier {
+            // §49: Prevent adding Yojam itself (would cause infinite loop)
+            guard bundleId != Bundle.main.bundleIdentifier else { return }
             // .app bundle
             let name = bundle.infoDictionary?["CFBundleName"] as? String
                 ?? url.deletingPathExtension().lastPathComponent
