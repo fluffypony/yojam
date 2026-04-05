@@ -684,6 +684,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowKVO = nil
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // If preferences is open, Cmd+Q just closes it instead of quitting.
+        // The real quit path is "Quit Yojam" from the menu bar icon.
+        let hasPreferencesWindow = NSApp.windows.contains { window in
+            !(window is NSPanel) && window.isVisible && window.frame.width > 100
+        }
+        if hasPreferencesWindow {
+            for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+                window.close()
+            }
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
