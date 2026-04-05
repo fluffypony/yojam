@@ -504,6 +504,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // of the Cmd+Tab list instead of as the active app.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NSApp.activate()
+            // Also bring the Settings window to front explicitly,
+            // since activate() alone may not order it above other apps.
+            for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                break
+            }
         }
 
         // Watch for all windows closing to hide from Cmd+Tab again
