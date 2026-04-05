@@ -15,6 +15,9 @@ final class ClipboardMonitor {
         self.lastChangeCount = NSPasteboard.general.changeCount
     }
 
+    // §41: Invalidate timer if object is deallocated without calling stop()
+    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
+
     func start() {
         timer = Timer.scheduledTimer(
             withTimeInterval: 0.5, repeats: true

@@ -195,11 +195,6 @@ struct PickerContentView: View {
         onSelect(entries[selectedIndex])
     }
 
-    private func selectFirst() {
-        guard !entries.isEmpty else { return }
-        onSelect(entries[0])
-    }
-
     private func selectByNumber(_ index: Int) {
         if index < entries.count {
             selectedIndex = index; selectCurrent()

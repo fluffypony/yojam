@@ -4,6 +4,8 @@ import AppKit
 final class WorkspaceObserver {
     private let reconciler: ChangeReconciler
     private var launchObserver: NSObjectProtocol?
+    // §54: Debounce rapid app launch notifications (e.g. at login)
+    private let debouncer = Debouncer(delay: 1.0)
 
     init(reconciler: ChangeReconciler) { self.reconciler = reconciler }
 
@@ -11,15 +13,12 @@ final class WorkspaceObserver {
         launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil, queue: .main
-        ) { [weak self] notification in
-            guard let app = notification.userInfo?[
-                NSWorkspace.applicationUserInfoKey
-            ] as? NSRunningApplication,
-                  let bundleId = app.bundleIdentifier,
-                  let url = app.bundleURL else { return }
+        ) { [weak self] _ in
             Task { @MainActor in
-                self?.reconciler.appDiscovered(
-                    bundleId: bundleId, appURL: url)
+                // §54: Debounce into a full reconcile to avoid flooding at login
+                self?.debouncer.debounce {
+                    self?.reconciler.reconcile()
+                }
             }
         }
     }

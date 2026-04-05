@@ -8,6 +8,8 @@ struct BrowsersTab: View {
     @State private var expandedBrowserId: UUID?
     @State private var profileDiscovery = ProfileDiscovery()
     @State private var draggedBrowserId: UUID?
+    // §34: Cache discovered profiles per bundle ID to avoid synchronous disk I/O on every render
+    @State private var cachedProfiles: [String: [BrowserProfile]] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -176,8 +178,8 @@ struct BrowsersTab: View {
                             .onSubmit { browserManager.save() }
                     }
 
-                    let profiles = profileDiscovery.discoverProfiles(
-                        for: browser.bundleIdentifier)
+                    // §34: Use cached profiles to avoid sync disk I/O on every render
+                    let profiles = cachedProfiles[browser.bundleIdentifier] ?? []
                     if !profiles.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Profile")
@@ -267,6 +269,13 @@ struct BrowsersTab: View {
         .padding(.horizontal, 52)
         .padding(.vertical, 12)
         .background(Theme.bgInput.opacity(0.5))
+        // §34: Discover profiles asynchronously when detail view appears
+        .task(id: browserId) {
+            guard let browserId,
+                  let browser = browserManager.browsers.first(where: { $0.id == browserId }),
+                  cachedProfiles[browser.bundleIdentifier] == nil else { return }
+            cachedProfiles[browser.bundleIdentifier] = profileDiscovery.discoverProfiles(for: browser.bundleIdentifier)
+        }
     }
 
     // MARK: - Suggested

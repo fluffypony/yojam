@@ -11,6 +11,9 @@ final class PeriodicScanner {
         self.reconciler = reconciler; self.interval = interval
     }
 
+    // §41: Invalidate timer if object is deallocated without calling stop()
+    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
+
     func start() {
         timer = Timer.scheduledTimer(
             withTimeInterval: interval, repeats: true
