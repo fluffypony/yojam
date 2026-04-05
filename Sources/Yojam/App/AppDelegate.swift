@@ -432,6 +432,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         privateWindow: Bool = false,
         customLaunchArgs: String? = nil
     ) {
+        // AppleScript-based private window for Safari/Orion
+        if privateWindow, let bundleId,
+           ProfileLaunchHelper.appleScriptPrivateWindowApps.contains(bundleId),
+           let appName = ProfileLaunchHelper.appName(forBundleId: bundleId) {
+            ProfileLaunchHelper.openPrivateWindowViaAppleScript(
+                url: url, appName: appName)
+            return
+        }
+
         // Custom CLI launch: run the app executable with user-defined args
         if let template = customLaunchArgs, !template.isEmpty {
             let execURL: URL

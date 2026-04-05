@@ -18,7 +18,15 @@ enum ProfileLaunchHelper {
 
     static func supportsPrivateWindow(browserBundleId: String) -> Bool {
         !privateWindowArguments(browserBundleId: browserBundleId).isEmpty
+            || appleScriptPrivateWindowApps.contains(browserBundleId)
     }
+
+    /// Browsers that need AppleScript GUI scripting for private windows
+    /// (no CLI flag available).
+    static let appleScriptPrivateWindowApps: Set<String> = [
+        "com.apple.Safari",
+        "com.kagi.kagimacOS",       // Orion
+    ]
 
     static func privateWindowArguments(browserBundleId: String) -> [String] {
         switch browserBundleId {
@@ -31,6 +39,41 @@ enum ProfileLaunchHelper {
             return ["-private-window"]
         default:
             return []
+        }
+    }
+
+    /// Open a URL in a private window via AppleScript GUI scripting.
+    /// Requires Accessibility permissions. Used for Safari and Orion
+    /// which have no CLI flags for private browsing.
+    static func openPrivateWindowViaAppleScript(
+        url: URL, appName: String
+    ) {
+        let script = """
+        tell application "\(appName)"
+            activate
+            tell application "System Events"
+                click menu item "New Private Window" of menu "File" of menu bar 1 of application process "\(appName)"
+            end tell
+            delay 0.3
+            tell window 1 to set URL of current tab to "\(url.absoluteString)"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if let error {
+                YojamLogger.shared.log(
+                    "AppleScript private window failed: \(error)")
+            }
+        }
+    }
+
+    /// Resolve the app name for AppleScript from a bundle ID.
+    static func appName(forBundleId bundleId: String) -> String? {
+        switch bundleId {
+        case "com.apple.Safari": return "Safari"
+        case "com.kagi.kagimacOS": return "Orion"
+        default: return nil
         }
     }
 }
