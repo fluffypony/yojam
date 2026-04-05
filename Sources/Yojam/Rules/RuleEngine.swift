@@ -3,8 +3,12 @@ import AppKit
 
 @MainActor
 final class RuleEngine: ObservableObject {
-    @Published var rules: [Rule] = []
+    @Published var rules: [Rule] = [] {
+        didSet { sortedEnabledRulesCache = nil }
+    }
     private let settingsStore: SettingsStore
+    // §33: Cache sorted/filtered rules to avoid re-sorting on every URL
+    private var sortedEnabledRulesCache: [Rule]?
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
@@ -12,18 +16,30 @@ final class RuleEngine: ObservableObject {
         autoDisableUninstalledRules()
     }
 
-    func evaluate(_ url: URL, sourceAppBundleId: String? = nil) -> Rule? {
+    private var sortedEnabledRules: [Rule] {
+        if let cached = sortedEnabledRulesCache { return cached }
         let sorted = rules.filter(\.enabled).sorted {
             if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
             return $0.priority < $1.priority
         }
-        for rule in sorted {
+        sortedEnabledRulesCache = sorted
+        return sorted
+    }
+
+    func evaluate(_ url: URL, sourceAppBundleId: String? = nil) -> Rule? {
+        for rule in sortedEnabledRules {
             if let requiredSourceApp = rule.sourceAppBundleId,
                sourceAppBundleId != requiredSourceApp { continue }
-            guard NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: rule.targetBundleId
-            ) != nil else { continue }
-            if matches(url: url, rule: rule) { return rule }
+            // §32: Check match before expensive LaunchServices IPC
+            guard matches(url: url, rule: rule) else { continue }
+            // §18: Support bare executable paths in addition to bundle IDs
+            let isPath = rule.targetBundleId.hasPrefix("/")
+            guard isPath
+                ? FileManager.default.isExecutableFile(atPath: rule.targetBundleId)
+                : (NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: rule.targetBundleId) != nil)
+            else { continue }
+            return rule
         }
         return nil
     }
@@ -90,7 +106,6 @@ final class RuleEngine: ObservableObject {
 
     func reloadRules() { rules = settingsStore.loadRules() }
 
-    // Only disable rules whose target is uninstalled; never force-enable (§7.1)
     private func autoDisableUninstalledRules() {
         for i in rules.indices where rules[i].isBuiltIn {
             if NSWorkspace.shared.urlForApplication(
@@ -101,14 +116,21 @@ final class RuleEngine: ObservableObject {
         save()
     }
 
-    private func save() { settingsStore.saveRules(rules) }
+    private func save() {
+        sortedEnabledRulesCache = nil
+        settingsStore.saveRules(rules)
+    }
 
     func exportRules() throws -> Data {
         try JSONEncoder().encode(rules.filter { !$0.isBuiltIn })
     }
 
+    // §23: Deduplicate on re-import
     func importRules(from data: Data) throws {
         let imported = try JSONDecoder().decode([Rule].self, from: data)
-        rules.append(contentsOf: imported); save()
+        let existingIds = Set(rules.map(\.id))
+        let newRules = imported.filter { !existingIds.contains($0.id) }
+        rules.append(contentsOf: newRules)
+        save()
     }
 }

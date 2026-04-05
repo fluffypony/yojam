@@ -345,7 +345,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsStore.activationMode != .always,
            clients.count == 1, let client = clients.first,
            let appURL = appURL(for: client.bundleIdentifier) {
-            openURL(url, withAppAt: appURL)
+            // §21: Pass all client settings (profile, private window, custom args)
+            openURL(url, withAppAt: appURL,
+                profile: client.profileId,
+                bundleId: client.bundleIdentifier,
+                privateWindow: client.openInPrivateWindow,
+                customLaunchArgs: client.customLaunchArgs)
         } else {
             showPicker(for: url, isEmail: true)
         }
@@ -519,9 +524,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // §19: Iterate until an enabled browser actually resolves, not just the first enabled
     private func openInDefaultBrowser(_ url: URL) {
-        guard let first = browserManager.browsers.first(where: \.enabled),
-              let appURL = appURL(for: first.bundleIdentifier) else {
+        guard let first = browserManager.browsers.first(where: { entry in
+            entry.enabled && appURL(for: entry.bundleIdentifier) != nil
+        }), let appURL = appURL(for: first.bundleIdentifier) else {
             YojamLogger.shared.log("No enabled browser available. Cannot open URL.")
             return
         }
@@ -570,7 +577,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Resolve a browser entry's identifier to an app/executable URL.
     /// Handles both real bundle IDs and bare executable paths.
-    private func appURL(for bundleId: String) -> URL? {
+    func appURL(for bundleId: String) -> URL? {
         if bundleId.hasPrefix("/") {
             let url = URL(fileURLWithPath: bundleId)
             return FileManager.default.isExecutableFile(atPath: bundleId) ? url : nil

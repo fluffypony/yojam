@@ -15,18 +15,17 @@ struct OpenURLInBrowserIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         let store = SettingsStore()
+        let rewriter = URLRewriter(settingsStore: store)
+        let stripper = UTMStripper(settingsStore: store)
         var processedURL = url
 
-        if let bundleId = browser,
-           let appURL = NSWorkspace.shared.urlForApplication(
-               withBundleIdentifier: bundleId
-           ) {
-            // Resolve BrowserEntry to apply its settings
+        // §13: Apply global rewrites (previously skipped by intents)
+        processedURL = rewriter.applyGlobalRewrites(to: processedURL)
+
+        if let bundleId = browser {
             let entry = store.loadBrowsers().first {
                 $0.bundleIdentifier == bundleId && $0.enabled
             }
-            let rewriter = URLRewriter(settingsStore: store)
-            let stripper = UTMStripper(settingsStore: store)
 
             if let entry {
                 processedURL = rewriter.applyBrowserRewrites(to: processedURL, browser: entry)
@@ -35,25 +34,45 @@ struct OpenURLInBrowserIntent: AppIntent {
                 } else if store.globalUTMStrippingEnabled {
                     processedURL = stripper.strip(processedURL)
                 }
-            } else if stripUTM {
+            } else if stripUTM || store.globalUTMStrippingEnabled {
                 processedURL = stripper.strip(processedURL)
             }
 
-            let config = NSWorkspace.OpenConfiguration()
-            config.activates = true
-            var arguments: [String] = []
-            if let profile = entry?.profileId {
-                arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
-                    forProfile: profile, browserBundleId: bundleId))
+            // §13: Delegate to AppDelegate for full launch path (private window, custom args)
+            if let delegate = NSApp.delegate as? AppDelegate {
+                let appURL = delegate.appURL(for: bundleId)
+                if let appURL {
+                    delegate.openURL(
+                        processedURL,
+                        withAppAt: appURL,
+                        profile: entry?.profileId,
+                        bundleId: bundleId,
+                        privateWindow: entry?.openInPrivateWindow ?? false,
+                        customLaunchArgs: entry?.customLaunchArgs)
+                    return .result()
+                }
             }
-            if entry?.openInPrivateWindow == true {
-                arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
-                    browserBundleId: bundleId))
+
+            // Fallback: NSWorkspace open
+            if let appURL = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: bundleId
+            ) {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                var arguments: [String] = []
+                if let profile = entry?.profileId {
+                    arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                        forProfile: profile, browserBundleId: bundleId))
+                }
+                if entry?.openInPrivateWindow == true {
+                    arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
+                        browserBundleId: bundleId))
+                }
+                if !arguments.isEmpty { config.arguments = arguments }
+                try await NSWorkspace.shared.open(
+                    [processedURL], withApplicationAt: appURL,
+                    configuration: config)
             }
-            if !arguments.isEmpty { config.arguments = arguments }
-            try await NSWorkspace.shared.open(
-                [processedURL], withApplicationAt: appURL,
-                configuration: config)
         } else if let delegate = NSApp.delegate as? AppDelegate {
             delegate.routeURL(processedURL)
         }

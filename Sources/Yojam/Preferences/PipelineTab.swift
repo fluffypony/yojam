@@ -334,6 +334,7 @@ struct PipelineTab: View {
 
     // MARK: - Test Logic
 
+    // §15: Fixed to match production pipeline ordering and use ruleEngine.evaluate()
     private func runTest() {
         var input = testURL
         if !input.contains("://") { input = "https://" + input }
@@ -348,7 +349,15 @@ struct PipelineTab: View {
 
         var processedURL = url
 
-        // UTM stripping
+        // Step 1: Global rewrites (matches production pipeline order)
+        let rewritten = rewriteManager.applyGlobalRewrites(to: processedURL)
+        if rewritten.absoluteString != processedURL.absoluteString {
+            nodes.append(PipelineNode(label: "Rewrite", icon: "arrow.2.squarepath", isActive: true))
+            nodes.append(.arrow)
+            processedURL = rewritten
+        }
+
+        // Step 2: Global UTM stripping
         if settingsStore.globalUTMStrippingEnabled {
             let stripped = UTMStripper(settingsStore: settingsStore).strip(processedURL)
             let didStrip = stripped.absoluteString != processedURL.absoluteString
@@ -357,18 +366,8 @@ struct PipelineTab: View {
             processedURL = stripped
         }
 
-        // Rewrite rules
-        let rewritten = rewriteManager.applyGlobalRewrites(to: processedURL)
-        if rewritten.absoluteString != processedURL.absoluteString {
-            nodes.append(PipelineNode(label: "Rewrite", icon: "arrow.2.squarepath", isActive: true))
-            nodes.append(.arrow)
-            processedURL = rewritten
-        }
-
-        // Rule matching
-        if let match = ruleEngine.rules.filter(\.enabled).first(
-            where: { ruleEngine.matches(url: processedURL, rule: $0) }
-        ) {
+        // Step 3: Rule matching via canonical engine (respects priority/sorting)
+        if let match = ruleEngine.evaluate(processedURL) {
             let host = processedURL.host ?? ""
             nodes.append(PipelineNode(label: "Match: \(host)", icon: "globe", isActive: true))
             nodes.append(.arrow)
