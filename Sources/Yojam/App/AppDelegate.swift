@@ -603,13 +603,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Delay activation until the window server has registered
         // the policy change — otherwise Yojam appears at the end
         // of the Cmd+Tab list instead of as the active app.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.activate()
-            // Also bring the Settings window to front explicitly,
-            // since activate() alone may not order it above other apps.
-            for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-                break
+        // Two attempts: 0.1s for the common case, 0.4s retry for
+        // re-opens where the window server is slower to process the
+        // .accessory → .regular policy transition.
+        for delay in [0.1, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                NSApp.activate()
+                for window in NSApp.windows where !(window is NSPanel) && window.isVisible {
+                    window.makeKeyAndOrderFront(nil)
+                    break
+                }
             }
         }
 

@@ -31,6 +31,7 @@ struct PickerContentView: View {
         }
         .padding(12)
         .focusable()
+        .focusEffectDisabled()
         .focused($isFocused)
         .onAppear { isFocused = true }
         .onKeyPress(.leftArrow) { move(-1); return .handled }
