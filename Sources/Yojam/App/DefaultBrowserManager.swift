@@ -50,19 +50,10 @@ enum DefaultBrowserManager {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
 
         // Check via CoreServices — this is what macOS System Settings reads.
-        // If this doesn't match, System Settings will show a different browser
-        // even if NSWorkspace routes URLs to us.
+        // We only use this check (no NSWorkspace fallback) to ensure the status
+        // shown matches what System Settings displays.
         if let handler = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() as String?,
            handler.caseInsensitiveCompare(bundleId) == .orderedSame {
-            return true
-        }
-
-        // Fallback: check via NSWorkspace for .app bundles where CoreServices
-        // may lag behind the async registration.
-        if let defaultHTTP = NSWorkspace.shared.urlForApplication(
-            toOpen: URL(string: "https://example.com")!
-        ), let defaultBundle = Bundle(url: defaultHTTP),
-           defaultBundle.bundleIdentifier == bundleId {
             return true
         }
 

@@ -81,7 +81,7 @@ struct PickerContentView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(index == selectedIndex ? .primary : .secondary)
                         .lineLimit(1)
-                        .frame(maxWidth: 66)
+                        .frame(width: 66)
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { if $0 { selectedIndex = index } }
