@@ -657,7 +657,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bringPreferencesToFront(attempts: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            // Re-assert .regular in case the window server was slow
+            // to process the initial policy change (common on first launch).
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
             NSApp.activate()
             // Find any non-panel window — don't filter on isVisible or size
             // since SwiftUI may still be laying it out.

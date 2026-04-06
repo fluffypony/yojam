@@ -36,6 +36,17 @@ targets:
           - CFBundleURLName: Mail URL
             CFBundleURLSchemes:
               - mailto
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: HTML Document
+            CFBundleTypeRole: Viewer
+            LSItemContentTypes:
+              - public.html
+            LSHandlerRank: Default
+          - CFBundleTypeName: XHTML Document
+            CFBundleTypeRole: Viewer
+            LSItemContentTypes:
+              - public.xhtml
+            LSHandlerRank: Default
     entitlements:
       path: Sources/Yojam/Resources/Yojam.entitlements
     settings:
