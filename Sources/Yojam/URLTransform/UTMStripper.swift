@@ -5,7 +5,7 @@ import Combine
 final class UTMStripper {
     private let settingsStore: SettingsStore
 
-    static let defaultParameters: [String] = [
+    nonisolated static let defaultParameters: [String] = [
         "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
         "utm_cid", "utm_reader", "utm_name", "utm_social", "utm_social-type",
         "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid",

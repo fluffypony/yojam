@@ -16,14 +16,9 @@ final class ClipboardMonitor {
     }
 
     // §41: Invalidate timer if object is deallocated without calling stop()
-    deinit {
-        let t = timer
-        if Thread.isMainThread {
-            t?.invalidate()
-        } else {
-            DispatchQueue.main.async { t?.invalidate() }
-        }
-    }
+    // MainActor.assumeIsolated is safe here: @MainActor classes are always
+    // deallocated on the main thread in practice with Swift 6 runtime.
+    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
 
     func start() {
         timer = Timer.scheduledTimer(
