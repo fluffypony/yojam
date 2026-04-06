@@ -17,6 +17,7 @@ enum SyncConflictResolver {
                         winning.customIconData = localIcon
                     }
                     winning.isInstalled = existing.isInstalled
+                    winning.lastSeenAt = existing.lastSeenAt
                     merged[entry.id] = winning
                 }
             } else {

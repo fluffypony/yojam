@@ -43,17 +43,11 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
+        // Save any pending display name edits when navigating away from this tab
+        .onDisappear { savePendingDisplayName(for: expandedBrowserId) }
         // Save any pending display name edits when collapsing a detail view
         .onChange(of: expandedBrowserId) { oldId, _ in
-            guard let oldId,
-                  let entry = browserManager.browsers.first(where: { $0.id == oldId }) else { return }
-            // Only stamp lastModifiedAt if the display name was actually edited
-            // (in-memory differs from persisted state)
-            let persisted = settingsStore.loadBrowsers()
-            if let saved = persisted.first(where: { $0.id == oldId }),
-               saved.displayName != entry.displayName {
-                browserManager.updateBrowser(entry)
-            }
+            savePendingDisplayName(for: oldId)
         }
     }
 
@@ -407,6 +401,17 @@ struct BrowsersTab: View {
     }
 
     // MARK: - Helpers
+
+    /// Save the display name if it was edited in-memory but not yet persisted.
+    private func savePendingDisplayName(for browserId: UUID?) {
+        guard let browserId,
+              let entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+        let persisted = settingsStore.loadBrowsers()
+        if let saved = persisted.first(where: { $0.id == browserId }),
+           saved.displayName != entry.displayName {
+            browserManager.updateBrowser(entry)
+        }
+    }
 
     private func inlineCheckbox(_ label: String, isOn: Binding<Bool>) -> some View {
         Button {
