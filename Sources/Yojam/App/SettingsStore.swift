@@ -323,7 +323,7 @@ final class SettingsStore: ObservableObject {
         var seen = Set<String>()
         var deduped: [URLRewriteRule] = []
         for rule in savedRules {
-            let key = "\(rule.name)|\(rule.matchPattern)"
+            let key = "\(rule.name)|\(rule.matchPattern)|\(rule.replacement)"
             if seen.insert(key).inserted {
                 deduped.append(rule)
             }
@@ -332,7 +332,7 @@ final class SettingsStore: ObservableObject {
         let newBuiltIns = BuiltInRewriteRules.all.filter { !savedIds.contains($0.id) }
         // Also skip new built-ins whose name+pattern already exist (migrating old random IDs)
         let finalNew = newBuiltIns.filter { rule in
-            !seen.contains("\(rule.name)|\(rule.matchPattern)")
+            !seen.contains("\(rule.name)|\(rule.matchPattern)|\(rule.replacement)")
         }
         return deduped + finalNew
     }
@@ -390,7 +390,8 @@ final class SettingsStore: ObservableObject {
         // Preserve user's built-in rule enable/disable states during import
         let currentRules = loadRules()
         let currentBuiltInStates = Dictionary(
-            uniqueKeysWithValues: currentRules.filter(\.isBuiltIn).map { ($0.id, $0.enabled) })
+            currentRules.filter(\.isBuiltIn).map { ($0.id, $0.enabled) },
+            uniquingKeysWith: { first, _ in first })
         var allRules = BuiltInRules.all.map { rule -> Rule in
             var r = rule
             if let state = currentBuiltInStates[r.id] { r.enabled = state }
@@ -518,7 +519,7 @@ struct SettingsExport: Codable {
         emailClients = try container.decodeIfPresent([BrowserEntry].self, forKey: .emailClients) ?? []
         rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
         globalRewriteRules = try container.decodeIfPresent([URLRewriteRule].self, forKey: .globalRewriteRules) ?? []
-        utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? []
+        utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? UTMStripper.defaultParameters
         suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
         pickerLayout = try container.decodeIfPresent(PickerLayout.self, forKey: .pickerLayout) ?? .auto
         pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false

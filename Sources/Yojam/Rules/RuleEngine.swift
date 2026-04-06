@@ -107,9 +107,14 @@ final class RuleEngine: ObservableObject {
     func reloadRules() { rules = settingsStore.loadRules() }
 
     private func autoDisableUninstalledRules() {
+        var installedCache: [String: Bool] = [:]
         for i in rules.indices where rules[i].isBuiltIn {
-            if NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: rules[i].targetBundleId) == nil {
+            let bundleId = rules[i].targetBundleId
+            if installedCache[bundleId] == nil {
+                installedCache[bundleId] = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: bundleId) != nil
+            }
+            if installedCache[bundleId] == false {
                 rules[i].enabled = false
             }
         }
@@ -125,11 +130,20 @@ final class RuleEngine: ObservableObject {
         try JSONEncoder().encode(rules.filter { !$0.isBuiltIn })
     }
 
-    // §23: Deduplicate on re-import
+    // §23: Deduplicate on re-import with regex validation
     func importRules(from data: Data) throws {
         let imported = try JSONDecoder().decode([Rule].self, from: data)
         let existingIds = Set(rules.map(\.id))
-        let newRules = imported.filter { !existingIds.contains($0.id) }
+        let newRules = imported.filter { rule in
+            guard !existingIds.contains(rule.id) else { return false }
+            if rule.matchType == .regex {
+                guard RegexMatcher.isValid(pattern: rule.pattern) else {
+                    YojamLogger.shared.log("Skipping imported rule '\(rule.name)': invalid regex")
+                    return false
+                }
+            }
+            return true
+        }
         rules.append(contentsOf: newRules)
         save()
     }

@@ -322,8 +322,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         switch settingsStore.activationMode {
-        case .always, .smartFallback:
+        case .always:
             showPicker(for: processedURL)
+        case .smartFallback:
+            let domain = processedURL.host?.lowercased() ?? ""
+            if let suggestion = routingSuggestionEngine.suggestion(for: domain),
+               let entry = browserManager.browsers.first(where: {
+                   $0.id.uuidString == suggestion && $0.enabled && $0.isInstalled
+               }),
+               let resolvedAppURL = appURL(for: entry.bundleIdentifier) {
+                var finalURL = urlRewriter.applyBrowserRewrites(to: processedURL, browser: entry)
+                if entry.stripUTMParams || settingsStore.globalUTMStrippingEnabled {
+                    finalURL = utmStripper.strip(finalURL)
+                }
+                openURL(finalURL, withAppAt: resolvedAppURL,
+                    profile: entry.profileId,
+                    bundleId: entry.bundleIdentifier,
+                    privateWindow: entry.openInPrivateWindow,
+                    customLaunchArgs: entry.customLaunchArgs)
+            } else {
+                showPicker(for: processedURL)
+            }
         case .holdShift:
             if modifiers.contains(.shift) {
                 showPicker(for: processedURL)
@@ -486,9 +505,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if privateWindow, let bundleId,
            ProfileLaunchHelper.appleScriptPrivateWindowApps.contains(bundleId),
            let appName = ProfileLaunchHelper.appName(forBundleId: bundleId) {
-            ProfileLaunchHelper.openPrivateWindowViaAppleScript(
-                url: url, appName: appName)
-            return
+            if ProfileLaunchHelper.openPrivateWindowViaAppleScript(
+                url: url, appName: appName) {
+                return
+            }
+            // Fall through to normal open if AppleScript failed (e.g. non-English locale)
         }
 
         // Custom CLI launch: run the app executable with user-defined args

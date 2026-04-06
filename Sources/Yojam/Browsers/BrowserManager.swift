@@ -32,7 +32,7 @@ final class BrowserManager: ObservableObject {
                profileName.isEmpty {
                 continue
             }
-            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")"
+            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")|\(entry.customLaunchArgs ?? "")|\(entry.openInPrivateWindow)"
             guard seen.insert(key).inserted else { continue }
             cleaned.append(entry)
         }

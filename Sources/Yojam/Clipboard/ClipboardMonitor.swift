@@ -16,7 +16,14 @@ final class ClipboardMonitor {
     }
 
     // §41: Invalidate timer if object is deallocated without calling stop()
-    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
+    deinit {
+        let t = timer
+        if Thread.isMainThread {
+            t?.invalidate()
+        } else {
+            DispatchQueue.main.async { t?.invalidate() }
+        }
+    }
 
     func start() {
         timer = Timer.scheduledTimer(

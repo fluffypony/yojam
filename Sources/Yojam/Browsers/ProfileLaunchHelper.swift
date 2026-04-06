@@ -46,14 +46,19 @@ enum ProfileLaunchHelper {
     private static func escapeForAppleScript(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
+         .replacingOccurrences(of: "\n", with: "")
+         .replacingOccurrences(of: "\r", with: "")
+         .replacingOccurrences(of: "\t", with: "")
     }
 
     /// Open a URL in a private window via AppleScript GUI scripting.
     /// Requires Accessibility permissions. Used for Safari and Orion
     /// which have no CLI flags for private browsing.
+    /// Returns true if the script executed successfully, false otherwise.
+    @discardableResult
     static func openPrivateWindowViaAppleScript(
         url: URL, appName: String
-    ) {
+    ) -> Bool {
         let escapedURL = escapeForAppleScript(url.absoluteString)
         let escapedAppName = escapeForAppleScript(appName)
         let script = """
@@ -66,14 +71,15 @@ enum ProfileLaunchHelper {
             tell window 1 to set URL of current tab to "\(escapedURL)"
         end tell
         """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-            if let error {
-                YojamLogger.shared.log(
-                    "AppleScript private window failed: \(error)")
-            }
+        guard let appleScript = NSAppleScript(source: script) else { return false }
+        var error: NSDictionary?
+        appleScript.executeAndReturnError(&error)
+        if let error {
+            YojamLogger.shared.log(
+                "AppleScript private window failed (may be non-English locale): \(error)")
+            return false
         }
+        return true
     }
 
     /// Resolve the app name for AppleScript from a bundle ID.
