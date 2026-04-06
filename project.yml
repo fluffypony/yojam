@@ -25,6 +25,17 @@ targets:
           - Resources/menubar.svg
     info:
       path: Sources/Yojam/Resources/Info.plist
+      properties:
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        CFBundleURLTypes:
+          - CFBundleURLName: Web URL
+            CFBundleURLSchemes:
+              - http
+              - https
+          - CFBundleURLName: Mail URL
+            CFBundleURLSchemes:
+              - mailto
     entitlements:
       path: Sources/Yojam/Resources/Yojam.entitlements
     settings:
