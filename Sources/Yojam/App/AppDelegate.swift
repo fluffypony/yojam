@@ -252,14 +252,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Step 1: Global rewrites
         processedURL = urlRewriter.applyGlobalRewrites(to: processedURL)
 
-        // §28: Check mailto before UTM stripping to avoid stripping mailto query params
-        if processedURL.scheme == "mailto" {
-            handleMailtoURL(processedURL, modifiers: modifiers)
-            return
-        }
+        let isMailto = processedURL.scheme?.lowercased() == "mailto"
 
-        // Step 2: Global UTM stripping before rule evaluation
-        if settingsStore.globalUTMStrippingEnabled {
+        // Step 2: Global UTM stripping before rule evaluation (skip for mailto)
+        if settingsStore.globalUTMStrippingEnabled && !isMailto {
             processedURL = utmStripper.strip(processedURL)
         }
 
@@ -319,7 +315,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Step 5: No rule matched — show picker or use default
+        // Step 5: No rule matched — handle mailto or show picker/default
+        if isMailto {
+            handleMailtoURL(processedURL, modifiers: modifiers)
+            return
+        }
+
         switch settingsStore.activationMode {
         case .always, .smartFallback:
             showPicker(for: processedURL)
@@ -335,6 +336,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleMailtoURL(
         _ url: URL, modifiers: NSEvent.ModifierFlags
     ) {
+        guard settingsStore.isEnabled else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+
         let clients = browserManager.emailClients.filter(\.enabled)
 
         if settingsStore.activationMode == .holdShift && modifiers.contains(.shift) {
@@ -384,7 +390,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard !entries.isEmpty else {
-            openInDefaultBrowser(url)
+            if isEmail {
+                NSWorkspace.shared.open(url)
+            } else {
+                openInDefaultBrowser(url)
+            }
             return
         }
 
@@ -418,7 +428,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSPasteboard.general.setString(
                     url.absoluteString, forType: .string)
             },
-            onDismiss: { [weak self] in
+            onDismiss: { [weak self] panel in
+                guard self?.pickerPanel === panel else { return }
                 self?.pickerPanel = nil
                 // If preferences isn't open, revert to .accessory so
                 // the picker doesn't leave an icon in Cmd+Tab.
@@ -533,9 +544,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
-
         // Combine profile + private window arguments
         var arguments: [String] = []
         if let profile, let bundleId {
@@ -546,7 +554,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
                 browserBundleId: bundleId))
         }
-        if !arguments.isEmpty { config.arguments = arguments }
+
+        // When arguments are present, launch the executable directly via Process
+        // so that arguments like --profile-directory and --incognito are honored
+        // even when the browser is already running (NSWorkspace ignores them).
+        if !arguments.isEmpty {
+            let execURL: URL
+            if appURL.pathExtension == "app" {
+                if let bundle = Bundle(url: appURL), let exec = bundle.executableURL {
+                    execURL = exec
+                } else {
+                    let name = appURL.deletingPathExtension().lastPathComponent
+                    execURL = appURL
+                        .appendingPathComponent("Contents/MacOS")
+                        .appendingPathComponent(name)
+                }
+            } else {
+                execURL = appURL
+            }
+
+            let process = Process()
+            process.executableURL = execURL
+            process.arguments = arguments + [url.absoluteString]
+            process.terminationHandler = { proc in
+                if proc.terminationStatus != 0 {
+                    let status = proc.terminationStatus
+                    Task { @MainActor in
+                        YojamLogger.shared.log("Profile launch exited with status \(status)")
+                    }
+                }
+            }
+            do {
+                try process.run()
+                if let bundleId,
+                   let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+                    app.activate()
+                }
+            } catch {
+                YojamLogger.shared.log("Profile launch failed: \(error.localizedDescription)")
+                // Fall back to standard NSWorkspace launch
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                config.arguments = arguments + [url.absoluteString]
+                Task {
+                    try? await NSWorkspace.shared.open(
+                        [url], withApplicationAt: appURL, configuration: config)
+                }
+            }
+            return
+        }
+
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
 
         Task {
             do {

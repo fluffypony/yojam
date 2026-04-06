@@ -40,9 +40,15 @@ final class ChangeReconciler {
             // §9: Add mailto handlers to currentIds
             currentIds.insert(bundleId)
             knownBundleIds.insert(bundleId)
-            if !browserManager.emailClients.contains(where: {
+            if let existingIdx = browserManager.emailClients.firstIndex(where: {
                 $0.bundleIdentifier == bundleId
             }) {
+                if !browserManager.emailClients[existingIdx].isInstalled {
+                    browserManager.emailClients[existingIdx].isInstalled = true
+                    browserManager.emailClients[existingIdx].lastSeenAt = Date()
+                    emailClientsChanged = true
+                }
+            } else {
                 let name = bundle.infoDictionary?["CFBundleName"] as? String
                     ?? appURL.deletingPathExtension().lastPathComponent
                 let entry = BrowserEntry(

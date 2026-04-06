@@ -6,13 +6,14 @@ final class PickerPanel: NSPanel {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var deactivationObserver: NSObjectProtocol?
-    private let onDismiss: () -> Void
+    private let onDismiss: (PickerPanel) -> Void
+    private var isDismissed = false
 
     init(url: URL, entries: [BrowserEntry], preselectedIndex: Int,
          settingsStore: SettingsStore,
          onSelect: @escaping (BrowserEntry, URL) -> Void,
          onCopy: @escaping (URL) -> Void,
-         onDismiss: @escaping () -> Void) {
+         onDismiss: @escaping (PickerPanel) -> Void) {
         self.onDismiss = onDismiss
 
         // Resolve effective layout
@@ -220,14 +221,19 @@ final class PickerPanel: NSPanel {
 
     override func close() {
         removeMonitors()
+        let shouldNotify = !isDismissed
+        isDismissed = true
         super.close()
-        onDismiss()
+        if shouldNotify { onDismiss(self) }
     }
 
     func dismissAnimated() {
+        guard !isDismissed else { return }
+        isDismissed = true
         removeMonitors()
         PickerAnimator.animateOut(panel: self) { [weak self] in
-            self?.onDismiss()
+            guard let self else { return }
+            self.onDismiss(self)
         }
     }
 

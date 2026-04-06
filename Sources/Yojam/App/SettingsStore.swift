@@ -121,14 +121,13 @@ final class SettingsStore: ObservableObject {
     @Published var launchAtLogin: Bool {
         didSet {
             guard !isRevertingLaunchAtLogin else { return }
-            defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
-            // §42: Log errors and revert both UserDefaults and in-memory state on failure
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.register()
                 } else {
                     try SMAppService.mainApp.unregister()
                 }
+                defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
             } catch {
                 YojamLogger.shared.log("SMAppService \(launchAtLogin ? "register" : "unregister") failed: \(error)")
                 isRevertingLaunchAtLogin = true

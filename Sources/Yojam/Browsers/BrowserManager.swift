@@ -205,14 +205,25 @@ final class BrowserManager: ObservableObject {
 
     func handleAppInstalled(bundleId: String, appURL: URL) {
         iconResolver.invalidateCache(for: bundleId)
-        // Update all matching entries (multiple profiles share a bundle ID)
-        var found = false
+        // Update all matching browser entries (multiple profiles share a bundle ID)
+        var browsersChanged = false
         for i in browsers.indices where browsers[i].bundleIdentifier == bundleId {
             browsers[i].isInstalled = true
             browsers[i].lastSeenAt = Date()
-            found = true
+            browsersChanged = true
         }
-        if found { save(); return }
+        if browsersChanged { save() }
+
+        // Also update email client entries
+        var emailChanged = false
+        for i in emailClients.indices where emailClients[i].bundleIdentifier == bundleId {
+            emailClients[i].isInstalled = true
+            emailClients[i].lastSeenAt = Date()
+            emailChanged = true
+        }
+        if emailChanged { saveEmailClients() }
+
+        if browsersChanged { return }
 
         guard let bundle = Bundle(url: appURL),
               let schemes = bundle.infoDictionary?["CFBundleURLTypes"]
