@@ -162,6 +162,15 @@ struct PreferencesView: View {
                 selectedTab = .general
             }
         }
+        // Handle scroll requests from menu bar actions
+        .onChange(of: settingsStore.pendingScrollToSection) { _, section in
+            guard let section else { return }
+            selectedTab = .general
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                scrollToSection = section
+                settingsStore.pendingScrollToSection = nil
+            }
+        }
     }
 
     // MARK: - Sidebar

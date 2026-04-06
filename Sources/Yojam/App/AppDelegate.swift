@@ -101,6 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.settingsStore.hasDismissedQuickStart = false
                 self.showPreferences()
+            },
+            onShowKeyboardShortcuts: { [weak self] in
+                guard let self else { return }
+                self.settingsStore.pendingScrollToSection = "Picker"
+                self.showPreferences()
             })
 
         // Recent URL retention
@@ -460,12 +465,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Clamp to valid range
         let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
 
+        // Compute smart routing matchReason when none was provided
+        var effectiveMatchReason = matchReason
+        if effectiveMatchReason == nil,
+           settingsStore.defaultSelectionBehavior == .smart,
+           let domain = url.host?.lowercased(),
+           routingSuggestionEngine.suggestion(for: domain) != nil {
+            effectiveMatchReason = "Suggested based on your history for \(url.host ?? domain)"
+        }
+
         pickerPanel?.close()
         pickerPanel = PickerPanel(
             url: url, entries: entries,
             preselectedIndex: clampedIndex,
             settingsStore: settingsStore,
-            matchReason: matchReason,
+            matchReason: effectiveMatchReason,
             onSelect: { [weak self] entry, finalURL in
                 self?.handlePickerSelection(
                     entry: entry, url: finalURL, isEmail: isEmail)

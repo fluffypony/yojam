@@ -334,9 +334,6 @@ struct PipelineTab: View {
                 .frame(width: 150, alignment: .leading)
 
             HStack(spacing: 4) {
-                ThemeIconButton(systemName: "square.and.pencil") {
-                    // Edit - future enhancement
-                }
                 ThemeIconButton(systemName: "trash", isDanger: true) {
                     deleteRewrite(rule.id)
                 }
@@ -387,9 +384,6 @@ struct PipelineTab: View {
 
             HStack(spacing: 4) {
                 if !rule.isBuiltIn {
-                    ThemeIconButton(systemName: "square.and.pencil") {
-                        // Edit - future enhancement
-                    }
                     ThemeIconButton(systemName: "trash", isDanger: true) {
                         ruleEngine.deleteRule(rule.id)
                     }

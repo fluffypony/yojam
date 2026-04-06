@@ -13,6 +13,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var clipboardWindow: ClipboardNotificationWindow?
 
     private let onShowQuickStart: () -> Void
+    private let onShowKeyboardShortcuts: () -> Void
 
     init(browserManager: BrowserManager,
          recentURLsManager: RecentURLsManager,
@@ -20,7 +21,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
          onReopen: @escaping (URL) -> Void,
          onOpenPreferences: @escaping () -> Void,
          onToggleEnabled: @escaping () -> Void,
-         onShowQuickStart: @escaping () -> Void = {}) {
+         onShowQuickStart: @escaping () -> Void = {},
+         onShowKeyboardShortcuts: @escaping () -> Void = {}) {
         self.browserManager = browserManager
         self.recentURLsManager = recentURLsManager
         self.settingsStore = settingsStore
@@ -28,6 +30,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.onOpenPreferences = onOpenPreferences
         self.onToggleEnabled = onToggleEnabled
         self.onShowQuickStart = onShowQuickStart
+        self.onShowKeyboardShortcuts = onShowKeyboardShortcuts
         super.init()
         setupStatusItem()
     }
@@ -95,6 +98,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         quickStartItem.target = self
         menu.addItem(quickStartItem)
 
+        let shortcutsItem = NSMenuItem(
+            title: "Keyboard Shortcuts\u{2026}",
+            action: #selector(keyboardShortcutsClicked),
+            keyEquivalent: "")
+        shortcutsItem.target = self
+        menu.addItem(shortcutsItem)
+
         let prefsItem = NSMenuItem(
             title: "Preferences...",
             action: #selector(preferencesClicked),
@@ -119,6 +129,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quickStartClicked() { onShowQuickStart() }
+    @objc private func keyboardShortcutsClicked() { onShowKeyboardShortcuts() }
     @objc private func preferencesClicked() { onOpenPreferences() }
 
     func showClipboardNotification(

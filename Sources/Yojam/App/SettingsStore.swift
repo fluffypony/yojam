@@ -174,6 +174,9 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
     }
 
+    /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
+    @Published var pendingScrollToSection: String?
+
     init() {
         let d = UserDefaults.standard
         d.register(defaults: [

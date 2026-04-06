@@ -98,15 +98,17 @@ struct ThemeSectionTitle: View {
     }
 }
 
-/// Content header with title + subtitle + optional trailing content.
+/// Content header with title + subtitle + optional trailing content. Optional `helpText` shows a (i) popover icon.
 struct ThemeContentHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
+    var helpText: String? = nil
     let trailing: Trailing
 
-    init(title: String, subtitle: String = "", @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(title: String, subtitle: String = "", helpText: String? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
         self.title = title
         self.subtitle = subtitle
+        self.helpText = helpText
         self.trailing = trailing()
     }
 
@@ -114,9 +116,14 @@ struct ThemeContentHeader<Trailing: View>: View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(Theme.textInverse)
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(Theme.textInverse)
+                        if let helpText {
+                            ThemeHelpIcon(text: helpText)
+                        }
+                    }
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.system(size: 12))
@@ -324,6 +331,7 @@ struct ThemeHelpIcon: View {
                     .padding(10)
                     .frame(maxWidth: 260, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .background(Theme.bgPanel)
             }
             .accessibilityLabel("More info")
             .accessibilityHint(text)

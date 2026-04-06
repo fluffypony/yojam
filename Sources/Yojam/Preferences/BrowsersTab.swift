@@ -133,7 +133,7 @@ struct BrowsersTab: View {
                             entry.openInPrivateWindow = newValue
                             browserManager.updateBrowser(entry)
                         }
-                    ))
+                    ), helpTip: HelpText.Browsers.privateWindow)
                 }
                 inlineCheckbox("Remove tracking", isOn: Binding(
                     get: { browser.stripUTMParams },
@@ -142,7 +142,7 @@ struct BrowsersTab: View {
                         entry.stripUTMParams = newValue
                         browserManager.updateBrowser(entry)
                     }
-                ))
+                ), helpTip: HelpText.Browsers.stripTrackers)
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
@@ -456,8 +456,9 @@ struct BrowsersTab: View {
         }
     }
 
-    private func inlineCheckbox(_ label: String, isOn: Binding<Bool>) -> some View {
-        Button {
+    @ViewBuilder
+    private func inlineCheckbox(_ label: String, isOn: Binding<Bool>, helpTip: String? = nil) -> some View {
+        let button = Button {
             isOn.wrappedValue.toggle()
         } label: {
             HStack(spacing: 4) {
@@ -472,6 +473,11 @@ struct BrowsersTab: View {
             }
         }
         .buttonStyle(.plain)
+        if let helpTip {
+            button.help(helpTip)
+        } else {
+            button
+        }
     }
 
     private func rescanBrowsers() {
