@@ -78,19 +78,9 @@ enum HelpText {
 
         static func selectionHint(browserName: String, index: Int) -> String {
             if index < 9 {
-                return "Press \u{21B5} to open in \(browserName) \u{00B7} Press \(index + 1) for quick launch"
+                return "Press \u{21B5} or \(index + 1) to open in \(browserName)"
             }
             return "Press \u{21B5} to open in \(browserName)"
-        }
-
-        static func detailedHint(entry: (name: String, index: Int, isPrivate: Bool, stripTrackers: Bool, profileName: String?)) -> String {
-            var details: [String] = []
-            if entry.isPrivate { details.append("private window") }
-            if entry.stripTrackers { details.append("tracking removed") }
-            if let profile = entry.profileName { details.append(profile + " profile") }
-            let suffix = details.isEmpty ? "" : " \u{00B7} " + details.joined(separator: " \u{00B7} ")
-            let shortcut = entry.index < 9 ? ", press \(entry.index + 1)" : ""
-            return "Open in \(entry.name)\(shortcut)\(suffix)"
         }
     }
 }

@@ -10,8 +10,6 @@ struct PickerContentView: View {
     let onCopy: () -> Void
     let onDismiss: () -> Void
     @FocusState private var isFocused: Bool
-    @State private var hoverHintIndex: Int? = nil
-    @State private var hoverHintTask: Task<Void, Never>? = nil
 
     private static let selectionColor = Color.white.opacity(0.15)
     private static let selectionBorder = Color.white.opacity(0.5)
@@ -39,18 +37,10 @@ struct PickerContentView: View {
 
             // Selection-aware hint
             if let entry = entries[safe: selectedIndex] {
-                if let hintIdx = hoverHintIndex, let hintEntry = entries[safe: hintIdx] {
-                    // Detailed hover hint after delay
-                    Text(detailedHint(for: hintEntry, index: hintIdx))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
-                } else {
-                    Text(HelpText.Picker.selectionHint(browserName: entry.fullDisplayName, index: selectedIndex))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .animation(.easeInOut(duration: 0.12), value: selectedIndex)
-                }
+                Text(HelpText.Picker.selectionHint(browserName: entry.fullDisplayName, index: selectedIndex))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .animation(.easeInOut(duration: 0.12), value: selectedIndex)
             }
 
             Text(url.absoluteString)
@@ -74,7 +64,6 @@ struct PickerContentView: View {
         .focusEffectDisabled()
         .focused($isFocused)
         .onAppear { isFocused = true }
-        .onDisappear { cancelHoverHint() }
         .onKeyPress(.leftArrow) { move(-1); return .handled }
         .onKeyPress(.rightArrow) { move(1); return .handled }
         .onKeyPress(.upArrow) { move(-1); return .handled }
@@ -116,14 +105,9 @@ struct PickerContentView: View {
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { hovering in
-                    if hovering {
-                        selectedIndex = index
-                        startHoverHint(index: index)
-                    } else {
-                        cancelHoverHint()
-                    }
+                    if hovering { selectedIndex = index }
                 }
-                .help(HelpText.Picker.hoverHint(browserName: entry.fullDisplayName, index: index))
+
                 .accessibilityLabel(entry.fullDisplayName)
                 .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
             }
@@ -157,14 +141,9 @@ struct PickerContentView: View {
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { hovering in
-                    if hovering {
-                        selectedIndex = index
-                        startHoverHint(index: index)
-                    } else {
-                        cancelHoverHint()
-                    }
+                    if hovering { selectedIndex = index }
                 }
-                .help(HelpText.Picker.hoverHint(browserName: entry.fullDisplayName, index: index))
+
                 .accessibilityLabel(entry.fullDisplayName)
                 .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
             }
@@ -199,14 +178,8 @@ struct PickerContentView: View {
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { hovering in
-                        if hovering {
-                            selectedIndex = index
-                            startHoverHint(index: index)
-                        } else {
-                            cancelHoverHint()
-                        }
+                        if hovering { selectedIndex = index }
                     }
-                    .help(HelpText.Picker.hoverHint(browserName: entry.fullDisplayName, index: index))
                     .accessibilityLabel(entry.fullDisplayName)
                     .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
                 }
@@ -242,14 +215,8 @@ struct PickerContentView: View {
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { hovering in
-                        if hovering {
-                            selectedIndex = index
-                            startHoverHint(index: index)
-                        } else {
-                            cancelHoverHint()
-                        }
+                        if hovering { selectedIndex = index }
                     }
-                    .help(HelpText.Picker.hoverHint(browserName: entry.fullDisplayName, index: index))
                     .accessibilityLabel(entry.fullDisplayName)
                     .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
                 }
@@ -257,37 +224,9 @@ struct PickerContentView: View {
         }.frame(maxHeight: 470)
     }
 
-    // MARK: - Hover Hints
-
-    private func startHoverHint(index: Int) {
-        hoverHintTask?.cancel()
-        hoverHintTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled else { return }
-            hoverHintIndex = index
-        }
-    }
-
-    private func cancelHoverHint() {
-        hoverHintTask?.cancel()
-        hoverHintTask = nil
-        hoverHintIndex = nil
-    }
-
-    private func detailedHint(for entry: BrowserEntry, index: Int) -> String {
-        HelpText.Picker.detailedHint(entry: (
-            name: entry.fullDisplayName,
-            index: index,
-            isPrivate: entry.openInPrivateWindow,
-            stripTrackers: entry.stripUTMParams,
-            profileName: entry.profileName
-        ))
-    }
-
     // MARK: - Navigation
 
     private func move(_ delta: Int) {
-        cancelHoverHint()
         let newIndex = selectedIndex + delta
         if newIndex >= 0, newIndex < entries.count {
             selectedIndex = newIndex
@@ -295,7 +234,6 @@ struct PickerContentView: View {
     }
 
     private func selectCurrent() {
-        cancelHoverHint()
         guard entries.indices.contains(selectedIndex) else { return }
         onSelect(entries[selectedIndex])
     }
