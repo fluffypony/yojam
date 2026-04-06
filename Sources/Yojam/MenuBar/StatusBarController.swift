@@ -12,18 +12,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let onToggleEnabled: () -> Void
     private var clipboardWindow: ClipboardNotificationWindow?
 
+    private let onShowQuickStart: () -> Void
+
     init(browserManager: BrowserManager,
          recentURLsManager: RecentURLsManager,
          settingsStore: SettingsStore,
          onReopen: @escaping (URL) -> Void,
          onOpenPreferences: @escaping () -> Void,
-         onToggleEnabled: @escaping () -> Void) {
+         onToggleEnabled: @escaping () -> Void,
+         onShowQuickStart: @escaping () -> Void = {}) {
         self.browserManager = browserManager
         self.recentURLsManager = recentURLsManager
         self.settingsStore = settingsStore
         self.onReopen = onReopen
         self.onOpenPreferences = onOpenPreferences
         self.onToggleEnabled = onToggleEnabled
+        self.onShowQuickStart = onShowQuickStart
         super.init()
         setupStatusItem()
     }
@@ -84,6 +88,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(statsItem)
         menu.addItem(.separator())
 
+        let quickStartItem = NSMenuItem(
+            title: "Quick Start\u{2026}",
+            action: #selector(quickStartClicked),
+            keyEquivalent: "")
+        quickStartItem.target = self
+        menu.addItem(quickStartItem)
+
         let prefsItem = NSMenuItem(
             title: "Preferences...",
             action: #selector(preferencesClicked),
@@ -107,6 +118,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if let url = sender.representedObject as? URL { onReopen(url) }
     }
 
+    @objc private func quickStartClicked() { onShowQuickStart() }
     @objc private func preferencesClicked() { onOpenPreferences() }
 
     func showClipboardNotification(

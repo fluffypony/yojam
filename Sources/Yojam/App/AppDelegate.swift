@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import TipKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -65,6 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // TipKit
+        try? Tips.configure([
+            .displayFrequency(.daily),
+            .datastoreLocation(.applicationDefault)
+        ])
+
         // Detection layer
         changeReconciler = ChangeReconciler(
             browserManager: browserManager, ruleEngine: ruleEngine)
@@ -89,6 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpenPreferences: { [weak self] in self?.showPreferences() },
             onToggleEnabled: { [weak self] in
                 self?.settingsStore.isEnabled.toggle()
+            },
+            onShowQuickStart: { [weak self] in
+                guard let self else { return }
+                self.settingsStore.hasDismissedQuickStart = false
+                self.showPreferences()
             })
 
         // Recent URL retention
@@ -155,6 +167,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsStore.isFirstLaunch {
             DefaultBrowserManager.promptSetDefault()
             settingsStore.isFirstLaunch = false
+            // Auto-open Preferences so the user sees the Quick Start card
+            if pendingURLs.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.showPreferences()
+                }
+            }
         }
 
         // Profile discovery - async to avoid blocking launch.
@@ -438,11 +456,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Clamp to valid range
         let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
 
+        // Compute match reason for routing transparency
+        let matchReason: String?
+        if let bundleId = preselectedBundleId,
+           entries.contains(where: { $0.bundleIdentifier == bundleId }) {
+            if let matchedRule = ruleEngine.evaluate(url) {
+                let label = matchedRule.name.isEmpty ? matchedRule.pattern : matchedRule.name
+                matchReason = "Matched rule: \(label)"
+            } else if settingsStore.defaultSelectionBehavior == .smart,
+                      let domain = url.host?.lowercased(),
+                      routingSuggestionEngine.suggestion(for: domain) != nil {
+                matchReason = "Suggested from your history for \(url.host ?? "this domain")"
+            } else {
+                matchReason = nil
+            }
+        } else {
+            matchReason = nil
+        }
+
         pickerPanel?.close()
         pickerPanel = PickerPanel(
             url: url, entries: entries,
             preselectedIndex: clampedIndex,
             settingsStore: settingsStore,
+            matchReason: matchReason,
             onSelect: { [weak self] entry, finalURL in
                 self?.handlePickerSelection(
                     entry: entry, url: finalURL, isEmail: isEmail)

@@ -11,10 +11,15 @@ final class PickerPanel: NSPanel {
 
     init(url: URL, entries: [BrowserEntry], preselectedIndex: Int,
          settingsStore: SettingsStore,
+         matchReason: String? = nil,
          onSelect: @escaping (BrowserEntry, URL) -> Void,
          onCopy: @escaping (URL) -> Void,
          onDismiss: @escaping (PickerPanel) -> Void) {
         self.onDismiss = onDismiss
+
+        // Increment picker usage counter
+        let usageCount = UserDefaults.standard.integer(forKey: "pickerUsageCount")
+        UserDefaults.standard.set(usageCount + 1, forKey: "pickerUsageCount")
 
         // Resolve effective layout
         let layout = settingsStore.pickerLayout
@@ -64,6 +69,7 @@ final class PickerPanel: NSPanel {
             url: url, entries: displayEntries,
             selectedIndex: adjustedPreselection,
             layout: resolvedLayout,
+            matchReason: matchReason,
             onSelect: { [weak self] entry in
                 self?.dismissAnimated()
                 if settingsStore.soundEffectsEnabled {
@@ -115,9 +121,9 @@ final class PickerPanel: NSPanel {
 
     private var cursorTarget: NSPoint = .zero
 
-    // Footer height: 6(spacing) + 16(name) + 6(spacing) + 14(url) + 12(bottom pad) = 54
-    // Top padding: 12. Total non-content = 66.
-    private static let footerAllowance: CGFloat = 66
+    // Footer: hint line(14) + name(16) + url(14) + shortcut legend(16) + spacing/padding
+    // Top padding: 12. Total non-content = 90.
+    private static let footerAllowance: CGFloat = 90
 
     // MARK: - Layout Metrics
 
