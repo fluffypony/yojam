@@ -6,6 +6,9 @@ struct QuickStartCard: View {
     var onSwitchTab: ((PreferencesTab) -> Void)?
     var onScrollToSection: ((String) -> Void)?
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
+    @State private var hasVisitedActivation = false
+    @State private var hasVisitedBrowsers = false
+    @State private var hasVisitedTester = false
 
     var body: some View {
         ThemeCalloutCard {
@@ -37,22 +40,28 @@ struct QuickStartCard: View {
 
                 quickStartItem(
                     number: 2,
-                    text: "Choose when the picker appears"
+                    text: "Choose when the picker appears",
+                    isDone: hasVisitedActivation
                 ) {
+                    hasVisitedActivation = true
                     onScrollToSection?("Activation")
                 }
 
                 quickStartItem(
                     number: 3,
-                    text: "Review your browsers"
+                    text: "Review your browsers",
+                    isDone: hasVisitedBrowsers
                 ) {
+                    hasVisitedBrowsers = true
                     onSwitchTab?(.browsers)
                 }
 
                 quickStartItem(
                     number: 4,
-                    text: "Try the URL tester"
+                    text: "Try the URL tester",
+                    isDone: hasVisitedTester
                 ) {
+                    hasVisitedTester = true
                     onSwitchTab?(.pipeline)
                 }
             }

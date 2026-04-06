@@ -76,7 +76,9 @@ struct GeneralTab: View {
                     defaultBrowserStatus
                 }
             }
-            TipView(setDefaultTip)
+            if !isDefault {
+                TipView(setDefaultTip)
+            }
         }
     }
 
@@ -114,7 +116,7 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Activation")
             ThemePanel {
-                ThemePanelRow(helpText: HelpText.General.activationMode) {
+                ThemePanelRow(hideDivider: true, helpText: HelpText.General.activationMode) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Activation Mode")
                             .font(.system(size: 13, weight: .medium))

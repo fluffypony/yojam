@@ -54,10 +54,12 @@ struct ThemePanel<Content: View>: View {
 /// A single row inside a ThemePanel. Optional `helpText` shows a (i) popover icon.
 struct ThemePanelRow<Content: View>: View {
     let isLast: Bool
+    let hideDivider: Bool
     let helpText: String?
     let content: Content
-    init(isLast: Bool = false, helpText: String? = nil, @ViewBuilder content: () -> Content) {
+    init(isLast: Bool = false, hideDivider: Bool = false, helpText: String? = nil, @ViewBuilder content: () -> Content) {
         self.isLast = isLast
+        self.hideDivider = hideDivider
         self.helpText = helpText
         self.content = content()
     }
@@ -72,7 +74,7 @@ struct ThemePanelRow<Content: View>: View {
             }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-            if !isLast {
+            if !isLast && !hideDivider {
                 Divider()
                     .background(Theme.borderSubtle)
             }

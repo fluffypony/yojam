@@ -55,6 +55,7 @@ final class SettingsStoreTests: XCTestCase {
     @MainActor
     func testSaveBrowsersRoundTrip() {
         let store = SettingsStore()
+        let original = store.loadBrowsers()
         let browsers = [
             BrowserEntry(bundleIdentifier: "com.test.a", displayName: "A"),
             BrowserEntry(bundleIdentifier: "com.test.b", displayName: "B"),
@@ -64,6 +65,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 2)
         XCTAssertEqual(loaded[0].displayName, "A")
         XCTAssertEqual(loaded[1].displayName, "B")
+        store.saveBrowsers(original)
     }
 
     @MainActor

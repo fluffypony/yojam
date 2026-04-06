@@ -11,6 +11,7 @@ struct BrowsersTab: View {
     @State private var draggedBrowserId: UUID?
     @State private var cachedProfiles: [String: [BrowserProfile]] = [:]
     @State private var hoveredBrowserId: UUID?
+    @State private var draggedEmailId: UUID?
 
     private let browserOrderTip = BrowserOrderTip()
     private let customArgsTip = CustomLaunchArgsTip()
@@ -372,6 +373,14 @@ struct BrowsersTab: View {
                 ThemePanel {
                     ForEach(Array(browserManager.emailClients.enumerated()), id: \.element.id) { index, client in
                         ThemePanelRow(isLast: index == browserManager.emailClients.count - 1) {
+                            Text("\u{22EE}\u{22EE}")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Theme.textSecondary.opacity(0.5))
+                                .help("Drag to reorder")
+                                .onDrag {
+                                    draggedEmailId = client.id
+                                    return NSItemProvider(object: client.id.uuidString as NSString)
+                                }
                             Image(nsImage: browserManager.icon(for: client))
                                 .resizable()
                                 .frame(width: 20, height: 20)
@@ -381,7 +390,6 @@ struct BrowsersTab: View {
                                 .foregroundColor(Theme.textPrimary)
                                 .padding(.leading, 8)
                             Spacer()
-                            // Text badge instead of color-only dot
                             HStack(spacing: 4) {
                                 Circle()
                                     .fill(client.isInstalled ? Theme.success : Theme.textSecondary)
@@ -402,6 +410,12 @@ struct BrowsersTab: View {
                                 }
                             ))
                         }
+                        .onDrop(of: [.text], delegate: EmailDropDelegate(
+                            currentId: client.id,
+                            draggedId: $draggedEmailId,
+                            browserManager: browserManager,
+                            settingsStore: settingsStore
+                        ))
                     }
                 }
             }
@@ -516,6 +530,41 @@ struct BrowserDropDelegate: DropDelegate {
                 browserManager.moveBrowser(
                     from: IndexSet(integer: fromIndex),
                     to: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
+    }
+}
+
+struct EmailDropDelegate: DropDelegate {
+    let currentId: UUID
+    @Binding var draggedId: UUID?
+    let browserManager: BrowserManager
+    let settingsStore: SettingsStore
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedId = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != currentId else { return }
+        guard let fromIndex = browserManager.emailClients.firstIndex(where: { $0.id == draggedId }),
+              let toIndex = browserManager.emailClients.firstIndex(where: { $0.id == currentId })
+        else { return }
+        if fromIndex != toIndex {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                browserManager.emailClients.move(
+                    fromOffsets: IndexSet(integer: fromIndex),
+                    toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+                settingsStore.saveEmailClients(browserManager.emailClients)
             }
         }
     }
