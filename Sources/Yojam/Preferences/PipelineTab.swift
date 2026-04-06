@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import TipKit
 
 struct PipelineTab: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -10,16 +11,20 @@ struct PipelineTab: View {
 
     @State private var testURL = ""
     @State private var testPipeline: [PipelineNode] = []
+    @State private var testSummary: String?
     @State private var rewriteRules: [URLRewriteRule] = []
     @State private var showingAddRule = false
     @State private var showingAddRewrite = false
     @State private var showingTrackerList = false
     @State private var errorMessage: String?
+    @State private var pipelineOverviewDismissed = UserDefaults.standard.bool(forKey: "helpDismissed_pipelineOverview")
+
+    private let urlTesterTip = URLTesterTip()
 
     var body: some View {
         VStack(spacing: 0) {
             ThemeContentHeader(
-                title: "URL Pipeline",
+                title: "Link Handling",
                 subtitle: "Configure how Yojam processes, cleans, and routes URLs before opening."
             ) {
                 HStack(spacing: 8) {
@@ -31,6 +36,9 @@ struct PipelineTab: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
+                        if !pipelineOverviewDismissed {
+                            pipelineOverviewCard
+                        }
                         testerSection.id("URL Tester")
                         globalProcessingSection.id("Global Processing")
                         pipelineTableSection.id("Pipeline")
@@ -74,13 +82,47 @@ struct PipelineTab: View {
         }
     }
 
+    // MARK: - Pipeline Overview Card
+
+    private var pipelineOverviewCard: some View {
+        ThemeCalloutCard {
+            Text("How Yojam handles a link")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Theme.textPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                overviewStep("1", "Global rewrite rules transform the URL")
+                overviewStep("2", "Tracking parameters are stripped (if on)")
+                overviewStep("3", "Routing rules match the URL to a browser")
+                overviewStep("4", "Browser-specific rewrites run")
+                overviewStep("5", "The link opens, or the picker appears")
+            }
+        } onDismiss: {
+            withAnimation {
+                pipelineOverviewDismissed = true
+                UserDefaults.standard.set(true, forKey: "helpDismissed_pipelineOverview")
+            }
+        }
+    }
+
+    private func overviewStep(_ number: String, _ text: String) -> some View {
+        HStack(spacing: 8) {
+            Text(number)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundColor(Theme.accent)
+                .frame(width: 16)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(Theme.textSecondary)
+        }
+    }
+
     // MARK: - URL Tester
 
     private var testerSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 ThemeTextField(placeholder: "Paste a URL here to test...", text: $testURL)
-                ThemeButton("Test") { runTest() }
+                ThemeButton("Test", help: "Run this URL through the pipeline to see what happens") { runTest() }
             }
 
             if !testPipeline.isEmpty {
@@ -98,7 +140,15 @@ struct PipelineTab: View {
                     }
                     .padding(.bottom, 4)
                 }
+                if let testSummary {
+                    Text(testSummary)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textSecondary)
+                }
             }
+
+            ThemeInlineHelp(text: HelpText.Pipeline.urlTester)
+            TipView(urlTesterTip)
         }
         .padding(16)
         .background(Theme.bgInput)
@@ -148,12 +198,12 @@ struct PipelineTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Global Processing")
             ThemePanel {
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Pipeline.stripTrackingGlobal) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Strip Tracking Parameters")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Automatically remove tracking parameters (utm_*, gclid, fbclid) from all URLs before routing.")
+                        Text("Strips tracking parameters from every URL before any browser sees it.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -172,53 +222,68 @@ struct PipelineTab: View {
 
     private var pipelineTableSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemeSectionTitle(text: "Routing & Transformation Pipeline (Executed top to bottom)")
-            ThemePanel {
-                // Table header
-                HStack(spacing: 0) {
-                    Text("").frame(width: 30) // drag
-                    Text("STATUS").frame(width: 50, alignment: .leading)
-                    Text("TYPE").frame(width: 80, alignment: .leading)
-                    Text("PATTERN MATCH").frame(minWidth: 150, alignment: .leading)
-                    Spacer()
-                    Text("ACTION / TARGET").frame(width: 150, alignment: .leading)
-                    Text("").frame(width: 60) // controls
-                }
-                .font(.system(size: 11, weight: .medium))
-                .tracking(0.5)
-                .foregroundColor(Theme.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.bgPanel)
+            ThemeSectionTitle(text: "Routing & Transformation Pipeline (Executed top to bottom)", helpText: HelpText.Pipeline.pipelineOrder)
 
-                Divider().background(Theme.borderSubtle)
+            let userRules = ruleEngine.rules.filter { !$0.isBuiltIn }
+            let builtInRules = ruleEngine.rules.filter(\.isBuiltIn)
+            let hasContent = !rewriteRules.isEmpty || !userRules.isEmpty || !builtInRules.isEmpty
 
-                // Rewrite rules
-                ForEach(Array(rewriteRules.enumerated()), id: \.element.id) { index, rule in
-                    VStack(spacing: 0) {
-                        pipelineRewriteRow(rule: rule, index: index)
-                        Divider().background(Theme.borderSubtle)
+            if hasContent {
+                ThemePanel {
+                    // Table header
+                    HStack(spacing: 0) {
+                        Text("").frame(width: 30)
+                        Text("STATUS").frame(width: 50, alignment: .leading)
+                            .help("Whether this rule is active")
+                        Text("TYPE").frame(width: 80, alignment: .leading)
+                            .help("Rewrite transforms URLs; Rule routes to a browser")
+                        Text("PATTERN MATCH").frame(minWidth: 150, alignment: .leading)
+                            .help("The URL pattern this entry matches against")
+                        Spacer()
+                        Text("ACTION / TARGET").frame(width: 150, alignment: .leading)
+                            .help("What happens when the pattern matches")
+                        Text("").frame(width: 60)
                     }
-                }
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(0.5)
+                    .foregroundColor(Theme.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Theme.bgPanel)
 
-                // Routing rules
-                let userRules = ruleEngine.rules.filter { !$0.isBuiltIn }
-                let builtInRules = ruleEngine.rules.filter(\.isBuiltIn)
+                    Divider().background(Theme.borderSubtle)
 
-                ForEach(userRules) { rule in
-                    VStack(spacing: 0) {
-                        pipelineRuleRow(rule: rule)
-                        Divider().background(Theme.borderSubtle)
-                    }
-                }
-
-                ForEach(Array(builtInRules.enumerated()), id: \.element.id) { index, rule in
-                    VStack(spacing: 0) {
-                        pipelineRuleRow(rule: rule)
-                        if index < builtInRules.count - 1 {
+                    ForEach(Array(rewriteRules.enumerated()), id: \.element.id) { index, rule in
+                        VStack(spacing: 0) {
+                            pipelineRewriteRow(rule: rule, index: index)
                             Divider().background(Theme.borderSubtle)
                         }
                     }
+
+                    ForEach(userRules) { rule in
+                        VStack(spacing: 0) {
+                            pipelineRuleRow(rule: rule)
+                            Divider().background(Theme.borderSubtle)
+                        }
+                    }
+
+                    ForEach(Array(builtInRules.enumerated()), id: \.element.id) { index, rule in
+                        VStack(spacing: 0) {
+                            pipelineRuleRow(rule: rule)
+                            if index < builtInRules.count - 1 {
+                                Divider().background(Theme.borderSubtle)
+                            }
+                        }
+                    }
+                }
+            } else {
+                ThemePanel {
+                    ThemeEmptyState(
+                        icon: "arrow.triangle.branch",
+                        title: "No routing rules yet",
+                        message: "Create a rule to automatically route specific links to a specific browser.",
+                        action: { showingAddRule = true },
+                        actionLabel: "+ Add Rule")
                 }
             }
 
@@ -237,8 +302,8 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
                 .frame(width: 30)
+                .help("Drag to reorder priority")
 
-            // Toggle
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
                 set: { _ in toggleRewrite(rule.id) }
@@ -248,6 +313,8 @@ struct PipelineTab: View {
             .labelsHidden()
             .scaleEffect(0.7)
             .frame(width: 50, alignment: .leading)
+            .help("Enable or disable this rule")
+            .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
             ThemeBadge(text: "Rewrite", isRewrite: true)
                 .frame(width: 80, alignment: .leading)
@@ -287,6 +354,7 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
                 .frame(width: 30)
+                .help("Drag to reorder priority")
 
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
@@ -297,6 +365,8 @@ struct PipelineTab: View {
             .labelsHidden()
             .scaleEffect(0.7)
             .frame(width: 50, alignment: .leading)
+            .help("Enable or disable this rule")
+            .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
             ThemeBadge(text: "Rule", isRewrite: false)
                 .frame(width: 80, alignment: .leading)
@@ -334,12 +404,13 @@ struct PipelineTab: View {
 
     // MARK: - Test Logic
 
-    // §15: Fixed to match production pipeline ordering and use ruleEngine.evaluate()
     private func runTest() {
+        URLTesterTip.hasTestedURL = true
         var input = testURL
         if !input.contains("://") { input = "https://" + input }
         guard let url = URL(string: input) else {
             testPipeline = [PipelineNode(label: "Invalid URL", isActive: false, isFinal: false)]
+            testSummary = nil
             return
         }
 
@@ -349,7 +420,6 @@ struct PipelineTab: View {
 
         var processedURL = url
 
-        // Step 1: Global rewrites (matches production pipeline order)
         let rewritten = rewriteManager.applyGlobalRewrites(to: processedURL)
         if rewritten.absoluteString != processedURL.absoluteString {
             nodes.append(PipelineNode(label: "Rewrite", icon: "arrow.2.squarepath", isActive: true))
@@ -357,25 +427,27 @@ struct PipelineTab: View {
             processedURL = rewritten
         }
 
-        // Step 2: Global UTM stripping
+        var didStrip = false
         if settingsStore.globalUTMStrippingEnabled {
             let stripped = UTMStripper(settingsStore: settingsStore).strip(processedURL)
-            let didStrip = stripped.absoluteString != processedURL.absoluteString
+            didStrip = stripped.absoluteString != processedURL.absoluteString
             nodes.append(PipelineNode(label: "Strip Trackers", icon: "xmark.rectangle", isActive: didStrip))
             nodes.append(.arrow)
             processedURL = stripped
         }
 
-        // Step 3: Rule matching via canonical engine (respects priority/sorting)
         if let match = ruleEngine.evaluate(processedURL) {
             let host = processedURL.host ?? ""
             nodes.append(PipelineNode(label: "Match: \(host)", icon: "globe", isActive: true))
             nodes.append(.arrow)
             nodes.append(PipelineNode(label: "Open in: \(match.targetAppName)", isFinal: true))
+            let strippedNote = didStrip ? " after tracker stripping" : ""
+            testSummary = "This link would open in \(match.targetAppName)\(strippedNote)."
         } else {
             nodes.append(PipelineNode(label: "No match", icon: "questionmark.circle"))
             nodes.append(.arrow)
             nodes.append(PipelineNode(label: "Show picker", isFinal: true))
+            testSummary = "No rule matched \u{2014} Yojam would show the picker."
         }
 
         testPipeline = nodes
@@ -438,7 +510,7 @@ struct PipelineNode {
     }
 }
 
-// MARK: - Add Rule Sheet (restyled)
+// MARK: - Add Rule Sheet
 
 struct AddRuleSheet: View {
     @ObservedObject var ruleEngine: RuleEngine
@@ -462,7 +534,6 @@ struct AddRuleSheet: View {
         return handlers.compactMap { url in
             guard let bundle = Bundle(url: url),
                   let bundleId = bundle.bundleIdentifier,
-                  // §49: Exclude Yojam itself from rule targets
                   bundleId != Bundle.main.bundleIdentifier,
                   seen.insert(bundleId).inserted else { return nil }
             let name = bundle.infoDictionary?["CFBundleName"] as? String
@@ -473,7 +544,6 @@ struct AddRuleSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("Add Routing Rule")
                     .font(.system(size: 16, weight: .semibold))
@@ -491,7 +561,7 @@ struct AddRuleSheet: View {
                     fieldRow("Name") {
                         ThemeTextField(placeholder: "e.g. Work GitHub", text: $name)
                     }
-                    fieldRow("Match Type") {
+                    fieldRow("Match Type", helpText: HelpText.Pipeline.ruleMatchType) {
                         Picker("", selection: $matchType) {
                             ForEach(MatchType.allCases) { type in
                                 Text(type.displayName).tag(type)
@@ -499,6 +569,7 @@ struct AddRuleSheet: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
+                        .accessibilityLabel("Match type")
                     }
                     fieldRow("Pattern") {
                         ThemeTextField(placeholder: "e.g. github.com/my-company/*", text: $pattern, isMono: true)
@@ -513,6 +584,7 @@ struct AddRuleSheet: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
+                            .accessibilityLabel("Target application")
                             .onChange(of: targetBundleId) { _, newValue in
                                 targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
                             }
@@ -531,24 +603,24 @@ struct AddRuleSheet: View {
                         }
                     }
                     HStack(spacing: 24) {
-                        fieldRow("Priority") {
+                        fieldRow("Priority", helpText: HelpText.Pipeline.rulePriority) {
                             HStack(spacing: 8) {
                                 Text("\(priority)")
                                     .font(.system(size: 13, design: .monospaced))
                                     .foregroundColor(Theme.textPrimary)
                                 Stepper("", value: $priority, in: 1...1000)
                                     .labelsHidden()
+                                    .accessibilityLabel("Rule priority")
                             }
                         }
                         fieldRow("Strip Trackers") {
                             ThemeToggle(isOn: $stripUTMParams)
                         }
                     }
-                    fieldRow("Source App (optional)") {
+                    fieldRow("Source App (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
                         ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
                     }
 
-                    // Test section
                     Divider().background(Theme.borderSubtle).padding(.vertical, 4)
                     HStack(spacing: 8) {
                         ThemeTextField(placeholder: "Test URL...", text: $testURL)
@@ -597,17 +669,22 @@ struct AddRuleSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    private func fieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow<Content: View>(_ label: String, helpText: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Theme.textSecondary)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
+                if let helpText {
+                    ThemeHelpIcon(text: helpText)
+                }
+            }
             content()
         }
     }
 }
 
-// MARK: - Add Rewrite Sheet (restyled)
+// MARK: - Add Rewrite Sheet
 
 struct AddRewriteSheet: View {
     let onAdd: (URLRewriteRule) -> Void
@@ -636,10 +713,10 @@ struct AddRewriteSheet: View {
                 fieldRow("Name") {
                     ThemeTextField(placeholder: "e.g. Twitter to Nitter", text: $name)
                 }
-                fieldRow("Match Pattern") {
+                fieldRow("Match Pattern", helpText: HelpText.Pipeline.rewriteMatch) {
                     ThemeTextField(placeholder: "^https://twitter\\.com/(.*)", text: $matchPattern, isMono: true)
                 }
-                fieldRow("Replacement") {
+                fieldRow("Replacement", helpText: HelpText.Pipeline.rewriteReplacement) {
                     ThemeTextField(placeholder: "https://nitter.net/$1", text: $replacement, isMono: true)
                 }
                 HStack {
@@ -676,11 +753,16 @@ struct AddRewriteSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    private func fieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow<Content: View>(_ label: String, helpText: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Theme.textSecondary)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
+                if let helpText {
+                    ThemeHelpIcon(text: helpText)
+                }
+            }
             content()
         }
     }
@@ -707,7 +789,7 @@ struct TrackerParameterSheet: View {
             Divider().background(Theme.borderSubtle)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("One parameter per line. These are stripped from URLs when tracking parameter removal is enabled.")
+                Text("URL parameters that get stripped when tracker removal is on. One per line.")
                     .font(.system(size: 11))
                     .foregroundColor(Theme.textSecondary)
 

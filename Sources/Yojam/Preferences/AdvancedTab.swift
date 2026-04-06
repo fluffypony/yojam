@@ -21,6 +21,7 @@ struct AdvancedTab: View {
                     VStack(alignment: .leading, spacing: 32) {
                         debugSection.id("Diagnostics")
                         utmParametersSection.id("Tracker Parameter List")
+                        suppressedDomainsSection.id("Suppressed Clipboard Domains")
                         smartRoutingSection.id("Smart Routing")
                         dataSection.id("Settings Data")
                         dangerZoneSection.id("Danger Zone")
@@ -64,12 +65,12 @@ struct AdvancedTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Diagnostics")
             ThemePanel {
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.debugLogging) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Debug Logging")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Logs to ~/Library/Logs/Yojam/")
+                        Text("Writes detailed logs to ~/Library/Logs/Yojam/. Files rotate at 10 MB.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -84,9 +85,9 @@ struct AdvancedTab: View {
 
     private var utmParametersSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemeSectionTitle(text: "Tracker Parameter List")
+            ThemeSectionTitle(text: "Tracker Parameter List", helpText: HelpText.Advanced.trackerParameterList)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Parameters stripped when tracking parameter removal is enabled:")
+                Text("URL parameters that get stripped when tracker removal is on. One per line.")
                     .font(.system(size: 11))
                     .foregroundColor(Theme.textSecondary)
                 TextEditor(
@@ -124,18 +125,55 @@ struct AdvancedTab: View {
         }
     }
 
+    // MARK: - Suppressed Clipboard Domains
+
+    private var suppressedDomainsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ThemeSectionTitle(text: "Suppressed Clipboard Domains", helpText: HelpText.Advanced.suppressedClipboardDomains)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Domains to skip when clipboard monitoring is on. URLs from these won't trigger the notification.")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+                TextEditor(
+                    text: Binding(
+                        get: {
+                            settingsStore.suppressedClipboardDomains.joined(separator: "\n")
+                        },
+                        set: {
+                            settingsStore.suppressedClipboardDomains = $0
+                                .components(separatedBy: .newlines)
+                                .map { $0.trimmingCharacters(in: .whitespaces) }
+                                .filter { !$0.isEmpty }
+                        }
+                    )
+                )
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Theme.textPrimary)
+                .scrollContentBackground(.hidden)
+                .frame(height: 80)
+                .padding(8)
+                .background(Theme.bgInput)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.radiusSm)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                )
+            }
+        }
+    }
+
     // MARK: - Smart Routing
 
     private var smartRoutingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Smart Routing")
             ThemePanel {
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.learnedPreferences) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Learned Preferences")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Yojam learns which browser you prefer for each domain.")
+                        Text("Yojam remembers which browser you pick for each domain. Clear to start over.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -154,24 +192,24 @@ struct AdvancedTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Settings Data")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.Advanced.exportSettings) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Export Settings")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Save all settings to a JSON file for backup or transfer.")
+                        Text("Saves your browsers, rules, rewrites, and preferences to a JSON file.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
                     ThemeButton("Export...") { exportSettings() }
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.importSettings) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Import Settings")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Load settings from a previously exported JSON file.")
+                        Text("Loads settings from a previously exported file. Replaces your current list and rules.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -188,12 +226,12 @@ struct AdvancedTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Danger Zone")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.Advanced.redetectBrowsers) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Re-detect Browsers")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Clear all browser data and detect installed browsers from scratch.")
+                        Text("Scans your system for browsers and rebuilds the list from scratch.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -202,12 +240,12 @@ struct AdvancedTab: View {
                         showingResetBrowsersAlert = true
                     }
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.resetAll) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Reset All Settings")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Restore all settings to their factory defaults.")
+                        Text("Wipes all settings, rules, and learned preferences back to factory defaults.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -266,7 +304,6 @@ struct AdvancedTab: View {
         browserManager.suggestedBrowsers = fresh.suggestedBrowsers
     }
 
-    // §16: Re-detect browsers after reset to avoid empty browser list
     private func resetAll() {
         settingsStore.resetToDefaults()
         redetectBrowsers()

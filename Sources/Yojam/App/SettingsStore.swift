@@ -8,8 +8,8 @@ enum ActivationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .always: "Always show picker"
-        case .holdShift: "Hold Shift to pick"
-        case .smartFallback: "Smart + Fallback"
+        case .holdShift: "Open directly; hold Shift to choose"
+        case .smartFallback: "Auto-pick when confident"
         }
     }
 }
@@ -63,9 +63,9 @@ enum DefaultSelectionBehavior: String, Codable, CaseIterable, Identifiable, Send
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .alwaysFirst: "Always first"
-        case .lastUsed: "Last used"
-        case .smart: "Smart"
+        case .alwaysFirst: "First in browser list"
+        case .lastUsed: "Last browser I used"
+        case .smart: "Learned preference for this site"
         }
     }
 }
@@ -98,6 +98,7 @@ final class SettingsStore: ObservableObject {
         static let pickerInvertOrder = "pickerInvertOrder"
         static let recentURLRetention = "recentURLRetention"
         static let recentURLRetentionMinutes = "recentURLRetentionMinutes"
+        static let hasDismissedQuickStart = "hasDismissedQuickStart"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -169,6 +170,9 @@ final class SettingsStore: ObservableObject {
     @Published var recentURLRetentionMinutes: Int {
         didSet { defaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
     }
+    @Published var hasDismissedQuickStart: Bool {
+        didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
+    }
 
     init() {
         let d = UserDefaults.standard
@@ -205,6 +209,7 @@ final class SettingsStore: ObservableObject {
         self.recentURLRetention = RecentURLRetention(
             rawValue: d.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = d.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
+        self.hasDismissedQuickStart = d.bool(forKey: Keys.hasDismissedQuickStart)
     }
 
     // MARK: - Complex Data Persistence
@@ -426,6 +431,7 @@ final class SettingsStore: ObservableObject {
         self.pickerInvertOrder = false
         self.recentURLRetention = .forever
         self.recentURLRetentionMinutes = 30
+        self.hasDismissedQuickStart = false
         saveBrowsers([])
         saveEmailClients([])
         saveRules(BuiltInRules.all)

@@ -51,18 +51,25 @@ struct ThemePanel<Content: View>: View {
     }
 }
 
-/// A single row inside a ThemePanel.
+/// A single row inside a ThemePanel. Optional `helpText` shows a (i) popover icon.
 struct ThemePanelRow<Content: View>: View {
     let isLast: Bool
+    let helpText: String?
     let content: Content
-    init(isLast: Bool = false, @ViewBuilder content: () -> Content) {
+    init(isLast: Bool = false, helpText: String? = nil, @ViewBuilder content: () -> Content) {
         self.isLast = isLast
+        self.helpText = helpText
         self.content = content()
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { content }
+            HStack {
+                content
+                if let helpText {
+                    ThemeHelpIcon(text: helpText)
+                }
+            }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             if !isLast {
@@ -73,15 +80,21 @@ struct ThemePanelRow<Content: View>: View {
     }
 }
 
-/// Uppercase section title.
+/// Uppercase section title. Optional `helpText` shows a (i) popover icon.
 struct ThemeSectionTitle: View {
     let text: String
+    var helpText: String? = nil
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(0.5)
-            .foregroundColor(Theme.textSecondary)
-            .padding(.bottom, 12)
+        HStack(spacing: 6) {
+            Text(text.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundColor(Theme.textSecondary)
+            if let helpText {
+                ThemeHelpIcon(text: helpText)
+            }
+        }
+        .padding(.bottom, 12)
     }
 }
 
@@ -124,12 +137,19 @@ struct ThemeContentHeader<Trailing: View>: View {
 /// A pink accent toggle matching the design.
 struct ThemeToggle: View {
     @Binding var isOn: Bool
+    var helpTip: String? = nil
 
     var body: some View {
-        Toggle("", isOn: $isOn)
+        let toggle = Toggle("", isOn: $isOn)
             .toggleStyle(.switch)
             .tint(Theme.accent)
             .labelsHidden()
+            .accessibilityLabel(isOn ? "Enabled" : "Disabled")
+        if let helpTip {
+            toggle.help(helpTip)
+        } else {
+            toggle
+        }
     }
 }
 
@@ -137,16 +157,18 @@ struct ThemeToggle: View {
 struct ThemeButton: View {
     let label: String
     let isPrimary: Bool
+    let helpTip: String?
     let action: () -> Void
 
-    init(_ label: String, isPrimary: Bool = false, action: @escaping () -> Void) {
+    init(_ label: String, isPrimary: Bool = false, help: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.isPrimary = isPrimary
+        self.helpTip = help
         self.action = action
     }
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Text(label)
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 12)
@@ -160,16 +182,22 @@ struct ThemeButton: View {
                 )
         }
         .buttonStyle(.plain)
+        if let helpTip {
+            button.help(helpTip)
+        } else {
+            button
+        }
     }
 }
 
 /// Danger button for destructive actions.
 struct ThemeDangerButton: View {
     let label: String
+    var helpTip: String? = nil
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Text(label)
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 12)
@@ -183,6 +211,11 @@ struct ThemeDangerButton: View {
                 )
         }
         .buttonStyle(.plain)
+        if let helpTip {
+            button.help(helpTip)
+        } else {
+            button
+        }
     }
 }
 
@@ -190,16 +223,18 @@ struct ThemeDangerButton: View {
 struct ThemeIconButton: View {
     let systemName: String
     let isDanger: Bool
+    var helpTip: String? = nil
     let action: () -> Void
 
-    init(systemName: String, isDanger: Bool = false, action: @escaping () -> Void) {
+    init(systemName: String, isDanger: Bool = false, help: String? = nil, action: @escaping () -> Void) {
         self.systemName = systemName
         self.isDanger = isDanger
+        self.helpTip = help
         self.action = action
     }
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textSecondary)
@@ -207,8 +242,10 @@ struct ThemeIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            // hover color managed by SwiftUI's natural behavior
+        if let helpTip {
+            button.help(helpTip)
+        } else {
+            button
         }
     }
 }
@@ -253,6 +290,138 @@ struct ThemeTextField: View {
             )
     }
 }
+
+// MARK: - Help Components
+
+/// Small (i) icon with hover/click popover for settings that need longer explanations.
+struct ThemeHelpIcon: View {
+    let text: String
+    @State private var isShowing = false
+    @State private var hoverTask: Task<Void, Never>?
+
+    var body: some View {
+        Image(systemName: "info.circle")
+            .font(.system(size: 11))
+            .foregroundColor(Theme.textSecondary)
+            .onHover { hovering in
+                hoverTask?.cancel()
+                if hovering {
+                    hoverTask = Task {
+                        try? await Task.sleep(for: .seconds(0.4))
+                        if !Task.isCancelled {
+                            await MainActor.run { isShowing = true }
+                        }
+                    }
+                } else {
+                    isShowing = false
+                }
+            }
+            .onTapGesture { isShowing.toggle() }
+            .popover(isPresented: $isShowing, arrowEdge: .trailing) {
+                Text(text)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textPrimary)
+                    .padding(10)
+                    .frame(maxWidth: 260, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityLabel("More info")
+            .accessibilityHint(text)
+    }
+}
+
+/// Always-visible secondary text for dynamic contextual explanations.
+struct ThemeInlineHelp: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundColor(Theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Dismissible callout card for onboarding, pipeline explanation, and empty states.
+struct ThemeCalloutCard<Content: View>: View {
+    let content: Content
+    var onDismiss: (() -> Void)?
+
+    init(@ViewBuilder content: () -> Content, onDismiss: (() -> Void)? = nil) {
+        self.content = content()
+        self.onDismiss = onDismiss
+    }
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 8) { content }
+            Spacer()
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Theme.bgInput)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Friendly empty table replacement with icon, message, and optional action.
+struct ThemeEmptyState: View {
+    let icon: String
+    let title: String
+    let message: String
+    var action: (() -> Void)?
+    var actionLabel: String?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 28))
+                .foregroundColor(Theme.textSecondary.opacity(0.5))
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Theme.textSecondary)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundColor(Theme.textSecondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+            if let action, let actionLabel {
+                ThemeButton(actionLabel, isPrimary: true, action: action)
+                    .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+}
+
+/// Small keyboard shortcut chip for the picker legend.
+struct ThemeShortcutChip: View {
+    let key: String
+    let action: String
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(key)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 1)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+            Text(action)
+                .font(.system(size: 9))
+                .foregroundStyle(.quaternary)
+        }
+    }
+}
+
+// MARK: - Other Components
 
 /// A picker styled to match the dark theme.
 struct ThemeDropdown<SelectionValue: Hashable, Content: View>: View {

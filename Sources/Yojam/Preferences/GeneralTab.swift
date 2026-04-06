@@ -1,9 +1,14 @@
 import SwiftUI
+import TipKit
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
     @Binding var scrollToSection: String?
+    @Binding var selectedTab: PreferencesTab
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
+
+    private let setDefaultTip = SetDefaultBrowserTip()
+    private let activationModeTip = ActivationModeTip()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,6 +17,14 @@ struct GeneralTab: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
+                        if !settingsStore.hasDismissedQuickStart {
+                            QuickStartCard(
+                                settingsStore: settingsStore,
+                                onSwitchTab: { tab in selectedTab = tab },
+                                onScrollToSection: { section in
+                                    withAnimation { proxy.scrollTo(section, anchor: .top) }
+                                })
+                        }
                         startupSection.id("Startup")
                         activationSection.id("Activation")
                         pickerSection.id("Picker")
@@ -38,24 +51,24 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Startup")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.launchAtLogin) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Launch at Login")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Automatically start Yojam when you log in.")
+                        Text("Yojam starts automatically when you log in.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.launchAtLogin)
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.General.defaultBrowser) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default Browser")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Set Yojam as your system default browser to intercept all links.")
+                        Text("Set Yojam as your default so every link goes through it.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -63,6 +76,7 @@ struct GeneralTab: View {
                     defaultBrowserStatus
                 }
             }
+            TipView(setDefaultTip)
         }
     }
 
@@ -80,9 +94,9 @@ struct GeneralTab: View {
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textSecondary)
         } else {
-            ThemeButton("Set Default", isPrimary: true) {
+            ThemeButton("Set Default", isPrimary: true, help: "Opens macOS system prompt to set Yojam as your default browser") {
                 DefaultBrowserManager.promptSetDefault()
-                // Poll periodically since the system confirmation dialog is user-paced
+                SetDefaultBrowserTip.hasSetDefault = true
                 for delay in [1.0, 3.0, 6.0, 10.0, 15.0, 20.0, 30.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                         if !isDefault {
@@ -100,12 +114,12 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Activation")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.activationMode) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Activation Mode")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Controls when the browser picker appears.")
+                        Text("Pick when the browser chooser appears.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -117,14 +131,32 @@ struct GeneralTab: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    .frame(width: 180)
+                    .frame(width: 220)
+                    .accessibilityLabel("Activation mode")
+                    .help("Choose when the browser picker appears")
+                    .onChange(of: settingsStore.activationMode) { _, _ in
+                        ActivationModeTip.hasChangedMode = true
+                    }
                 }
-                ThemePanelRow(isLast: true) {
+                // Dynamic inline help for current activation mode
+                VStack(spacing: 0) {
+                    ThemeInlineHelp(text: {
+                        switch settingsStore.activationMode {
+                        case .always: return HelpText.General.activationAlways
+                        case .holdShift: return HelpText.General.activationHoldShift
+                        case .smartFallback: return HelpText.General.activationSmartFallback
+                        }
+                    }())
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    Divider().background(Theme.borderSubtle)
+                }
+                ThemePanelRow(isLast: true, helpText: HelpText.General.defaultSelection) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default Selection")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Which browser is pre-selected when the picker opens.")
+                        Text("Which browser is pre-highlighted when the picker opens.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -136,9 +168,20 @@ struct GeneralTab: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    .frame(width: 180)
+                    .frame(width: 220)
+                    .accessibilityLabel("Default selection behavior")
+                    .help("Choose which browser is pre-highlighted")
                 }
             }
+            // Dynamic inline help for current default selection
+            ThemeInlineHelp(text: {
+                switch settingsStore.defaultSelectionBehavior {
+                case .alwaysFirst: return HelpText.General.defaultSelectionAlwaysFirst
+                case .lastUsed: return HelpText.General.defaultSelectionLastUsed
+                case .smart: return HelpText.General.defaultSelectionSmart
+                }
+            }())
+            TipView(activationModeTip)
         }
     }
 
@@ -148,7 +191,7 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Picker")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.pickerLayout) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Layout")
                             .font(.system(size: 13, weight: .medium))
@@ -166,9 +209,11 @@ struct GeneralTab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 180)
+                    .accessibilityLabel("Picker layout")
+                    .help("Pick the visual style of the browser chooser")
                 }
                 if settingsStore.pickerLayout == .auto {
-                    ThemePanelRow {
+                    ThemePanelRow(helpText: HelpText.General.verticalThreshold) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Vertical Threshold")
                                 .font(.system(size: 13, weight: .medium))
@@ -185,10 +230,11 @@ struct GeneralTab: View {
                                 .frame(width: 24, alignment: .trailing)
                             Stepper("", value: $settingsStore.verticalThreshold, in: 4...20)
                                 .labelsHidden()
+                                .accessibilityLabel("Vertical threshold")
                         }
                     }
                 }
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.invertOrder) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Reverse Order")
                             .font(.system(size: 13, weight: .medium))
@@ -202,12 +248,12 @@ struct GeneralTab: View {
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.pickerInvertOrder)
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.General.soundEffects) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Sound Effects")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Play a sound when the picker opens.")
+                        Text("Plays a short sound when you pick a browser.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -215,6 +261,34 @@ struct GeneralTab: View {
                     ThemeToggle(isOn: $settingsStore.soundEffectsEnabled)
                 }
             }
+
+            // Picker Shortcuts
+            ThemeCalloutCard {
+                Text("Picker shortcuts")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.textSecondary)
+                HStack(spacing: 16) {
+                    shortcutEntry("\u{21B5} / Space", "Open selected browser")
+                    shortcutEntry("1\u{2013}9", "Choose directly by number")
+                    shortcutEntry("\u{2318}C", "Copy URL to clipboard")
+                    shortcutEntry("Esc", "Dismiss picker")
+                }
+            }
+        }
+    }
+
+    private func shortcutEntry(_ key: String, _ desc: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(Theme.textPrimary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Theme.bgHover)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+            Text(desc)
+                .font(.system(size: 10))
+                .foregroundColor(Theme.textSecondary)
         }
     }
 
@@ -224,12 +298,12 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "History")
             ThemePanel {
-                ThemePanelRow(isLast: settingsStore.recentURLRetention != .timed) {
+                ThemePanelRow(isLast: settingsStore.recentURLRetention != .timed, helpText: HelpText.General.recentURLs) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Recent URLs")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("How long to keep recently opened URLs in the menu bar list.")
+                        Text("Shows recent links in the menu bar so you can re-open one in a different browser.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
@@ -242,14 +316,15 @@ struct GeneralTab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 180)
+                    .accessibilityLabel("Recent URL retention")
                 }
                 if settingsStore.recentURLRetention == .timed {
-                    ThemePanelRow(isLast: true) {
+                    ThemePanelRow(isLast: true, helpText: HelpText.General.recentURLsAutoDelete) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Auto-delete After")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(Theme.textPrimary)
-                            Text("Minutes before recent URLs are automatically removed.")
+                            Text("Clears old entries from the recent URLs list after this long.")
                                 .font(.system(size: 11))
                                 .foregroundColor(Theme.textSecondary)
                         }
@@ -277,6 +352,7 @@ struct GeneralTab: View {
                                 .foregroundColor(Theme.textSecondary)
                             Stepper("", value: $settingsStore.recentURLRetentionMinutes, in: 1...1440)
                                 .labelsHidden()
+                                .accessibilityLabel("Auto-delete minutes")
                         }
                     }
                 }
@@ -290,24 +366,24 @@ struct GeneralTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Services")
             ThemePanel {
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.clipboardMonitoring) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clipboard Monitoring")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Show a notification when a URL is copied to the clipboard.")
+                        Text("When you copy a URL, a notification pops up so you can route it through Yojam.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.clipboardMonitoringEnabled)
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.General.iCloudSync) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("iCloud Sync")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Sync settings across your devices via iCloud.")
+                        Text("Syncs your browser list, rules, and preferences across your Macs.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }

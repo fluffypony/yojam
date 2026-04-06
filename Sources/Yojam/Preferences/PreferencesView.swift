@@ -8,7 +8,7 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
         switch self {
         case .general:  "General"
         case .browsers: "Browsers"
-        case .pipeline: "URL Pipeline"
+        case .pipeline: "Link Handling"
         case .advanced: "Advanced"
         }
     }
@@ -45,9 +45,9 @@ enum SettingsSearchIndex {
 
         // General > Activation
         SettingsSearchItem(tab: .general, section: "Activation", title: "Activation Mode",
-                           subtitle: "Controls when the browser picker appears always hold shift smart fallback"),
+                           subtitle: "Controls when the browser picker appears always hold shift smart fallback auto-pick"),
         SettingsSearchItem(tab: .general, section: "Activation", title: "Default Selection",
-                           subtitle: "Which browser is pre-selected when the picker opens first last used smart"),
+                           subtitle: "Which browser is pre-selected when the picker opens first last used smart learned"),
 
         // General > Picker
         SettingsSearchItem(tab: .general, section: "Picker", title: "Layout",
@@ -55,9 +55,11 @@ enum SettingsSearchIndex {
         SettingsSearchItem(tab: .general, section: "Picker", title: "Vertical Threshold",
                            subtitle: "Switch to vertical layout when this many browsers are shown"),
         SettingsSearchItem(tab: .general, section: "Picker", title: "Reverse Order",
-                           subtitle: "Show browsers from right to left bottom to top invert"),
+                           subtitle: "Show browsers from right to left bottom to top invert flip"),
         SettingsSearchItem(tab: .general, section: "Picker", title: "Sound Effects",
-                           subtitle: "Play a sound when the picker opens"),
+                           subtitle: "Play a sound when you pick a browser select"),
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Picker Shortcuts",
+                           subtitle: "keyboard shortcuts number keys return escape copy hotkeys"),
 
         // General > History
         SettingsSearchItem(tab: .general, section: "History", title: "Recent URLs",
@@ -67,9 +69,13 @@ enum SettingsSearchIndex {
 
         // General > Services
         SettingsSearchItem(tab: .general, section: "Services", title: "Clipboard Monitoring",
-                           subtitle: "Show a notification when a URL is copied to the clipboard"),
+                           subtitle: "Show a notification when a URL is copied to the clipboard copy link copy URL"),
         SettingsSearchItem(tab: .general, section: "Services", title: "iCloud Sync",
                            subtitle: "Sync settings across your devices via iCloud"),
+
+        // General > Quick Start
+        SettingsSearchItem(tab: .general, section: "Startup", title: "Quick Start",
+                           subtitle: "setup guide onboarding how to use getting started"),
 
         // Browsers
         SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Browser List",
@@ -78,20 +84,24 @@ enum SettingsSearchIndex {
                            subtitle: "Custom display name for browser profile bundle"),
         SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Custom Icon",
                            subtitle: "Set a custom icon for a browser"),
+        SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Private Window",
+                           subtitle: "Open links in private incognito window"),
+        SettingsSearchItem(tab: .browsers, section: "Active Browsers", title: "Browser Profiles",
+                           subtitle: "Select browser profile chromium firefox work personal"),
         SettingsSearchItem(tab: .browsers, section: "Suggested Browsers", title: "Suggested Browsers",
                            subtitle: "Auto-detected browsers not yet added"),
         SettingsSearchItem(tab: .browsers, section: "Email Clients", title: "Email Clients",
-                           subtitle: "Manage email clients for mailto links"),
+                           subtitle: "Manage email clients for mailto links email"),
 
         // Pipeline
         SettingsSearchItem(tab: .pipeline, section: "URL Tester", title: "URL Tester",
                            subtitle: "Test how a URL will be processed through the pipeline"),
         SettingsSearchItem(tab: .pipeline, section: "Global Processing", title: "Strip Tracking Parameters",
-                           subtitle: "Automatically remove tracking parameters utm gclid fbclid from all URLs"),
+                           subtitle: "Automatically remove tracking parameters utm gclid fbclid tracker from all URLs"),
         SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Routing Rules",
                            subtitle: "URL routing rules match pattern target browser domain path regex"),
         SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Rewrite Rules",
-                           subtitle: "URL rewrite rules find replace regex transform"),
+                           subtitle: "URL rewrite rules find replace regex transform old reddit nitter redirect"),
         SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Import Export Rules",
                            subtitle: "Import or export routing rules as JSON"),
 
@@ -101,7 +111,7 @@ enum SettingsSearchIndex {
         SettingsSearchItem(tab: .advanced, section: "Tracker Parameter List", title: "Tracker Parameter List",
                            subtitle: "Parameters stripped when tracking parameter removal is enabled utm"),
         SettingsSearchItem(tab: .advanced, section: "Smart Routing", title: "Learned Preferences",
-                           subtitle: "Yojam learns which browser you prefer for each domain clear smart routing"),
+                           subtitle: "Yojam learns which browser you prefer for each domain clear smart routing remember"),
         SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Export Settings",
                            subtitle: "Save all settings to a JSON file for backup or transfer"),
         SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Import Settings",
@@ -195,6 +205,26 @@ struct PreferencesView: View {
             }
 
             Spacer()
+
+            // Help entry point
+            Button {
+                settingsStore.hasDismissedQuickStart = false
+                selectedTab = .general
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 14))
+                    Text("Quick Start")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(Theme.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .help("Show the Quick Start guide")
+            .padding(.horizontal, 8)
+            .padding(.bottom, 12)
         }
         .frame(width: 240)
         .background(Theme.bgSidebar)
@@ -233,8 +263,6 @@ struct PreferencesView: View {
                                     Button {
                                         selectedTab = item.tab
                                         searchText = ""
-                                        // Delay so the new tab has time to mount
-                                        // before the onChange fires
                                         let section = item.section
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                             scrollToSection = section
@@ -255,9 +283,6 @@ struct PreferencesView: View {
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    .onHover { hovering in
-                                        // SwiftUI handles highlight automatically
-                                    }
                                 }
                             }
                         }
@@ -299,7 +324,10 @@ struct PreferencesView: View {
     private var content: some View {
         switch selectedTab {
         case .general:
-            GeneralTab(settingsStore: settingsStore, scrollToSection: $scrollToSection)
+            GeneralTab(
+                settingsStore: settingsStore,
+                scrollToSection: $scrollToSection,
+                selectedTab: $selectedTab)
         case .browsers:
             BrowsersTab(settingsStore: settingsStore, browserManager: browserManager, scrollToSection: $scrollToSection)
         case .pipeline:

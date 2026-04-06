@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import TipKit
 
 struct BrowsersTab: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -8,8 +9,11 @@ struct BrowsersTab: View {
     @State private var expandedBrowserId: UUID?
     @State private var profileDiscovery = ProfileDiscovery()
     @State private var draggedBrowserId: UUID?
-    // §34: Cache discovered profiles per bundle ID to avoid synchronous disk I/O on every render
     @State private var cachedProfiles: [String: [BrowserProfile]] = [:]
+    @State private var hoveredBrowserId: UUID?
+
+    private let browserOrderTip = BrowserOrderTip()
+    private let customArgsTip = CustomLaunchArgsTip()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,8 +22,8 @@ struct BrowsersTab: View {
                 subtitle: "Manage installed browsers and per-app behavior."
             ) {
                 HStack(spacing: 8) {
-                    ThemeButton("Rescan") { rescanBrowsers() }
-                    ThemeButton("+ Add", isPrimary: true) { addCustomApp() }
+                    ThemeButton("Rescan", help: "Check for newly installed browsers") { rescanBrowsers() }
+                    ThemeButton("+ Add", isPrimary: true, help: "Add a browser or app manually") { addCustomApp() }
                 }
             }
 
@@ -43,9 +47,7 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
-        // Save any pending display name edits when navigating away from this tab
         .onDisappear { savePendingDisplayName(for: expandedBrowserId) }
-        // Save any pending display name edits when collapsing a detail view
         .onChange(of: expandedBrowserId) { oldId, _ in
             savePendingDisplayName(for: oldId)
         }
@@ -56,24 +58,38 @@ struct BrowsersTab: View {
     private var browsersSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Active Browsers")
-            ThemePanel {
-                ForEach(Array(browserManager.browsers.enumerated()), id: \.element.id) { index, browser in
-                    VStack(spacing: 0) {
-                        browserRow(browser: browser, index: index)
-                            .onDrag {
-                                draggedBrowserId = browser.id
-                                return NSItemProvider(object: browser.id.uuidString as NSString)
+            ThemeInlineHelp(text: HelpText.Browsers.dragReorder)
+            TipView(browserOrderTip)
+            if browserManager.browsers.isEmpty {
+                ThemePanel {
+                    ThemeEmptyState(
+                        icon: "globe",
+                        title: "No browsers set up",
+                        message: "Scan for installed browsers or add one manually.",
+                        action: { rescanBrowsers() },
+                        actionLabel: "Rescan")
+                }
+            } else {
+                ThemePanel {
+                    ForEach(Array(browserManager.browsers.enumerated()), id: \.element.id) { index, browser in
+                        VStack(spacing: 0) {
+                            browserRow(browser: browser, index: index)
+                                .onDrag {
+                                    draggedBrowserId = browser.id
+                                    BrowserOrderTip.hasReordered = true
+                                    return NSItemProvider(object: browser.id.uuidString as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: BrowserDropDelegate(
+                                    currentId: browser.id,
+                                    draggedId: $draggedBrowserId,
+                                    browserManager: browserManager
+                                ))
+                            if expandedBrowserId == browser.id {
+                                browserDetailView(index: index)
                             }
-                            .onDrop(of: [.text], delegate: BrowserDropDelegate(
-                                currentId: browser.id,
-                                draggedId: $draggedBrowserId,
-                                browserManager: browserManager
-                            ))
-                        if expandedBrowserId == browser.id {
-                            browserDetailView(index: index)
-                        }
-                        if index < browserManager.browsers.count - 1 {
-                            Divider().background(Theme.borderSubtle)
+                            if index < browserManager.browsers.count - 1 {
+                                Divider().background(Theme.borderSubtle)
+                            }
                         }
                     }
                 }
@@ -90,6 +106,7 @@ struct BrowsersTab: View {
                 .frame(width: 24, height: 36)
                 .contentShape(Rectangle())
                 .padding(.trailing, 8)
+                .help("Drag to reorder")
 
             // Icon
             Image(nsImage: browserManager.icon(for: browser))
@@ -98,7 +115,7 @@ struct BrowsersTab: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .padding(.trailing, 12)
 
-            // Name — truncate long names so controls stay put
+            // Name
             Text(browser.fullDisplayName)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(Theme.textPrimary)
@@ -107,10 +124,9 @@ struct BrowsersTab: View {
 
             Spacer(minLength: 16)
 
-            // §12: Use id-based lookup in all bindings to prevent staleness after reorder
             HStack(spacing: 12) {
                 if ProfileLaunchHelper.supportsPrivateWindow(browserBundleId: browser.bundleIdentifier) {
-                    inlineCheckbox("Private", isOn: Binding(
+                    inlineCheckbox("Private window", isOn: Binding(
                         get: { browser.openInPrivateWindow },
                         set: { newValue in
                             guard var entry = browserManager.browsers.first(where: { $0.id == browser.id }) else { return }
@@ -119,7 +135,7 @@ struct BrowsersTab: View {
                         }
                     ))
                 }
-                inlineCheckbox("Strip Trackers", isOn: Binding(
+                inlineCheckbox("Remove tracking", isOn: Binding(
                     get: { browser.stripUTMParams },
                     set: { newValue in
                         guard var entry = browserManager.browsers.first(where: { $0.id == browser.id }) else { return }
@@ -128,7 +144,6 @@ struct BrowsersTab: View {
                     }
                 ))
 
-                // Expand/edit button — generous hit target
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         expandedBrowserId = expandedBrowserId == browser.id ? nil : browser.id
@@ -142,10 +157,11 @@ struct BrowsersTab: View {
                         .contentShape(Rectangle())
                         .background(
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Theme.bgHover.opacity(0.001)) // invisible but hittable
+                                .fill(Theme.bgHover.opacity(0.001))
                         )
                 }
                 .buttonStyle(.plain)
+                .help("Show browser details")
 
                 ThemeToggle(isOn: Binding(
                     get: { browser.enabled },
@@ -154,17 +170,25 @@ struct BrowsersTab: View {
                         entry.enabled = newValue
                         browserManager.updateBrowser(entry)
                     }
-                ))
+                ), helpTip: "Include this browser in the picker")
             }
             .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .background(hoveredBrowserId == browser.id ? Theme.bgHover.opacity(0.5) : Color.clear)
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                expandedBrowserId = expandedBrowserId == browser.id ? nil : browser.id
+            }
+        }
+        .onHover { hovering in
+            hoveredBrowserId = hovering ? browser.id : nil
+        }
         .opacity(browser.enabled ? 1 : 0.5)
     }
 
-    // §12: Rewritten with id-based lookup for all bindings
     private func browserDetailView(index: Int) -> some View {
         let browserId = browserManager.browsers[safe: index]?.id
         return VStack(spacing: 12) {
@@ -190,13 +214,15 @@ struct BrowsersTab: View {
                             }
                     }
 
-                    // §34: Use cached profiles to avoid sync disk I/O on every render
                     let profiles = cachedProfiles[browser.bundleIdentifier] ?? []
                     if !profiles.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Profile")
-                                .font(.system(size: 11))
-                                .foregroundColor(Theme.textSecondary)
+                            HStack(spacing: 4) {
+                                Text("Profile")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Theme.textSecondary)
+                                ThemeHelpIcon(text: HelpText.Browsers.profileSelection)
+                            }
                             Picker("", selection: Binding<String?>(
                                 get: {
                                     browserManager.browsers.first(where: { $0.id == browserId })?.profileId
@@ -215,14 +241,18 @@ struct BrowsersTab: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
+                            .accessibilityLabel("Browser profile")
                         }
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Custom Launch Args")
-                        .font(.system(size: 11))
-                        .foregroundColor(Theme.textSecondary)
+                    HStack(spacing: 4) {
+                        Text("Custom Launch Args")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                        ThemeHelpIcon(text: HelpText.Browsers.customLaunchArgs)
+                    }
                     HStack(spacing: 8) {
                         ThemeTextField(
                             placeholder: "e.g. $URL or --url $URL",
@@ -234,6 +264,7 @@ struct BrowsersTab: View {
                                     guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
                                     entry.customLaunchArgs = newValue.isEmpty ? nil : newValue
                                     browserManager.updateBrowser(entry)
+                                    CustomLaunchArgsTip.hasEditedArgs = true
                                 }),
                             isMono: true)
                         Text("Use $URL for the link")
@@ -241,6 +272,7 @@ struct BrowsersTab: View {
                             .foregroundColor(Theme.textSecondary)
                     }
                 }
+                TipView(customArgsTip)
 
                 HStack(spacing: 12) {
                     Text("Bundle: \(browser.bundleIdentifier)")
@@ -257,11 +289,10 @@ struct BrowsersTab: View {
                                 browserManager.updateBrowser(entry)
                             }
                         }
-                        ThemeButton("Custom Icon...") {
+                        ThemeButton("Custom Icon...", help: HelpText.Browsers.customIcon) {
                             let panel = NSOpenPanel()
                             panel.allowedContentTypes = [.image]
                             if panel.runModal() == .OK, let url = panel.url {
-                                // Cap icon import at 5 MB
                                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                                 let size = attrs?[.size] as? UInt64 ?? 0
                                 guard size < 5_000_000 else { return }
@@ -284,7 +315,6 @@ struct BrowsersTab: View {
         .padding(.horizontal, 52)
         .padding(.vertical, 12)
         .background(Theme.bgInput.opacity(0.5))
-        // §34: Discover profiles asynchronously off the main thread
         .task(id: browserId) {
             guard let browserId,
                   let browser = browserManager.browsers.first(where: { $0.id == browserId }),
@@ -303,6 +333,7 @@ struct BrowsersTab: View {
     private var suggestedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Suggested Browsers")
+            ThemeInlineHelp(text: HelpText.Browsers.suggestedBrowsers)
             ThemePanel {
                 ForEach(Array(browserManager.suggestedBrowsers.enumerated()), id: \.element.id) { index, entry in
                     ThemePanelRow(isLast: index == browserManager.suggestedBrowsers.count - 1) {
@@ -329,32 +360,48 @@ struct BrowsersTab: View {
     private var emailSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Email Clients")
-            ThemePanel {
-                ForEach(Array(browserManager.emailClients.enumerated()), id: \.element.id) { index, client in
-                    ThemePanelRow(isLast: index == browserManager.emailClients.count - 1) {
-                        Image(nsImage: browserManager.icon(for: client))
-                            .resizable()
-                            .frame(width: 20, height: 20)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                        Text(client.displayName)
-                            .font(.system(size: 13))
-                            .foregroundColor(Theme.textPrimary)
-                            .padding(.leading, 8)
-                        Spacer()
-                        Circle()
-                            .fill(client.isInstalled ? Theme.success : Theme.textSecondary)
-                            .frame(width: 6, height: 6)
-                            .padding(.trailing, 8)
-                        ThemeToggle(isOn: Binding(
-                            get: {
-                                browserManager.emailClients.first(where: { $0.id == client.id })?.enabled ?? client.enabled
-                            },
-                            set: { newValue in
-                                guard let idx = browserManager.emailClients.firstIndex(where: { $0.id == client.id }) else { return }
-                                browserManager.emailClients[idx].enabled = newValue
-                                settingsStore.saveEmailClients(browserManager.emailClients)
+            ThemeInlineHelp(text: HelpText.Browsers.emailClients)
+            if browserManager.emailClients.isEmpty {
+                ThemePanel {
+                    ThemeEmptyState(
+                        icon: "envelope",
+                        title: "No email clients found",
+                        message: "Yojam will fall back to your system default for mailto: links.")
+                }
+            } else {
+                ThemePanel {
+                    ForEach(Array(browserManager.emailClients.enumerated()), id: \.element.id) { index, client in
+                        ThemePanelRow(isLast: index == browserManager.emailClients.count - 1) {
+                            Image(nsImage: browserManager.icon(for: client))
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            Text(client.displayName)
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.textPrimary)
+                                .padding(.leading, 8)
+                            Spacer()
+                            // Text badge instead of color-only dot
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(client.isInstalled ? Theme.success : Theme.textSecondary)
+                                    .frame(width: 6, height: 6)
+                                Text(client.isInstalled ? "Installed" : "Not Found")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(client.isInstalled ? Theme.success : Theme.textSecondary)
                             }
-                        ))
+                            .padding(.trailing, 8)
+                            ThemeToggle(isOn: Binding(
+                                get: {
+                                    browserManager.emailClients.first(where: { $0.id == client.id })?.enabled ?? client.enabled
+                                },
+                                set: { newValue in
+                                    guard let idx = browserManager.emailClients.firstIndex(where: { $0.id == client.id }) else { return }
+                                    browserManager.emailClients[idx].enabled = newValue
+                                    settingsStore.saveEmailClients(browserManager.emailClients)
+                                }
+                            ))
+                        }
                     }
                 }
             }
@@ -373,9 +420,7 @@ struct BrowsersTab: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         if let bundle = Bundle(url: url), let bundleId = bundle.bundleIdentifier {
-            // §49: Prevent adding Yojam itself (would cause infinite loop)
             guard bundleId != Bundle.main.bundleIdentifier else { return }
-            // .app bundle
             let name = bundle.infoDictionary?["CFBundleName"] as? String
                 ?? url.deletingPathExtension().lastPathComponent
             let handlesURLs = NSWorkspace.shared.urlsForApplications(
@@ -388,7 +433,6 @@ struct BrowsersTab: View {
                 source: .manual,
                 customLaunchArgs: handlesURLs ? nil : "$URL"))
         } else {
-            // Bare executable — use the absolute path as the "bundle ID"
             let path = url.path
             let name = url.lastPathComponent
             browserManager.addBrowser(BrowserEntry(
@@ -402,7 +446,6 @@ struct BrowsersTab: View {
 
     // MARK: - Helpers
 
-    /// Save the display name if it was edited in-memory but not yet persisted.
     private func savePendingDisplayName(for browserId: UUID?) {
         guard let browserId,
               let entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
