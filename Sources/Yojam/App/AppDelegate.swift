@@ -161,14 +161,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Auto-assign the default profile to each base browser entry.
         // Users who want additional profiles as separate picker entries
         // can add the browser again via + and select a different profile.
+        // Pending URLs are drained AFTER profile discovery completes
+        // to avoid opening the first URL without the intended profile.
         let profileDiscovery = ProfileDiscovery()
+        isFinishedLaunching = true
         Task { @MainActor in
             var changed = false
             for i in browserManager.browsers.indices {
                 // Only process base entries that don't have a profile set yet
                 guard browserManager.browsers[i].profileId == nil else { continue }
-                let profiles = profileDiscovery.discoverProfiles(
-                    for: browserManager.browsers[i].bundleIdentifier)
+                let bundleId = browserManager.browsers[i].bundleIdentifier
+                let profiles = await Task.detached {
+                    profileDiscovery.discoverProfiles(for: bundleId)
+                }.value
                 let namedProfiles = profiles.filter { !$0.name.isEmpty }
                 guard namedProfiles.count > 1 else { continue }
                 // Set the default profile on the base entry
@@ -183,14 +188,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
                 browserManager.refreshProfileSuggestions()
             }
+            // Process any URLs that arrived during cold launch
+            for (url, source, mods) in pendingURLs {
+                routeURL(url, sourceAppBundleId: source, modifiers: mods)
+            }
+            pendingURLs.removeAll()
         }
-
-        // Process any URLs that arrived during cold launch
-        isFinishedLaunching = true
-        for (url, source, mods) in pendingURLs {
-            routeURL(url, sourceAppBundleId: source, modifiers: mods)
-        }
-        pendingURLs.removeAll()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -478,7 +481,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             finalURL = utmStripper.strip(finalURL)
         }
 
-        guard let appURL = appURL(for: entry.bundleIdentifier) else { return }
+        guard let appURL = appURL(for: entry.bundleIdentifier) else {
+            YojamLogger.shared.log("Cannot open \(entry.displayName): application not found at \(entry.bundleIdentifier)")
+            return
+        }
 
         browserManager.recordLastUsed(entry, isEmail: isEmail)
 
@@ -531,9 +537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 execURL = appURL
             }
 
-            var args = template
-                .components(separatedBy: " ")
-                .filter { !$0.isEmpty }
+            var args = shellSplitArguments(template)
                 .map { $0.replacingOccurrences(of: "$URL", with: url.absoluteString) }
 
             // Also honor profile and private-window settings
@@ -552,8 +556,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // §51: Set termination handler to log completion/failure
             process.terminationHandler = { proc in
                 if proc.terminationStatus != 0 {
-                    YojamLogger.shared.log(
-                        "Custom launch exited with status \(proc.terminationStatus)")
+                    let status = proc.terminationStatus
+                    Task { @MainActor in
+                        YojamLogger.shared.log(
+                            "Custom launch exited with status \(status)")
+                    }
                 }
             }
             do {
@@ -637,6 +644,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     "Failed to open URL: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Split a string of command-line arguments respecting single and double quotes.
+    private func shellSplitArguments(_ template: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var inQuote: Character? = nil
+        for ch in template {
+            if let q = inQuote {
+                if ch == q { inQuote = nil } else { current.append(ch) }
+            } else if ch == "\"" || ch == "'" {
+                inQuote = ch
+            } else if ch == " " {
+                if !current.isEmpty { tokens.append(current); current = "" }
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
     }
 
     // §19: Iterate until an enabled browser actually resolves, not just the first enabled

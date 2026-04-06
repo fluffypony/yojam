@@ -1,7 +1,11 @@
 import Foundation
 
 enum RegexMatcher {
-    private nonisolated(unsafe) static let cache = NSCache<NSString, NSRegularExpression>()
+    private nonisolated(unsafe) static let cache: NSCache<NSString, NSRegularExpression> = {
+        let c = NSCache<NSString, NSRegularExpression>()
+        c.countLimit = 256
+        return c
+    }()
 
     private static func cachedRegex(pattern: String) -> NSRegularExpression? {
         let key = pattern as NSString

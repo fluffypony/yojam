@@ -41,10 +41,11 @@ final class ClipboardMonitor {
         lastChangeCount = pasteboard.changeCount
         // §25: Skip self-triggered clipboard writes
         if suppressNextChange { suppressNextChange = false; return }
-        // §24: Trim whitespace and guard against excessively large clipboard text
-        guard let string = pasteboard.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              string.count < 2048,
+        // §24: Guard against excessively large clipboard text before trimming
+        guard let rawString = pasteboard.string(forType: .string),
+              rawString.count < 2048 else { return }
+        let string = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !string.isEmpty,
               let url = URL(string: string),
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),

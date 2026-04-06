@@ -38,6 +38,7 @@ final class UTMStripper {
             parametersToStrip = built
         }
         let filteredItems = queryItems.filter { !parametersToStrip.contains($0.name.lowercased()) }
+        guard filteredItems.count < queryItems.count else { return url }
         components.queryItems = filteredItems.isEmpty ? nil : filteredItems
         return components.url ?? url
     }

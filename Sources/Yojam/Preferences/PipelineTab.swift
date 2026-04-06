@@ -586,6 +586,7 @@ struct AddRuleSheet: View {
                     ruleEngine.addRule(rule)
                     onDismiss()
                 }
+                .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty)
                 .opacity(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty ? 0.5 : 1)
             }
             .padding(16)
@@ -664,6 +665,7 @@ struct AddRewriteSheet: View {
                     onAdd(rule)
                     onDismiss()
                 }
+                .disabled(name.isEmpty || matchPattern.isEmpty)
                 .opacity(name.isEmpty || matchPattern.isEmpty ? 0.5 : 1)
             }
             .padding(16)

@@ -43,6 +43,8 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
+        // Save any pending display name edits when collapsing a detail view
+        .onChange(of: expandedBrowserId) { _, _ in browserManager.save() }
     }
 
     // MARK: - Browsers List
@@ -107,16 +109,18 @@ struct BrowsersTab: View {
                     inlineCheckbox("Private", isOn: Binding(
                         get: { browser.openInPrivateWindow },
                         set: { newValue in
-                            guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
-                            browserManager.browsers[idx].openInPrivateWindow = newValue; browserManager.save()
+                            guard var entry = browserManager.browsers.first(where: { $0.id == browser.id }) else { return }
+                            entry.openInPrivateWindow = newValue
+                            browserManager.updateBrowser(entry)
                         }
                     ))
                 }
                 inlineCheckbox("Strip Trackers", isOn: Binding(
                     get: { browser.stripUTMParams },
                     set: { newValue in
-                        guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
-                        browserManager.browsers[idx].stripUTMParams = newValue; browserManager.save()
+                        guard var entry = browserManager.browsers.first(where: { $0.id == browser.id }) else { return }
+                        entry.stripUTMParams = newValue
+                        browserManager.updateBrowser(entry)
                     }
                 ))
 
@@ -142,8 +146,9 @@ struct BrowsersTab: View {
                 ThemeToggle(isOn: Binding(
                     get: { browser.enabled },
                     set: { newValue in
-                        guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browser.id }) else { return }
-                        browserManager.browsers[idx].enabled = newValue; browserManager.save()
+                        guard var entry = browserManager.browsers.first(where: { $0.id == browser.id }) else { return }
+                        entry.enabled = newValue
+                        browserManager.updateBrowser(entry)
                     }
                 ))
             }
@@ -175,7 +180,10 @@ struct BrowsersTab: View {
                                     guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
                                     browserManager.browsers[idx].displayName = newValue
                                 }))
-                            .onSubmit { browserManager.save() }
+                            .onSubmit {
+                                guard let entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                                browserManager.updateBrowser(entry)
+                            }
                     }
 
                     // §34: Use cached profiles to avoid sync disk I/O on every render
@@ -190,11 +198,10 @@ struct BrowsersTab: View {
                                     browserManager.browsers.first(where: { $0.id == browserId })?.profileId
                                 },
                                 set: { (newId: String?) in
-                                    guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
-                                    browserManager.browsers[idx].profileId = newId
-                                    browserManager.browsers[idx].profileName =
-                                        profiles.first(where: { $0.id == newId })?.name
-                                    browserManager.save()
+                                    guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                                    entry.profileId = newId
+                                    entry.profileName = profiles.first(where: { $0.id == newId })?.name
+                                    browserManager.updateBrowser(entry)
                                 }
                             )) {
                                 Text("None").tag(nil as String?)
@@ -220,9 +227,9 @@ struct BrowsersTab: View {
                                     browserManager.browsers.first(where: { $0.id == browserId })?.customLaunchArgs ?? ""
                                 },
                                 set: { newValue in
-                                    guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
-                                    browserManager.browsers[idx].customLaunchArgs = newValue.isEmpty ? nil : newValue
-                                    browserManager.save()
+                                    guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                                    entry.customLaunchArgs = newValue.isEmpty ? nil : newValue
+                                    browserManager.updateBrowser(entry)
                                 }),
                             isMono: true)
                         Text("Use $URL for the link")
@@ -241,19 +248,23 @@ struct BrowsersTab: View {
                     HStack(spacing: 8) {
                         if browser.customIconData != nil {
                             ThemeButton("Remove Icon") {
-                                guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
-                                browserManager.browsers[idx].customIconData = nil
-                                browserManager.save()
+                                guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                                entry.customIconData = nil
+                                browserManager.updateBrowser(entry)
                             }
                         }
                         ThemeButton("Custom Icon...") {
                             let panel = NSOpenPanel()
                             panel.allowedContentTypes = [.image]
-                            if panel.runModal() == .OK, let url = panel.url,
-                               let data = try? Data(contentsOf: url) {
-                                guard let idx = browserManager.browsers.firstIndex(where: { $0.id == browserId }) else { return }
-                                browserManager.browsers[idx].customIconData = data
-                                browserManager.save()
+                            if panel.runModal() == .OK, let url = panel.url {
+                                // Cap icon import at 5 MB
+                                let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                                let size = attrs?[.size] as? UInt64 ?? 0
+                                guard size < 5_000_000 else { return }
+                                guard let data = try? Data(contentsOf: url) else { return }
+                                guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                                entry.customIconData = data
+                                browserManager.updateBrowser(entry)
                             }
                         }
                         ThemeDangerButton(label: "Remove") {
@@ -269,12 +280,17 @@ struct BrowsersTab: View {
         .padding(.horizontal, 52)
         .padding(.vertical, 12)
         .background(Theme.bgInput.opacity(0.5))
-        // §34: Discover profiles asynchronously when detail view appears
+        // §34: Discover profiles asynchronously off the main thread
         .task(id: browserId) {
             guard let browserId,
                   let browser = browserManager.browsers.first(where: { $0.id == browserId }),
                   cachedProfiles[browser.bundleIdentifier] == nil else { return }
-            cachedProfiles[browser.bundleIdentifier] = profileDiscovery.discoverProfiles(for: browser.bundleIdentifier)
+            let bundleId = browser.bundleIdentifier
+            let discovery = profileDiscovery
+            let profiles = await Task.detached {
+                discovery.discoverProfiles(for: bundleId)
+            }.value
+            cachedProfiles[bundleId] = profiles
         }
     }
 

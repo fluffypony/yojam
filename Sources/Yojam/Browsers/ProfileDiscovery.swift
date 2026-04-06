@@ -8,8 +8,7 @@ struct BrowserProfile: Identifiable, Codable, Sendable {
     var isDefault: Bool = false
 }
 
-@MainActor
-final class ProfileDiscovery {
+final class ProfileDiscovery: Sendable {
     private let chromiumReader = ChromiumProfileReader()
     private let firefoxReader = FirefoxProfileReader()
 
@@ -33,7 +32,7 @@ final class ProfileDiscovery {
         case "org.chromium.Chromium":
             return chromiumReader.readProfiles(
                 appSupportPath: "Chromium", bundleId: bundleId)
-        case "org.mozilla.firefox":
+        case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
             return firefoxReader.readProfiles(bundleId: bundleId)
         // Arc and Orion profile discovery disabled: launch args not supported
         default:
