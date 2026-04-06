@@ -647,22 +647,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
 
-        // Delay activation until the window server has registered
-        // the policy change — otherwise Yojam appears at the end
-        // of the Cmd+Tab list instead of as the active app.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            NSApp.activate()
-            // Bring the Settings window to front explicitly.
-            // On reopen after Cmd+W, the window may not yet report
-            // isVisible, so match on size instead.
-            for window in NSApp.windows where !(window is NSPanel) && window.frame.width > 100 {
-                window.makeKeyAndOrderFront(nil)
-                break
-            }
-        }
+        // Activate and bring the Settings window to front.
+        // Uses a polling approach: the window may not exist yet on
+        // reopen (SwiftUI recreates it lazily after Cmd+W).
+        self.bringPreferencesToFront(attempts: 5)
 
         // Watch for all windows closing to hide from Cmd+Tab again
         startWindowCloseObserver()
+    }
+
+    private func bringPreferencesToFront(attempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            NSApp.activate()
+            // Find any non-panel window — don't filter on isVisible or size
+            // since SwiftUI may still be laying it out.
+            for window in NSApp.windows where !(window is NSPanel) {
+                window.makeKeyAndOrderFront(nil)
+                return
+            }
+            // Window doesn't exist yet, retry
+            if attempts > 1 {
+                self?.bringPreferencesToFront(attempts: attempts - 1)
+            }
+        }
     }
 
     private var windowCheckTimer: Timer?
