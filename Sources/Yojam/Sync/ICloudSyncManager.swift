@@ -10,6 +10,8 @@ final class ICloudSyncManager {
     private var lastPullTime: Date = .distantPast
     // Suppress push-back for 3 seconds after a pull to outlast the 2-second debounce
     private let pullSuppressionWindow: TimeInterval = 3.0
+    private var isApplyingRemoteChange = false
+    private var pushRescheduled = false
 
     // §4: Live references for updating in-memory state after remote changes
     weak var browserManager: BrowserManager?
@@ -30,19 +32,18 @@ final class ICloudSyncManager {
         kvStore.synchronize()
         handleRemoteChange()
 
-        // §5: Schedule initial push after suppression window so it isn't blocked
-        DispatchQueue.main.asyncAfter(deadline: .now() + pullSuppressionWindow + 0.1) { [weak self] in
-            self?.pushToCloud()
-        }
-
-        // 4. Start observing local changes
+        // 4. Start observing local changes (filter out echo from remote changes)
         cancellable = settingsStore.objectWillChange
+            .filter { [weak self] _ in self?.isApplyingRemoteChange == false }
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.pushToCloud() }
     }
 
     func stopSync() {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
         cancellable?.cancel()
         cancellable = nil
     }
@@ -53,8 +54,11 @@ final class ICloudSyncManager {
         // §6: Instead of dropping the push, reschedule it after the suppression window
         let timeSincePull = Date().timeIntervalSince(lastPullTime)
         guard timeSincePull > pullSuppressionWindow else {
+            guard !pushRescheduled else { return }
+            pushRescheduled = true
             let delay = pullSuppressionWindow - timeSincePull + 0.1
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.pushRescheduled = false
                 self?.pushToCloud()
             }
             return
@@ -62,13 +66,15 @@ final class ICloudSyncManager {
 
         let encoder = JSONEncoder()
 
-        // §26: Strip customIconData before syncing to avoid iCloud KV store quota exhaustion
+        // Strip customIconData and filter path-based entries before syncing
         do {
-            let browsersToSync = settingsStore.loadBrowsers().map { entry -> BrowserEntry in
-                var copy = entry
-                copy.customIconData = nil
-                return copy
-            }
+            let browsersToSync = settingsStore.loadBrowsers()
+                .filter { !$0.bundleIdentifier.hasPrefix("/") }
+                .map { entry -> BrowserEntry in
+                    var copy = entry
+                    copy.customIconData = nil
+                    return copy
+                }
             kvStore.set(try encoder.encode(browsersToSync), forKey: "sync_browsers")
         } catch {
             YojamLogger.shared.log("iCloud push browsers failed: \(error.localizedDescription)")
@@ -108,17 +114,28 @@ final class ICloudSyncManager {
         kvStore.set(settingsStore.debugLoggingEnabled, forKey: "sync_debugLogging")
         kvStore.set(settingsStore.periodicRescanInterval, forKey: "sync_periodicRescanInterval")
 
+        // Warn if approaching iCloud KV store 1MB quota
+        let totalBytes = ["sync_browsers", "sync_rules", "sync_rewrites", "sync_emailClients"]
+            .compactMap { kvStore.data(forKey: $0)?.count }
+            .reduce(0, +)
+        if totalBytes > 900_000 {
+            YojamLogger.shared.log("Warning: iCloud KV store near quota: \(totalBytes) bytes")
+        }
+
         kvStore.synchronize()
     }
 
     private func handleRemoteChange() {
         guard settingsStore.iCloudSyncEnabled else { return }
         lastPullTime = Date()
+        isApplyingRemoteChange = true
+        defer { isApplyingRemoteChange = false }
 
         let decoder = JSONDecoder()
         if let data = kvStore.data(forKey: "sync_browsers") {
             do {
                 let remote = try decoder.decode([BrowserEntry].self, from: data)
+                    .filter { !$0.bundleIdentifier.hasPrefix("/") }
                 let merged = SyncConflictResolver.mergeBrowserLists(
                     local: settingsStore.loadBrowsers(), remote: remote)
                 settingsStore.saveBrowsers(merged)
@@ -132,8 +149,9 @@ final class ICloudSyncManager {
         if let data = kvStore.data(forKey: "sync_rules") {
             do {
                 let remote = try decoder.decode([Rule].self, from: data)
-                let localBuiltIns = settingsStore.loadRules().filter { $0.isBuiltIn }
-                let local = settingsStore.loadRules().filter { !$0.isBuiltIn }
+                let allLocal = settingsStore.loadRules()
+                let localBuiltIns = allLocal.filter { $0.isBuiltIn }
+                let local = allLocal.filter { !$0.isBuiltIn }
                 let merged = SyncConflictResolver.mergeRules(
                     local: local, remote: remote)
                 var allRules = localBuiltIns
@@ -183,7 +201,7 @@ final class ICloudSyncManager {
             settingsStore.defaultSelectionBehavior = behavior
         }
         if kvStore.object(forKey: "sync_verticalThreshold") != nil {
-            settingsStore.verticalThreshold = Int(kvStore.longLong(forKey: "sync_verticalThreshold"))
+            settingsStore.verticalThreshold = max(4, min(Int(kvStore.longLong(forKey: "sync_verticalThreshold")), 20))
         }
         if kvStore.object(forKey: "sync_soundEffects") != nil {
             settingsStore.soundEffectsEnabled = kvStore.bool(forKey: "sync_soundEffects")
@@ -198,7 +216,7 @@ final class ICloudSyncManager {
             settingsStore.debugLoggingEnabled = kvStore.bool(forKey: "sync_debugLogging")
         }
         if kvStore.object(forKey: "sync_periodicRescanInterval") != nil {
-            settingsStore.periodicRescanInterval = kvStore.double(forKey: "sync_periodicRescanInterval")
+            settingsStore.periodicRescanInterval = max(60, min(kvStore.double(forKey: "sync_periodicRescanInterval"), 86400))
         }
     }
 }

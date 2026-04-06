@@ -326,9 +326,12 @@ struct BrowsersTab: View {
                             .frame(width: 6, height: 6)
                             .padding(.trailing, 8)
                         ThemeToggle(isOn: Binding(
-                            get: { client.enabled },
+                            get: {
+                                browserManager.emailClients.first(where: { $0.id == client.id })?.enabled ?? client.enabled
+                            },
                             set: { newValue in
-                                browserManager.emailClients[index].enabled = newValue
+                                guard let idx = browserManager.emailClients.firstIndex(where: { $0.id == client.id }) else { return }
+                                browserManager.emailClients[idx].enabled = newValue
                                 settingsStore.saveEmailClients(browserManager.emailClients)
                             }
                         ))

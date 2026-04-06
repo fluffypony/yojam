@@ -11,14 +11,23 @@ enum SyncConflictResolver {
                 let remoteDate = entry.lastModifiedAt ?? entry.lastSeenAt ?? .distantPast
                 let localDate = existing.lastModifiedAt ?? existing.lastSeenAt ?? .distantPast
                 if remoteDate > localDate {
-                    merged[entry.id] = entry
+                    var winning = entry
+                    // Preserve local-only fields that are stripped before sync
+                    if winning.customIconData == nil, let localIcon = existing.customIconData {
+                        winning.customIconData = localIcon
+                    }
+                    winning.isInstalled = existing.isInstalled
+                    merged[entry.id] = winning
                 }
             } else {
                 merged[entry.id] = entry
             }
         }
-        // §8: Reindex positions after sorting to prevent duplicates
-        var sorted = merged.values.sorted { $0.position < $1.position }
+        // §8: Reindex positions after sorting to prevent duplicates (stable tiebreak by UUID)
+        var sorted = merged.values.sorted {
+            if $0.position != $1.position { return $0.position < $1.position }
+            return $0.id.uuidString < $1.id.uuidString
+        }
         for i in sorted.indices { sorted[i].position = i }
         return sorted
     }
