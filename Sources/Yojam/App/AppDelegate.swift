@@ -418,7 +418,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSPasteboard.general.setString(
                     url.absoluteString, forType: .string)
             },
-            onDismiss: { [weak self] in self?.pickerPanel = nil })
+            onDismiss: { [weak self] in
+                self?.pickerPanel = nil
+                // If preferences isn't open, revert to .accessory so
+                // the picker doesn't leave an icon in Cmd+Tab.
+                if NSApp.activationPolicy() == .regular {
+                    let prefsOpen = NSApp.windows.contains { window in
+                        !(window is NSPanel) && window.isVisible && window.frame.width > 100
+                    }
+                    if !prefsOpen {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
+                }
+            })
         pickerPanel?.showAtCursor()
     }
 
