@@ -142,7 +142,7 @@ struct GeneralTab: View {
                 }
                 // Dynamic inline help for current activation mode
                 VStack(spacing: 0) {
-                    ThemeInlineHelp(text: {
+                    ThemeInlineHelp(text: "Currently set: " + {
                         switch settingsStore.activationMode {
                         case .always: return HelpText.General.activationAlways
                         case .holdShift: return HelpText.General.activationHoldShift
@@ -176,7 +176,7 @@ struct GeneralTab: View {
                 }
             }
             // Dynamic inline help for current default selection
-            ThemeInlineHelp(text: {
+            ThemeInlineHelp(text: "Currently set: " + {
                 switch settingsStore.defaultSelectionBehavior {
                 case .alwaysFirst: return HelpText.General.defaultSelectionAlwaysFirst
                 case .lastUsed: return HelpText.General.defaultSelectionLastUsed

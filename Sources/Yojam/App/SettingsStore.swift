@@ -99,6 +99,9 @@ final class SettingsStore: ObservableObject {
         static let recentURLRetention = "recentURLRetention"
         static let recentURLRetentionMinutes = "recentURLRetentionMinutes"
         static let hasDismissedQuickStart = "hasDismissedQuickStart"
+        static let quickStartVisitedActivation = "quickStartVisitedActivation"
+        static let quickStartVisitedBrowsers = "quickStartVisitedBrowsers"
+        static let quickStartVisitedTester = "quickStartVisitedTester"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -173,6 +176,15 @@ final class SettingsStore: ObservableObject {
     @Published var hasDismissedQuickStart: Bool {
         didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
     }
+    @Published var quickStartVisitedActivation: Bool {
+        didSet { defaults.set(quickStartVisitedActivation, forKey: Keys.quickStartVisitedActivation) }
+    }
+    @Published var quickStartVisitedBrowsers: Bool {
+        didSet { defaults.set(quickStartVisitedBrowsers, forKey: Keys.quickStartVisitedBrowsers) }
+    }
+    @Published var quickStartVisitedTester: Bool {
+        didSet { defaults.set(quickStartVisitedTester, forKey: Keys.quickStartVisitedTester) }
+    }
 
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
@@ -213,6 +225,9 @@ final class SettingsStore: ObservableObject {
             rawValue: d.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = d.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
         self.hasDismissedQuickStart = d.bool(forKey: Keys.hasDismissedQuickStart)
+        self.quickStartVisitedActivation = d.bool(forKey: Keys.quickStartVisitedActivation)
+        self.quickStartVisitedBrowsers = d.bool(forKey: Keys.quickStartVisitedBrowsers)
+        self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
     }
 
     // MARK: - Complex Data Persistence
@@ -435,6 +450,9 @@ final class SettingsStore: ObservableObject {
         self.recentURLRetention = .forever
         self.recentURLRetentionMinutes = 30
         self.hasDismissedQuickStart = false
+        self.quickStartVisitedActivation = false
+        self.quickStartVisitedBrowsers = false
+        self.quickStartVisitedTester = false
         saveBrowsers([])
         saveEmailClients([])
         saveRules(BuiltInRules.all)

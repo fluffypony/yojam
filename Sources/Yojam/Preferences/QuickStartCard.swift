@@ -6,9 +6,13 @@ struct QuickStartCard: View {
     var onSwitchTab: ((PreferencesTab) -> Void)?
     var onScrollToSection: ((String) -> Void)?
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
-    @State private var hasVisitedActivation = false
-    @State private var hasVisitedBrowsers = false
-    @State private var hasVisitedTester = false
+
+    private var allDone: Bool {
+        isDefault
+            && settingsStore.quickStartVisitedActivation
+            && settingsStore.quickStartVisitedBrowsers
+            && settingsStore.quickStartVisitedTester
+    }
 
     var body: some View {
         ThemeCalloutCard {
@@ -33,6 +37,7 @@ struct QuickStartCard: View {
                         for delay in [1.0, 3.0, 6.0, 10.0] {
                             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                                 isDefault = DefaultBrowserManager.isDefaultBrowser
+                                checkAllDone()
                             }
                         }
                     }
@@ -41,28 +46,31 @@ struct QuickStartCard: View {
                 quickStartItem(
                     number: 2,
                     text: "Choose when the picker appears",
-                    isDone: hasVisitedActivation
+                    isDone: settingsStore.quickStartVisitedActivation
                 ) {
-                    hasVisitedActivation = true
+                    settingsStore.quickStartVisitedActivation = true
                     onScrollToSection?("Activation")
+                    checkAllDone()
                 }
 
                 quickStartItem(
                     number: 3,
                     text: "Review your browsers",
-                    isDone: hasVisitedBrowsers
+                    isDone: settingsStore.quickStartVisitedBrowsers
                 ) {
-                    hasVisitedBrowsers = true
+                    settingsStore.quickStartVisitedBrowsers = true
                     onSwitchTab?(.browsers)
+                    checkAllDone()
                 }
 
                 quickStartItem(
                     number: 4,
                     text: "Try the URL tester",
-                    isDone: hasVisitedTester
+                    isDone: settingsStore.quickStartVisitedTester
                 ) {
-                    hasVisitedTester = true
+                    settingsStore.quickStartVisitedTester = true
                     onSwitchTab?(.pipeline)
+                    checkAllDone()
                 }
             }
         } onDismiss: {
@@ -71,6 +79,16 @@ struct QuickStartCard: View {
             }
         }
         .onAppear { isDefault = DefaultBrowserManager.isDefaultBrowser }
+    }
+
+    private func checkAllDone() {
+        if allDone {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    settingsStore.hasDismissedQuickStart = true
+                }
+            }
+        }
     }
 
     private func quickStartItem(number: Int, text: String, isDone: Bool = false, action: @escaping () -> Void) -> some View {
