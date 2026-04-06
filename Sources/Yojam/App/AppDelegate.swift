@@ -164,7 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Pending URLs are drained AFTER profile discovery completes
         // to avoid opening the first URL without the intended profile.
         let profileDiscovery = ProfileDiscovery()
-        isFinishedLaunching = true
         Task { @MainActor in
             var changed = false
             for i in browserManager.browsers.indices {
@@ -188,7 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
                 browserManager.refreshProfileSuggestions()
             }
-            // Process any URLs that arrived during cold launch
+            // Now that profiles are assigned, allow URL routing and drain pending queue
+            isFinishedLaunching = true
             for (url, source, mods) in pendingURLs {
                 routeURL(url, sourceAppBundleId: source, modifiers: mods)
             }
@@ -234,7 +234,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let url = URLSanitizer.sanitize(url) else { return }
 
         guard settingsStore.isEnabled else {
-            openInDefaultBrowser(url)
+            if url.scheme?.lowercased() == "mailto" {
+                NSWorkspace.shared.open(url)
+            } else {
+                openInDefaultBrowser(url)
+            }
             return
         }
 
@@ -623,7 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Fall back to standard NSWorkspace launch
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
-                config.arguments = arguments + [url.absoluteString]
+                config.arguments = arguments
                 Task {
                     try? await NSWorkspace.shared.open(
                         [url], withApplicationAt: appURL, configuration: config)

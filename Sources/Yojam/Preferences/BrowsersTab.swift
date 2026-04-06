@@ -43,8 +43,12 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
-        // Save any pending display name edits when collapsing a detail view
-        .onChange(of: expandedBrowserId) { _, _ in browserManager.save() }
+        // Save any pending display name edits when collapsing a detail view (with timestamp)
+        .onChange(of: expandedBrowserId) { oldId, _ in
+            if let oldId, let entry = browserManager.browsers.first(where: { $0.id == oldId }) {
+                browserManager.updateBrowser(entry)
+            }
+        }
     }
 
     // MARK: - Browsers List

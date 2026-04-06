@@ -32,6 +32,11 @@ final class ICloudSyncManager {
         kvStore.synchronize()
         handleRemoteChange()
 
+        // 3. Schedule initial push after suppression window so it isn't blocked
+        DispatchQueue.main.asyncAfter(deadline: .now() + pullSuppressionWindow + 0.1) { [weak self] in
+            self?.pushToCloud()
+        }
+
         // 4. Start observing local changes (filter out echo from remote changes)
         cancellable = settingsStore.objectWillChange
             .filter { [weak self] _ in self?.isApplyingRemoteChange == false }
@@ -92,13 +97,15 @@ final class ICloudSyncManager {
         }
         kvStore.set(settingsStore.utmStripList, forKey: "sync_utmStripList")
 
-        // §50: Sync email clients
+        // §50: Sync email clients (filter path-based entries like browsers)
         do {
-            let emailToSync = settingsStore.loadEmailClients().map { entry -> BrowserEntry in
-                var copy = entry
-                copy.customIconData = nil
-                return copy
-            }
+            let emailToSync = settingsStore.loadEmailClients()
+                .filter { !$0.bundleIdentifier.hasPrefix("/") }
+                .map { entry -> BrowserEntry in
+                    var copy = entry
+                    copy.customIconData = nil
+                    return copy
+                }
             kvStore.set(try encoder.encode(emailToSync), forKey: "sync_emailClients")
         } catch {
             YojamLogger.shared.log("iCloud push email clients failed: \(error.localizedDescription)")
@@ -178,10 +185,11 @@ final class ICloudSyncManager {
             settingsStore.utmStripList = list
         }
 
-        // §50: Pull email clients
+        // §50: Pull email clients (filter path-based entries)
         if let data = kvStore.data(forKey: "sync_emailClients") {
             do {
                 let remote = try decoder.decode([BrowserEntry].self, from: data)
+                    .filter { !$0.bundleIdentifier.hasPrefix("/") }
                 let merged = SyncConflictResolver.mergeBrowserLists(
                     local: settingsStore.loadEmailClients(), remote: remote)
                 settingsStore.saveEmailClients(merged)
