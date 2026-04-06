@@ -8,13 +8,16 @@ struct URLRewriteRule: Codable, Identifiable, Equatable, Hashable, Sendable {
     var replacement: String
     var isRegex: Bool
     var scope: RewriteScope
+    var lastModifiedAt: Date?
 
     init(id: UUID = UUID(), name: String, enabled: Bool = true,
          matchPattern: String, replacement: String,
-         isRegex: Bool = true, scope: RewriteScope = .global) {
+         isRegex: Bool = true, scope: RewriteScope = .global,
+         lastModifiedAt: Date? = nil) {
         self.id = id; self.name = name; self.enabled = enabled
         self.matchPattern = matchPattern; self.replacement = replacement
         self.isRegex = isRegex; self.scope = scope
+        self.lastModifiedAt = lastModifiedAt
     }
 }
 

@@ -386,6 +386,7 @@ struct PipelineTab: View {
     private func toggleRewrite(_ id: UUID) {
         if let idx = rewriteRules.firstIndex(where: { $0.id == id }) {
             rewriteRules[idx].enabled.toggle()
+            rewriteRules[idx].lastModifiedAt = Date()
             settingsStore.saveGlobalRewriteRules(rewriteRules)
         }
     }

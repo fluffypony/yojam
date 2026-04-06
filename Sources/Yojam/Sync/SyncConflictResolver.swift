@@ -47,13 +47,23 @@ enum SyncConflictResolver {
         return merged.values.sorted { $0.priority < $1.priority }
     }
 
-    // §7: Preserve local order, append remote-only entries at the end
+    // §7: Preserve local order, append remote-only entries. Use timestamps when available.
     static func mergeRewriteRules(
         local: [URLRewriteRule], remote: [URLRewriteRule]
     ) -> [URLRewriteRule] {
         var mergedMap: [UUID: URLRewriteRule] = [:]
-        for rule in remote { mergedMap[rule.id] = rule }
         for rule in local { mergedMap[rule.id] = rule }
+        for rule in remote {
+            if let existing = mergedMap[rule.id] {
+                let remoteDate = rule.lastModifiedAt ?? .distantPast
+                let localDate = existing.lastModifiedAt ?? .distantPast
+                if remoteDate > localDate {
+                    mergedMap[rule.id] = rule
+                }
+            } else {
+                mergedMap[rule.id] = rule
+            }
+        }
 
         var result: [URLRewriteRule] = []
         for rule in local {
