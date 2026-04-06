@@ -43,9 +43,15 @@ struct BrowsersTab: View {
             }
         }
         .background(Theme.bgApp)
-        // Save any pending display name edits when collapsing a detail view (with timestamp)
+        // Save any pending display name edits when collapsing a detail view
         .onChange(of: expandedBrowserId) { oldId, _ in
-            if let oldId, let entry = browserManager.browsers.first(where: { $0.id == oldId }) {
+            guard let oldId,
+                  let entry = browserManager.browsers.first(where: { $0.id == oldId }) else { return }
+            // Only stamp lastModifiedAt if the display name was actually edited
+            // (in-memory differs from persisted state)
+            let persisted = settingsStore.loadBrowsers()
+            if let saved = persisted.first(where: { $0.id == oldId }),
+               saved.displayName != entry.displayName {
                 browserManager.updateBrowser(entry)
             }
         }
