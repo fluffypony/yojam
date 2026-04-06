@@ -302,16 +302,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if let appURL = appURL(for: match.targetBundleId) {
+                let ruleLabel = match.name.isEmpty ? match.pattern : match.name
+                let reason = "Matched rule: \(ruleLabel)"
                 switch settingsStore.activationMode {
                 case .always:
                     showPicker(
                         for: processedURL,
-                        preselectedBundleId: match.targetBundleId)
+                        preselectedBundleId: match.targetBundleId,
+                        matchReason: reason)
                 case .holdShift:
                     if modifiers.contains(.shift) {
                         showPicker(
                             for: processedURL,
-                            preselectedBundleId: match.targetBundleId)
+                            preselectedBundleId: match.targetBundleId,
+                            matchReason: reason)
                     } else {
                         // Apply browser-specific rewrites only for direct open
                         if let entry = matchedEntry {
@@ -423,7 +427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPicker(
         for url: URL, preselectedBundleId: String? = nil,
-        isEmail: Bool = false
+        isEmail: Bool = false, matchReason: String? = nil
     ) {
         let entries: [BrowserEntry]
         if isEmail {
@@ -455,24 +459,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Clamp to valid range
         let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
-
-        // Compute match reason for routing transparency
-        let matchReason: String?
-        if let bundleId = preselectedBundleId,
-           entries.contains(where: { $0.bundleIdentifier == bundleId }) {
-            if let matchedRule = ruleEngine.evaluate(url) {
-                let label = matchedRule.name.isEmpty ? matchedRule.pattern : matchedRule.name
-                matchReason = "Matched rule: \(label)"
-            } else if settingsStore.defaultSelectionBehavior == .smart,
-                      let domain = url.host?.lowercased(),
-                      routingSuggestionEngine.suggestion(for: domain) != nil {
-                matchReason = "Suggested from your history for \(url.host ?? "this domain")"
-            } else {
-                matchReason = nil
-            }
-        } else {
-            matchReason = nil
-        }
 
         pickerPanel?.close()
         pickerPanel = PickerPanel(

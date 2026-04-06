@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 struct QuickStartCard: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -25,6 +26,7 @@ struct QuickStartCard: View {
                 ) {
                     if !isDefault {
                         DefaultBrowserManager.promptSetDefault()
+                        SetDefaultBrowserTip.hasSetDefault = true
                         for delay in [1.0, 3.0, 6.0, 10.0] {
                             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                                 isDefault = DefaultBrowserManager.isDefaultBrowser

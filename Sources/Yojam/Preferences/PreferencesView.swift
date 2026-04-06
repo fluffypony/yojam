@@ -156,6 +156,12 @@ struct PreferencesView: View {
         .frame(width: 900, height: 600)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
+        // When Quick Start is re-shown (e.g. from menu bar), switch to General tab
+        .onChange(of: settingsStore.hasDismissedQuickStart) { _, dismissed in
+            if !dismissed {
+                selectedTab = .general
+            }
+        }
     }
 
     // MARK: - Sidebar
