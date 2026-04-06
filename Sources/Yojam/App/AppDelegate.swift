@@ -210,12 +210,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
                 browserManager.refreshProfileSuggestions()
             }
-            // Now that profiles are assigned, allow URL routing and drain pending queue
+            // Now that profiles are assigned, allow URL routing and drain pending queue.
+            // Small delay so the window server has finished processing the
+            // activation policy before the picker tries NSApp.activate().
             isFinishedLaunching = true
-            for (url, source, mods) in pendingURLs {
-                routeURL(url, sourceAppBundleId: source, modifiers: mods)
+            if !pendingURLs.isEmpty {
+                let urls = pendingURLs
+                pendingURLs.removeAll()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    for (url, source, mods) in urls {
+                        self?.routeURL(url, sourceAppBundleId: source, modifiers: mods)
+                    }
+                }
             }
-            pendingURLs.removeAll()
         }
     }
 
