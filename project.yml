@@ -36,6 +36,7 @@ targets:
           - CFBundleURLName: Mail URL
             CFBundleURLSchemes:
               - mailto
+        NSAppleEventsUsageDescription: "Yojam needs to send Apple Events to open private browsing windows in Safari and Orion."
         CFBundleDocumentTypes:
           - CFBundleTypeName: HTML Document
             CFBundleTypeRole: Viewer
@@ -49,6 +50,8 @@ targets:
             LSHandlerRank: Default
     entitlements:
       path: Sources/Yojam/Resources/Yojam.entitlements
+      properties:
+        com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)$(CFBundleIdentifier)"
     settings:
       base:
         INFOPLIST_FILE: Sources/Yojam/Resources/Info.plist

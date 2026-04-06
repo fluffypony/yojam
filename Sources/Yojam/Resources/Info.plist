@@ -69,5 +69,7 @@
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Yojam needs to send Apple Events to open private browsing windows in Safari and Orion.</string>
 </dict>
 </plist>
