@@ -10,6 +10,7 @@ struct IntegrationsTab: View {
     @State private var isWeblocHandler = false
     @State private var isYojamSchemeRegistered = false
     @State private var isChromeHostInstalled = false
+    @State private var isChromeHostMisconfigured = false
     @State private var isFirefoxHostInstalled = false
     @State private var isAppGroupAccessible = false
 
@@ -46,6 +47,7 @@ struct IntegrationsTab: View {
         isWeblocHandler = DefaultBrowserManager.isWeblocHandler
         isYojamSchemeRegistered = DefaultBrowserManager.isYojamSchemeRegistered
         isChromeHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Chrome")
+        isChromeHostMisconfigured = NativeMessagingInstaller.chromeExtensionId == "placeholder_extension_id"
         isFirefoxHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Firefox")
         isAppGroupAccessible = UserDefaults(suiteName: SharedRoutingStore.suiteName) != nil
     }
@@ -161,10 +163,13 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Chrome / Chromium",
                     icon: "network",
-                    status: isChromeHostInstalled ? .ok : .notInstalled,
-                    detail: isChromeHostInstalled
-                        ? "Manifest installed"
-                        : "Not installed",
+                    status: isChromeHostMisconfigured ? .warning
+                        : isChromeHostInstalled ? .ok : .notInstalled,
+                    detail: isChromeHostMisconfigured
+                        ? "Manifest installed but uses placeholder extension ID"
+                        : isChromeHostInstalled
+                            ? "Manifest installed"
+                            : "Not installed",
                     helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
                         NativeMessagingInstaller.installAll()
