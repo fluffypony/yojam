@@ -578,7 +578,7 @@ struct AddRuleSheet: View {
                         if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
                             Text("Invalid regex pattern")
                                 .font(.system(size: 10))
-                                .foregroundColor(Theme.destructive)
+                                .foregroundColor(Theme.danger)
                         }
                     }
                     fieldRow("Target App") {
@@ -727,7 +727,7 @@ struct AddRewriteSheet: View {
                     if isRegex && !matchPattern.isEmpty && !RegexMatcher.isValid(pattern: matchPattern) {
                         Text("Invalid regex pattern")
                             .font(.system(size: 10))
-                            .foregroundColor(Theme.destructive)
+                            .foregroundColor(Theme.danger)
                     }
                 }
                 fieldRow("Replacement", helpText: HelpText.Pipeline.rewriteReplacement) {
