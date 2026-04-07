@@ -19,22 +19,33 @@ struct OpenURLInBrowserIntent: AppIntent {
             return .result()
         }
 
-        // Route through the unified ingress coordinator instead of
-        // partially re-implementing the routing pipeline.
-        let request = IncomingLinkRequest(
-            url: url,
-            sourceAppBundleId: nil,
-            origin: .intent,
-            forcedBrowserBundleId: browser,
-            forcePicker: false,
-            forcePrivateWindow: false
-        )
-
-        // Use routeURL directly since enqueueOrHandle is private.
-        // The intent runs after launch, so isFinishedLaunching is true.
         if let bundleId = browser {
-            delegate.routeURL(url, forcedBrowserBundleId: bundleId)
+            // When a specific browser is requested, apply UTM stripping
+            // per the intent parameter before routing.
+            var processedURL = url
+            let store = delegate.settingsStore
+            let rewriter = delegate.urlRewriter
+            let stripper = delegate.utmStripper
+
+            processedURL = rewriter.applyGlobalRewrites(to: processedURL)
+
+            let entry = store.loadBrowsers().first {
+                $0.bundleIdentifier == bundleId && $0.enabled
+            }
+            if let entry {
+                processedURL = rewriter.applyBrowserRewrites(
+                    to: processedURL, browser: entry)
+            }
+
+            if stripUTM || (entry?.stripUTMParams ?? false)
+                || store.globalUTMStrippingEnabled {
+                processedURL = stripper.strip(processedURL)
+            }
+
+            // Delegate to routeURL with the forced browser
+            delegate.routeURL(processedURL, forcedBrowserBundleId: bundleId)
         } else {
+            // No browser specified — full routing pipeline
             delegate.routeURL(url)
         }
 

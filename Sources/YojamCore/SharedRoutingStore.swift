@@ -16,14 +16,21 @@ public final class SharedRoutingStore: ObservableObject {
 
     public let defaults: UserDefaults
 
+    /// Whether the App Group suite was successfully opened.
+    /// False means we fell back to .standard (only expected during swift test).
+    public let isUsingAppGroup: Bool
+
     public init() {
-        guard let suite = UserDefaults(suiteName: SharedRoutingStore.suiteName) else {
-            // Fall back to standard if App Group is not available (e.g. during
-            // swift test or when entitlements are not configured).
+        if let suite = UserDefaults(suiteName: SharedRoutingStore.suiteName) {
+            self.defaults = suite
+            self.isUsingAppGroup = true
+        } else {
+            // Fall back to standard only when the App Group entitlement is
+            // missing (swift test, unsigned debug builds). In a signed .app
+            // bundle this should never happen.
             self.defaults = UserDefaults.standard
-            return
+            self.isUsingAppGroup = false
         }
-        self.defaults = suite
     }
 
     // MARK: - Keys
