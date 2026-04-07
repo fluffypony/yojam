@@ -23,10 +23,29 @@
       margin-bottom: 16px;
     }
     .section h2 { font-size: 14px; margin-bottom: 8px; }
+    label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+    label input[type="checkbox"] { width: 16px; height: 16px; }
+    .hint { font-size: 11px; color: #777; margin-top: 6px; }
+    #safari-notice { color: #E91E63; display: none; }
   </style>
 </head>
 <body>
   <h1>Yojam Extension Settings</h1>
+
+  <div class="section">
+    <h2>Always Route</h2>
+    <label>
+      <input type="checkbox" id="always-route" />
+      Route every navigation through Yojam
+    </label>
+    <p class="hint">
+      When enabled, every top-frame navigation is intercepted and routed through
+      Yojam. You may see a brief flash of the original URL before redirection.
+    </p>
+    <p class="hint" id="safari-notice">
+      Not supported in Safari.
+    </p>
+  </div>
 
   <div class="section">
     <h2>How it works</h2>

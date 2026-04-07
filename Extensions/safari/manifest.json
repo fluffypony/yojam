@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "__MSG_extensionDescription__",
   "default_locale": "en",
-  "permissions": ["activeTab", "contextMenus", "nativeMessaging"],
+  "permissions": ["activeTab", "contextMenus", "nativeMessaging", "storage"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
