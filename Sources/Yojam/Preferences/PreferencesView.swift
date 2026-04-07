@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Identifiable {
-    case general, browsers, pipeline, advanced
+    case general, browsers, pipeline, advanced, about
     var id: String { rawValue }
 
     var label: String {
@@ -10,6 +10,7 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
         case .browsers: "Browsers"
         case .pipeline: "Link Handling"
         case .advanced: "Advanced"
+        case .about:    "About"
         }
     }
 
@@ -19,6 +20,7 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
         case .browsers: "macwindow.on.rectangle"
         case .pipeline: "globe"
         case .advanced: "wrench.and.screwdriver.fill"
+        case .about:    "info.circle.fill"
         }
     }
 }
@@ -120,6 +122,16 @@ enum SettingsSearchIndex {
                            subtitle: "Clear all browser data and detect installed browsers from scratch"),
         SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Reset All Settings",
                            subtitle: "Restore all settings to their factory defaults"),
+
+        // About
+        SettingsSearchItem(tab: .about, section: "About", title: "About Yojam",
+                           subtitle: "Version copyright credits author riccardo spagni"),
+        SettingsSearchItem(tab: .about, section: "About", title: "Website",
+                           subtitle: "yojam.org homepage link"),
+        SettingsSearchItem(tab: .about, section: "About", title: "Source Code",
+                           subtitle: "github fluffypony yojam open source repository"),
+        SettingsSearchItem(tab: .about, section: "License", title: "License",
+                           subtitle: "BSD 3-clause license terms copyright"),
     ]
 
     static func search(_ query: String) -> [SettingsSearchItem] {
@@ -359,6 +371,8 @@ struct PreferencesView: View {
                 ruleEngine: ruleEngine,
                 routingSuggestionEngine: routingSuggestionEngine,
                 scrollToSection: $scrollToSection)
+        case .about:
+            AboutTab()
         }
     }
 }
