@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h1 img { width: 20px; height: 20px; }
+    .url-display {
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #999;
+      word-break: break-all;
+      margin-bottom: 12px;
+      max-height: 48px;
+      overflow: hidden;
+    }
+    button {
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      background: #E91E63;
+      color: white;
+      transition: background 0.15s;
+    }
+    button:hover { background: #C2185B; }
+    button:disabled { background: #555; cursor: default; }
+    .status {
+      font-size: 11px;
+      color: #777;
+      text-align: center;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1><img src="icons/48.png" alt=""> Yojam</h1>
+  <div class="url-display" id="url-display">No tab URL</div>
+  <button id="open-btn" disabled>Open in Yojam</button>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

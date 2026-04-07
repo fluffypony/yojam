@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 24px;
+      max-width: 480px;
+    }
+    h1 { font-size: 18px; margin-bottom: 16px; }
+    p { font-size: 13px; color: #999; line-height: 1.5; margin-bottom: 12px; }
+    a { color: #E91E63; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .section {
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .section h2 { font-size: 14px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Yojam Extension Settings</h1>
+
+  <div class="section">
+    <h2>How it works</h2>
+    <p>
+      Click the toolbar button or right-click any link and choose
+      "Open Link in Yojam" to route it through Yojam's browser picker.
+    </p>
+    <p>
+      You can also use the keyboard shortcut <strong>Alt+Shift+Y</strong>
+      to send the current tab's URL to Yojam.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Native messaging</h2>
+    <p>
+      For the smoothest experience, make sure the Yojam native messaging host
+      is installed. Open Yojam's preferences and go to
+      <strong>Integrations</strong> to check the status and reinstall if needed.
+    </p>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

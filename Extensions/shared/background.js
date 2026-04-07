@@ -1,0 +1,64 @@
+import { sendToYojam } from "./yojam-bridge.js";
+
+// Detect browser type for sentinel selection
+function getSourceSentinel() {
+  if (typeof browser !== "undefined" && browser.runtime?.getBrowserInfo) {
+    return "com.yojam.source.firefox-extension";
+  }
+  return "com.yojam.source.chrome-extension";
+}
+
+// Toolbar button click — send current tab URL
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab.url && (tab.url.startsWith("http://") || tab.url.startsWith("https://"))) {
+    await sendToYojam(tab.url, getSourceSentinel());
+  }
+});
+
+// Context menu items
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "open-link-in-yojam",
+    title: "Open Link in Yojam",
+    contexts: ["link"],
+  });
+
+  chrome.contextMenus.create({
+    id: "open-page-in-yojam",
+    title: "Open Page in Yojam",
+    contexts: ["page"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  let url = null;
+  if (info.menuItemId === "open-link-in-yojam" && info.linkUrl) {
+    url = info.linkUrl;
+  } else if (info.menuItemId === "open-page-in-yojam" && tab?.url) {
+    url = tab.url;
+  }
+
+  if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+    await sendToYojam(url, getSourceSentinel());
+  }
+});
+
+// Keyboard shortcut
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === "open-in-yojam") {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url && (tab.url.startsWith("http://") || tab.url.startsWith("https://"))) {
+      await sendToYojam(tab.url, getSourceSentinel());
+    }
+  }
+});
+
+// Handle messages from popup
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action === "route" && message.url) {
+    sendToYojam(message.url, getSourceSentinel()).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true; // async response
+  }
+});

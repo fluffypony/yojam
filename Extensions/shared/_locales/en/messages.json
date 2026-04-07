@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "Yojam",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "Route any link through Yojam's browser picker.",
+    "description": "Extension description shown in the browser's extension management page"
+  }
+}
