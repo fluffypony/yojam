@@ -13,6 +13,8 @@ final class ICloudSyncManager {
     private let pullSuppressionWindow: TimeInterval = 3.0
     private var isApplyingRemoteChange = false
     private var pushRescheduled = false
+    private var lastPushedHash: Int = 0 // P6: Skip push when payload unchanged
+    private var hasReceivedRemoteData = false // B-ICLOUD: Track if we've seen remote data
 
     // §4: Live references for updating in-memory state after remote changes
     weak var browserManager: BrowserManager?
@@ -26,20 +28,37 @@ final class ICloudSyncManager {
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: kvStore, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.handleRemoteChange() }
+            Task { @MainActor in
+                self?.hasReceivedRemoteData = true
+                self?.handleRemoteChange()
+            }
         }
 
         // 2. Pull from cloud before pushing local
         kvStore.synchronize()
+
+        // B-ICLOUD: On first sync on this device, check if we have local data.
+        // If no local sync_browsers key exists yet, wait for remote data before pushing
+        // to avoid overwriting other devices' data with empty local state.
+        let hasLocalSyncData = kvStore.data(forKey: "sync_browsers") != nil
+        if hasLocalSyncData {
+            hasReceivedRemoteData = true
+        }
         handleRemoteChange()
 
-        // 3. Schedule initial push after suppression window so it isn't blocked
-        DispatchQueue.main.asyncAfter(deadline: .now() + pullSuppressionWindow + 0.1) { [weak self] in
+        // 3. Schedule initial push after suppression window so it isn't blocked.
+        // On new devices without prior sync data, delay push until remote data arrives
+        // (up to 10s) to avoid wiping other devices.
+        let initialPushDelay = hasLocalSyncData
+            ? pullSuppressionWindow + 0.1
+            : 10.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + initialPushDelay) { [weak self] in
             self?.pushToCloud()
         }
 
-        // 4. Start observing local changes (filter out echo from remote changes)
-        cancellable = settingsStore.objectWillChange
+        // 4. B-ICLOUD-BROAD: Use dedicated publisher for routing-data changes only,
+        // instead of objectWillChange which fires on unrelated UI fields.
+        cancellable = settingsStore.routingDataDidChange
             .filter { [weak self] _ in self?.isApplyingRemoteChange == false }
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.pushToCloud() }
@@ -52,6 +71,7 @@ final class ICloudSyncManager {
         }
         cancellable?.cancel()
         cancellable = nil
+        pushRescheduled = false // R11: Clear on stop
     }
 
     func pushToCloud() {
@@ -70,7 +90,14 @@ final class ICloudSyncManager {
             return
         }
 
+        // B-ICLOUD: Don't push until we've received at least one remote data set
+        // (prevents wiping other devices on first launch)
+        guard hasReceivedRemoteData else { return }
+
         let encoder = JSONEncoder()
+
+        // P6: Compute a hash of the payload to skip identical pushes
+        var payloadParts: [Data] = []
 
         // Strip customIconData and filter path-based entries before syncing
         do {
@@ -81,18 +108,24 @@ final class ICloudSyncManager {
                     copy.customIconData = nil
                     return copy
                 }
-            kvStore.set(try encoder.encode(browsersToSync), forKey: "sync_browsers")
+            let data = try encoder.encode(browsersToSync)
+            payloadParts.append(data)
+            kvStore.set(data, forKey: "sync_browsers")
         } catch {
             YojamLogger.shared.log("iCloud push browsers failed: \(error.localizedDescription)")
         }
         do {
             let userRules = settingsStore.loadRules().filter { !$0.isBuiltIn }
-            kvStore.set(try encoder.encode(userRules), forKey: "sync_rules")
+            let data = try encoder.encode(userRules)
+            payloadParts.append(data)
+            kvStore.set(data, forKey: "sync_rules")
         } catch {
             YojamLogger.shared.log("iCloud push rules failed: \(error.localizedDescription)")
         }
         do {
-            kvStore.set(try encoder.encode(settingsStore.loadGlobalRewriteRules()), forKey: "sync_rewrites")
+            let data = try encoder.encode(settingsStore.loadGlobalRewriteRules())
+            payloadParts.append(data)
+            kvStore.set(data, forKey: "sync_rewrites")
         } catch {
             YojamLogger.shared.log("iCloud push rewrites failed: \(error.localizedDescription)")
         }
@@ -107,7 +140,9 @@ final class ICloudSyncManager {
                     copy.customIconData = nil
                     return copy
                 }
-            kvStore.set(try encoder.encode(emailToSync), forKey: "sync_emailClients")
+            let data = try encoder.encode(emailToSync)
+            payloadParts.append(data)
+            kvStore.set(data, forKey: "sync_emailClients")
         } catch {
             YojamLogger.shared.log("iCloud push email clients failed: \(error.localizedDescription)")
         }
@@ -122,13 +157,20 @@ final class ICloudSyncManager {
         kvStore.set(settingsStore.debugLoggingEnabled, forKey: "sync_debugLogging")
         kvStore.set(settingsStore.periodicRescanInterval, forKey: "sync_periodicRescanInterval")
 
-        // Warn if approaching iCloud KV store 1MB quota
-        let totalBytes = ["sync_browsers", "sync_rules", "sync_rewrites", "sync_emailClients"]
-            .compactMap { kvStore.data(forKey: $0)?.count }
-            .reduce(0, +)
+        // B-ICLOUD-QUOTA: Check total size BEFORE committing to iCloud
+        let totalBytes = payloadParts.reduce(0) { $0 + $1.count }
+        if totalBytes > 1_000_000 {
+            YojamLogger.shared.log("iCloud push rejected: payload \(totalBytes) bytes exceeds 1MB quota")
+            return
+        }
         if totalBytes > 900_000 {
             YojamLogger.shared.log("Warning: iCloud KV store near quota: \(totalBytes) bytes")
         }
+
+        // P6: Skip push if payload hasn't changed
+        let currentHash = payloadParts.reduce(0) { $0 ^ $1.hashValue }
+        if currentHash == lastPushedHash { return }
+        lastPushedHash = currentHash
 
         kvStore.synchronize()
     }

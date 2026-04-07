@@ -174,6 +174,10 @@ final class SettingsStore: ObservableObject {
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
 
+    // B-ICLOUD-BROAD: Dedicated publisher for routing-data changes only,
+    // so iCloud sync doesn't re-encode on unrelated UI field changes.
+    let routingDataDidChange = PassthroughSubject<Void, Never>()
+
     // P2: Cached decoded results to avoid re-deserializing JSON on every routing call
     private var cachedRules: [Rule]?
     private var cachedGlobalRewriteRules: [URLRewriteRule]?
@@ -237,6 +241,7 @@ final class SettingsStore: ObservableObject {
             let data = try JSONEncoder().encode(browsers)
             sharedDefaults.set(data, forKey: Keys.browsers)
             objectWillChange.send()
+            routingDataDidChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode browsers: \(error.localizedDescription)")
         }
@@ -257,6 +262,7 @@ final class SettingsStore: ObservableObject {
             let data = try JSONEncoder().encode(clients)
             sharedDefaults.set(data, forKey: Keys.emailClients)
             objectWillChange.send()
+            routingDataDidChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode email clients: \(error.localizedDescription)")
         }
@@ -278,6 +284,7 @@ final class SettingsStore: ObservableObject {
             sharedDefaults.set(data, forKey: Keys.rules)
             cachedRules = nil // invalidate cache
             objectWillChange.send()
+            routingDataDidChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode rules: \(error.localizedDescription)")
         }
@@ -327,10 +334,11 @@ final class SettingsStore: ObservableObject {
     }
 
     func saveGlobalRewriteRules(_ rules: [URLRewriteRule]) {
-        cachedGlobalRewriteRules = nil // invalidate cache
+        cachedGlobalRewriteRules = nil
         do {
             let data = try JSONEncoder().encode(rules)
             sharedDefaults.set(data, forKey: Keys.globalRewriteRules)
+            routingDataDidChange.send()
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode rewrite rules: \(error.localizedDescription)")

@@ -33,7 +33,7 @@ final class BrowserManager: ObservableObject {
                profileName.isEmpty {
                 continue
             }
-            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")|\(entry.customLaunchArgs ?? "")|\(entry.openInPrivateWindow)"
+            let key = "\(entry.bundleIdentifier)|\(entry.profileId ?? "")|\(entry.displayName)|\(entry.customLaunchArgs ?? "")|\(entry.openInPrivateWindow)"
             guard seen.insert(key).inserted else { continue }
             cleaned.append(entry)
         }
@@ -226,17 +226,12 @@ final class BrowserManager: ObservableObject {
 
         if browsersChanged { return }
 
-        guard let bundle = Bundle(url: appURL),
-              let schemes = bundle.infoDictionary?["CFBundleURLTypes"]
-                  as? [[String: Any]]
-        else { return }
-        let handlesHTTP = schemes.contains { dict in
-            (dict["CFBundleURLSchemes"] as? [String])?.contains(where: {
-                $0.lowercased() == "http" || $0.lowercased() == "https"
-            }) ?? false
-        }
-        guard handlesHTTP, !YojamBundleIDs.isOwnedByYojam(bundleId) else { return }
-        let name = bundle.infoDictionary?["CFBundleName"] as? String ?? "Unknown"
+        // ChangeReconciler only calls this for apps from urlsForApplications(toOpen: https://)
+        // so the redundant CFBundleURLTypes HTTP check is unnecessary and can reject
+        // valid handlers. Use CFBundleCopyInfoDictionaryForURL to avoid Bundle cache staleness.
+        guard !YojamBundleIDs.isOwnedByYojam(bundleId) else { return }
+        let infoDict = CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?
+        let name = infoDict?["CFBundleName"] as? String ?? "Unknown"
         let entry = BrowserEntry(
             bundleIdentifier: bundleId, displayName: name, source: .suggested
         )
