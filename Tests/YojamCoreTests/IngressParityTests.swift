@@ -486,4 +486,43 @@ final class IngressParityTests: XCTestCase {
             XCTFail("Expected openDirect for non-browser rule target, got: \(first)")
         }
     }
+
+    func testNonBrowserRuleTargetBypassesPickerInAlwaysMode() {
+        let rule = Rule(
+            name: "Zoom",
+            matchType: .domain,
+            pattern: "zoom.us",
+            targetBundleId: "us.zoom.xos",
+            targetAppName: "Zoom"
+        )
+        let browser = BrowserEntry(
+            bundleIdentifier: "com.apple.Safari",
+            displayName: "Safari"
+        )
+        let config = RoutingConfiguration(
+            browsers: [browser],
+            emailClients: [],
+            rules: [rule],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .always,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        let zoomURL = URL(string: "https://zoom.us/j/123456")!
+        let request = IncomingLinkRequest(url: zoomURL, origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        // Non-browser targets should always open directly, even in .always mode
+        if case .openDirect(let entry, _, _, _) = decision {
+            XCTAssertEqual(entry.bundleIdentifier, "us.zoom.xos")
+        } else {
+            XCTFail("Expected openDirect for non-browser target in .always mode, got: \(decision)")
+        }
+    }
 }

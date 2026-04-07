@@ -98,6 +98,17 @@ public enum RoutingService {
                 lastSeenAt: nil
             )
 
+            // Non-browser rule targets (Zoom, Slack, Maps) always open
+            // directly — the picker only makes sense for browser targets.
+            let isNonBrowserTarget = matchedEntry == nil
+
+            if isNonBrowserTarget {
+                let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
+                let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+                return .openDirect(browser: effectiveEntry, finalURL: finalURL,
+                                   privateWindow: priv, reason: reason)
+            }
+
             switch configuration.activationMode {
             case .always:
                 let entries = configuration.browsers
