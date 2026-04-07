@@ -16,7 +16,8 @@ struct YojamApp: App {
                 browserManager: appDelegate.browserManager,
                 ruleEngine: appDelegate.ruleEngine,
                 rewriteManager: appDelegate.urlRewriter,
-                routingSuggestionEngine: appDelegate.routingSuggestionEngine
+                routingSuggestionEngine: appDelegate.routingSuggestionEngine,
+                updater: appDelegate.updater
             )
         }
     }

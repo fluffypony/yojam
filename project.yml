@@ -12,8 +12,13 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
 
 targets:
   Yojam:
@@ -25,6 +30,8 @@ targets:
           - Resources/Info.plist
           - Resources/Yojam.entitlements
           - Resources/menubar.svg
+    dependencies:
+      - package: Sparkle
     info:
       path: Sources/Yojam/Resources/Info.plist
       properties:
@@ -32,6 +39,9 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        SUFeedURL: https://yojam.org/appcast.xml
+        SUPublicEDKey: PLACEHOLDER_ED25519_PUBLIC_KEY
+        SUEnableAutomaticChecks: true
         CFBundleURLTypes:
           - CFBundleURLName: Web URL
             CFBundleURLSchemes:
@@ -56,6 +66,7 @@ targets:
       path: Sources/Yojam/Resources/Yojam.entitlements
       properties:
         com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)$(CFBundleIdentifier)"
+        com.apple.security.automation.apple-events: true
     settings:
       base:
         INFOPLIST_FILE: Sources/Yojam/Resources/Info.plist

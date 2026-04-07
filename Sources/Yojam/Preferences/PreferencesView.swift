@@ -1,3 +1,4 @@
+import Sparkle
 import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Identifiable {
@@ -149,6 +150,7 @@ struct PreferencesView: View {
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var rewriteManager: URLRewriter
     let routingSuggestionEngine: RoutingSuggestionEngine
+    let updater: SPUUpdater
 
     @State private var selectedTab: PreferencesTab = .general
     @State private var searchText = ""
@@ -353,6 +355,7 @@ struct PreferencesView: View {
         case .general:
             GeneralTab(
                 settingsStore: settingsStore,
+                updater: updater,
                 scrollToSection: $scrollToSection,
                 selectedTab: $selectedTab)
         case .browsers:

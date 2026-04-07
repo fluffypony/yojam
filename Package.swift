@@ -13,9 +13,15 @@ let package = Package(
     products: [
         .executable(name: "Yojam", targets: ["Yojam"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
+    ],
     targets: [
         .executableTarget(
             name: "Yojam",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/Yojam",
             exclude: ["Resources/Info.plist", "Resources/Yojam.entitlements", "Resources/menubar.svg"],
             resources: [.process("Resources")]

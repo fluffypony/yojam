@@ -19,4 +19,16 @@ echo "Checking entitlements..."
 codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "ubiquity-kvstore-identifier" \
   || { echo "FAIL: iCloud KVS entitlement missing"; exit 1; }
 
+echo "Checking automation entitlement..."
+codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "automation.apple-events" || {
+  echo "FAIL: Apple Events entitlement missing"
+  exit 1
+}
+
+echo "Checking Sparkle framework..."
+[ -d "$APP/Contents/Frameworks/Sparkle.framework" ] || {
+  echo "FAIL: Sparkle.framework not found in bundle"
+  exit 1
+}
+
 echo "=== All checks passed ==="

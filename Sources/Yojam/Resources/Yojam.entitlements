@@ -4,5 +4,7 @@
 <dict>
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 </dict>
 </plist>

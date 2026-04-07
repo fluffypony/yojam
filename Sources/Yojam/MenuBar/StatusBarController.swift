@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class StatusBarController: NSObject, NSMenuDelegate {
+final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var statusItem: NSStatusItem!
     private let browserManager: BrowserManager
     private let recentURLsManager: RecentURLsManager
@@ -14,6 +14,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private let onShowQuickStart: () -> Void
     private let onShowKeyboardShortcuts: () -> Void
+    private let onCheckForUpdates: () -> Void
+    private let canCheckForUpdates: () -> Bool
 
     init(browserManager: BrowserManager,
          recentURLsManager: RecentURLsManager,
@@ -22,7 +24,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
          onOpenPreferences: @escaping () -> Void,
          onToggleEnabled: @escaping () -> Void,
          onShowQuickStart: @escaping () -> Void = {},
-         onShowKeyboardShortcuts: @escaping () -> Void = {}) {
+         onShowKeyboardShortcuts: @escaping () -> Void = {},
+         onCheckForUpdates: @escaping () -> Void = {},
+         canCheckForUpdates: @escaping () -> Bool = { true }) {
         self.browserManager = browserManager
         self.recentURLsManager = recentURLsManager
         self.settingsStore = settingsStore
@@ -31,6 +35,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.onToggleEnabled = onToggleEnabled
         self.onShowQuickStart = onShowQuickStart
         self.onShowKeyboardShortcuts = onShowKeyboardShortcuts
+        self.onCheckForUpdates = onCheckForUpdates
+        self.canCheckForUpdates = canCheckForUpdates
         super.init()
         setupStatusItem()
     }
@@ -111,6 +117,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ",")
         prefsItem.target = self
         menu.addItem(prefsItem)
+
+        let updateItem = NSMenuItem(
+            title: "Check for Updates\u{2026}",
+            action: #selector(checkForUpdatesClicked),
+            keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -131,6 +144,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func quickStartClicked() { onShowQuickStart() }
     @objc private func keyboardShortcutsClicked() { onShowKeyboardShortcuts() }
     @objc private func preferencesClicked() { onOpenPreferences() }
+    @objc private func checkForUpdatesClicked() { onCheckForUpdates() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdatesClicked) {
+            return canCheckForUpdates()
+        }
+        return true
+    }
 
     func showClipboardNotification(
         for url: URL, onOpen: @escaping () -> Void

@@ -1,14 +1,23 @@
+import Sparkle
 import SwiftUI
 import TipKit
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
+    let updater: SPUUpdater
     @Binding var scrollToSection: String?
     @Binding var selectedTab: PreferencesTab
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
+    @State private var automaticUpdates: Bool = true
 
     private let setDefaultTip = SetDefaultBrowserTip()
     private let activationModeTip = ActivationModeTip()
+
+    private var versionString: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "Version \(short) (build \(build))"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,7 +51,10 @@ struct GeneralTab: View {
             }
         }
         .background(Theme.bgApp)
-        .onAppear { isDefault = DefaultBrowserManager.isDefaultBrowser }
+        .onAppear {
+            isDefault = DefaultBrowserManager.isDefaultBrowser
+            automaticUpdates = updater.automaticallyChecksForUpdates
+        }
     }
 
     // MARK: - Startup
@@ -62,6 +74,23 @@ struct GeneralTab: View {
                     }
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.launchAtLogin)
+                }
+                ThemePanelRow {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatically check for updates")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Text(versionString)
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    ThemeToggle(isOn: Binding(
+                        get: { automaticUpdates },
+                        set: { newValue in
+                            automaticUpdates = newValue
+                            updater.automaticallyChecksForUpdates = newValue
+                        }))
                 }
                 ThemePanelRow(isLast: true, helpText: HelpText.General.defaultBrowser) {
                     VStack(alignment: .leading, spacing: 2) {

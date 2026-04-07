@@ -22,7 +22,13 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 - **Shortcuts integration:** "Open URL in Browser" and "Apply URL Rules" intents for automation.
 - **Menu bar only:** No dock icon, no Cmd+Tab entry. Just a menu bar icon with recent URLs and quick access to preferences.
 
-## Getting started
+## Installing
+
+Download the latest release from [yojam.org](https://yojam.org). Open the DMG and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
+
+Yojam checks for updates automatically. You can also check manually from the menu bar icon > "Check for Updates..."
+
+## Building from source
 
 You need macOS 14+ and Xcode 16+. Yojam uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) for the project file.
 
@@ -100,7 +106,7 @@ Settings can be exported as JSON and imported on another machine.
 
 ## Privacy
 
-Everything happens locally on your Mac. Yojam doesn't phone home, track your clicks, or send your data anywhere. The only network activity is iCloud sync, which uses your own Apple ID and is off by default.
+Everything happens locally on your Mac. Yojam doesn't phone home, track your clicks, or send your data anywhere. The only network activity is iCloud sync (uses your own Apple ID, off by default) and checking for updates via yojam.org (can be disabled in Preferences).
 
 ## License
 

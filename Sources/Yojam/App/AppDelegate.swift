@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Sparkle
 import SwiftUI
 import TipKit
 
@@ -13,6 +14,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let utmStripper: UTMStripper
     let recentURLsManager = RecentURLsManager()
     let routingSuggestionEngine = RoutingSuggestionEngine()
+
+    // MARK: - Auto Update (Sparkle)
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil)
+    var updater: SPUUpdater { updaterController.updater }
 
     /// Bridged from YojamApp so we can open Settings from AppKit code
     /// without the deprecated showSettingsWindow: selector.
@@ -106,6 +114,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.settingsStore.pendingScrollToSection = "Picker"
                 self.showPreferences()
+            },
+            onCheckForUpdates: { [weak self] in
+                self?.updater.checkForUpdates()
+            },
+            canCheckForUpdates: { [weak self] in
+                self?.updater.canCheckForUpdates ?? false
             })
 
         // Recent URL retention
