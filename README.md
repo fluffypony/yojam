@@ -228,4 +228,4 @@ There are other browser pickers out there. I wanted one that felt invisible most
 
 ## Contributing
 
-This project follows a hard-cut policy: we delete old-state compatibility code rather than carrying it forward. Any temporary migration or compatibility code must be called out in the same diff with why it exists, why the canonical path is insufficient, exact deletion criteria, and the task that tracks its removal. See AGENTS.md for detailed coding conventions.
+This project follows a hard-cut policy: we delete old-state compatibility code rather than carrying it forward. Any temporary migration or compatibility code must be called out in the same diff with why it exists, why the canonical path is insufficient, exact deletion criteria, and the task that tracks its removal.
