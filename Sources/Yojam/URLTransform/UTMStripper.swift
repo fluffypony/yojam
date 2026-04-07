@@ -27,8 +27,12 @@ final class UTMStripper {
     }
 
     func strip(_ url: URL) -> URL {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-              let queryItems = components.queryItems, !queryItems.isEmpty else { return url }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
+            // R3: Log when URLComponents fails so users can diagnose
+            YojamLogger.shared.log("UTMStripper: URLComponents failed for \(YojamLogger.sanitize(url))")
+            return url
+        }
+        guard let queryItems = components.queryItems, !queryItems.isEmpty else { return url }
         let parametersToStrip: Set<String>
         if let cached = cachedStripSet {
             parametersToStrip = cached

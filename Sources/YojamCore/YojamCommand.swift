@@ -8,6 +8,18 @@ import Foundation
 /// yojam://open?url=<percent-encoded>           // alias for route
 /// yojam://settings                             // open Preferences window
 /// ```
+private extension CharacterSet {
+    /// URL query value safe characters — like .urlQueryAllowed but also encodes `+`
+    /// so it doesn't round-trip to space.
+    static let urlQueryValueAllowed: CharacterSet = {
+        var cs = CharacterSet.urlQueryAllowed
+        cs.remove("+")
+        cs.remove("&")
+        cs.remove("=")
+        return cs
+    }()
+}
+
 public enum YojamCommand: Sendable {
     case route(IncomingLinkRequest)
     case openSettings
@@ -77,8 +89,13 @@ public enum YojamCommand: Sendable {
         var components = URLComponents()
         components.scheme = "yojam"
         components.host = "route"
+        // R6: URLQueryItem doesn't encode `+` as `%2B`, which round-trips to space.
+        // Use stricter percent-encoding for the URL value.
+        let encodedTarget = target.absoluteString
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed)
+            ?? target.absoluteString
         var items: [URLQueryItem] = [
-            URLQueryItem(name: "url", value: target.absoluteString)
+            URLQueryItem(name: "url", value: encodedTarget)
         ]
         if let source { items.append(URLQueryItem(name: "source", value: source)) }
         if let browser { items.append(URLQueryItem(name: "browser", value: browser)) }

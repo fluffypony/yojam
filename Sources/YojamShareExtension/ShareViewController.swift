@@ -5,6 +5,7 @@ import YojamCore
 /// A thin, silent Share Extension that forwards a shared URL to the main
 /// Yojam app via the `yojam://route?url=...` scheme. No routing logic
 /// lives here — the main app is the single place where decisions happen.
+@MainActor
 final class ShareViewController: NSViewController {
     override func loadView() { view = NSView(frame: .zero) }
 

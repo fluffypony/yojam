@@ -181,13 +181,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
-        settingsStore.$periodicRescanInterval.dropFirst().sink { [weak self] interval in
-            guard let self else { return }
-            self.periodicScanner.stop()
-            self.periodicScanner = PeriodicScanner(
-                reconciler: self.changeReconciler, interval: interval)
-            self.periodicScanner.start()
-        }.store(in: &cancellables)
+        // R4: Debounce scanner recreation to avoid rapid teardown/setup cycles
+        settingsStore.$periodicRescanInterval.dropFirst()
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] interval in
+                guard let self else { return }
+                self.periodicScanner.stop()
+                self.periodicScanner = PeriodicScanner(
+                    reconciler: self.changeReconciler, interval: interval)
+                self.periodicScanner.start()
+            }.store(in: &cancellables)
 
         // First launch
         if settingsStore.isFirstLaunch {
@@ -585,7 +588,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let detector = try? NSDataDetector(
                 types: NSTextCheckingResult.CheckingType.link.rawValue)
             let range = NSRange(text.startIndex..., in: text)
-            candidates = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
+            var detected = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
+            // R5: For strings that look like bare hosts (no scheme detected),
+            // prepend https:// and retry
+            if detected.isEmpty {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.contains("://") {
+                    if let url = URL(string: "https://" + trimmed) {
+                        detected = [url]
+                    }
+                }
+            }
+            candidates = detected
         } else {
             candidates = []
         }
