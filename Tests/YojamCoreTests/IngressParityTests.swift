@@ -358,4 +358,132 @@ final class IngressParityTests: XCTestCase {
             }
         }
     }
+
+    func testHoldShiftModeParityWithoutShift() {
+        let browser = BrowserEntry(
+            bundleIdentifier: "com.apple.Safari",
+            displayName: "Safari"
+        )
+        let config = RoutingConfiguration(
+            browsers: [browser],
+            emailClients: [],
+            rules: [],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .holdShift,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        // Without shift held, holdShift mode opens system default
+        let origins: [IngressOrigin] = [.defaultHandler, .handoff, .servicesMenu]
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(url: targetURL, origin: origin)
+            decisions.append(RoutingService.decide(request: request, configuration: config))
+        }
+
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "holdShift decision for \(origins[i]) should be identical")
+        }
+        if case .openSystemDefault = first {
+            // correct
+        } else {
+            XCTFail("Expected openSystemDefault in holdShift without shift")
+        }
+    }
+
+    func testHoldShiftModeParityWithShift() {
+        let browser = BrowserEntry(
+            bundleIdentifier: "com.apple.Safari",
+            displayName: "Safari"
+        )
+        let config = RoutingConfiguration(
+            browsers: [browser],
+            emailClients: [],
+            rules: [],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .holdShift,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        let shiftFlag: UInt = 1 << 17
+        let origins: [IngressOrigin] = [.defaultHandler, .handoff, .servicesMenu]
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(
+                url: targetURL, origin: origin, modifierFlags: shiftFlag)
+            decisions.append(RoutingService.decide(request: request, configuration: config))
+        }
+
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "holdShift+shift decision for \(origins[i]) should be identical")
+        }
+        if case .showPicker = first {
+            // correct
+        } else {
+            XCTFail("Expected showPicker in holdShift with shift held")
+        }
+    }
+
+    func testNonBrowserRuleTargetProducesOpenDirect() {
+        // Rules can target non-browser apps (Zoom, Slack). RoutingService
+        // should synthesize a BrowserEntry and produce openDirect.
+        let rule = Rule(
+            name: "Zoom",
+            matchType: .domain,
+            pattern: "zoom.us",
+            targetBundleId: "us.zoom.xos",
+            targetAppName: "Zoom"
+        )
+        let config = RoutingConfiguration(
+            browsers: [], // no browsers at all
+            emailClients: [],
+            rules: [rule],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .smartFallback,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        let zoomURL = URL(string: "https://zoom.us/j/123456")!
+        let origins: [IngressOrigin] = [.defaultHandler, .handoff, .servicesMenu]
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(url: zoomURL, origin: origin)
+            decisions.append(RoutingService.decide(request: request, configuration: config))
+        }
+
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "Non-browser rule target decision for \(origins[i]) should be identical")
+        }
+
+        if case .openDirect(let entry, _, _, let reason) = first {
+            XCTAssertEqual(entry.bundleIdentifier, "us.zoom.xos")
+            XCTAssertTrue(reason.contains("Zoom"))
+        } else {
+            XCTFail("Expected openDirect for non-browser rule target, got: \(first)")
+        }
+    }
 }

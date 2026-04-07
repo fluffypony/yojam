@@ -87,6 +87,17 @@ public enum RoutingService {
             let ruleLabel = rule.name.isEmpty ? rule.pattern : rule.name
             let reason = "Matched rule: \(ruleLabel)"
 
+            // For rule targets not in the browser list (e.g. Zoom, Slack, Maps),
+            // synthesize a minimal BrowserEntry so the decision can carry
+            // the target's bundle ID through to the executor.
+            // Use a deterministic UUID so identical inputs yield equal decisions.
+            let effectiveEntry = matchedEntry ?? BrowserEntry(
+                id: UUID(uuidString: deterministicUUID(for: rule.targetBundleId)) ?? UUID(),
+                bundleIdentifier: rule.targetBundleId,
+                displayName: rule.targetAppName,
+                lastSeenAt: nil
+            )
+
             switch configuration.activationMode {
             case .always:
                 let entries = configuration.browsers
@@ -106,20 +117,18 @@ public enum RoutingService {
                     }) ?? 0
                     return .showPicker(entries: entries, preselectedIndex: preselected,
                                        finalURL: processedURL, isEmail: false, reason: reason)
-                } else if let entry = matchedEntry {
-                    let finalURL = applyRewrites(entry.rewriteRules.filter(\.enabled), to: processedURL)
-                    let priv = request.forcePrivateWindow || entry.openInPrivateWindow
-                    return .openDirect(browser: entry, finalURL: finalURL,
+                } else {
+                    let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
+                    let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+                    return .openDirect(browser: effectiveEntry, finalURL: finalURL,
                                        privateWindow: priv, reason: reason)
                 }
 
             case .smartFallback:
-                if let entry = matchedEntry {
-                    let finalURL = applyRewrites(entry.rewriteRules.filter(\.enabled), to: processedURL)
-                    let priv = request.forcePrivateWindow || entry.openInPrivateWindow
-                    return .openDirect(browser: entry, finalURL: finalURL,
-                                       privateWindow: priv, reason: reason)
-                }
+                let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
+                let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+                return .openDirect(browser: effectiveEntry, finalURL: finalURL,
+                                   privateWindow: priv, reason: reason)
             }
         }
 
@@ -303,5 +312,24 @@ public enum RoutingService {
             }
             return 0
         }
+    }
+
+    /// Produces a valid UUID string deterministically from a bundle ID,
+    /// so that synthetic BrowserEntry objects created for the same rule
+    /// target across calls are Equatable.
+    private static func deterministicUUID(for bundleId: String) -> String {
+        var hash = bundleId.utf8.reduce(into: [UInt8](repeating: 0, count: 16)) { bytes, byte in
+            for i in bytes.indices {
+                bytes[i] = bytes[i] &+ byte &+ UInt8(i)
+            }
+        }
+        // Set version 4 and variant bits for a valid UUID.
+        hash[6] = (hash[6] & 0x0F) | 0x40
+        hash[8] = (hash[8] & 0x3F) | 0x80
+        return String(format: "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+                      hash[0], hash[1], hash[2], hash[3],
+                      hash[4], hash[5], hash[6], hash[7],
+                      hash[8], hash[9], hash[10], hash[11],
+                      hash[12], hash[13], hash[14], hash[15])
     }
 }

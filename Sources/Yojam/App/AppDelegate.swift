@@ -102,7 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             browserManager: browserManager,
             recentURLsManager: recentURLsManager,
             settingsStore: settingsStore,
-            onReopen: { [weak self] url in self?.routeURL(url) },
+            onReopen: { [weak self] url in
+                let request = IncomingLinkRequest(url: url, origin: .clipboard)
+                self?.enqueueOrHandle(request)
+            },
             onOpenPreferences: { [weak self] in self?.showPreferences() },
             onToggleEnabled: { [weak self] in
                 self?.settingsStore.isEnabled.toggle()
@@ -1090,7 +1093,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.statusBarController.showClipboardNotification(
                 for: url
             ) {
-                self?.routeURL(url)
+                let request = IncomingLinkRequest(
+                    url: url,
+                    origin: .clipboard
+                )
+                self?.enqueueOrHandle(request)
             }
         }
         clipboardMonitor?.start()
