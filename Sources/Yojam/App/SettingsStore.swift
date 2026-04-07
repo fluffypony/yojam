@@ -287,14 +287,18 @@ final class SettingsStore: ObservableObject {
         // Merge saved rules with current built-in definitions:
         // - Update built-in rule definitions (patterns, bundle IDs) while preserving user's enabled state
         // - Drop removed built-in rules
+        // - Drop orphaned built-in rules (isBuiltIn but ID no longer in BuiltInRules.all)
         // - Append brand-new built-in rules
-        let builtInById = Dictionary(uniqueKeysWithValues: BuiltInRules.all.map { ($0.id, $0) })
+        let builtInById = Dictionary(BuiltInRules.all.map { ($0.id, $0) },
+                                     uniquingKeysWith: { first, _ in first })
         var merged: [Rule] = []
         var seenBuiltInIds = Set<UUID>()
 
         for var rule in savedRules {
             // Drop removed built-ins
             if rule.isBuiltIn && BuiltInRules.removedIds.contains(rule.id) { continue }
+            // Drop orphaned built-ins whose UUID is no longer in BuiltInRules.all
+            if rule.isBuiltIn && builtInById[rule.id] == nil { continue }
             // Update existing built-in definitions, preserve user's enabled state
             if rule.isBuiltIn, let updated = builtInById[rule.id] {
                 let wasEnabled = rule.enabled

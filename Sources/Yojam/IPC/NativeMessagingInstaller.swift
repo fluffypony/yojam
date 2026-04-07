@@ -107,22 +107,27 @@ enum NativeMessagingInstaller {
         return nil
     }
 
+    /// Stable extension ID derived from the "key" field in chrome/manifest.json.
+    /// Set this to the real ID once the extension is published to the Chrome Web Store,
+    /// or use the unpacked extension ID during development. The extension's native
+    /// messaging will fail silently until this is a real Chrome extension ID.
+    static let chromeExtensionId = "placeholder_extension_id"
+
     private static func installChromiumManifest(
         at directory: URL, hostPath: String, browserName: String
     ) {
+        if chromeExtensionId == "placeholder_extension_id" {
+            YojamLogger.shared.log(
+                "WARNING: Chrome native messaging uses placeholder extension ID — "
+                + "sendNativeMessage will be rejected by Chrome. Update NativeMessagingInstaller.chromeExtensionId.")
+        }
         let manifest: [String: Any] = [
             "name": hostName,
             "description": "Yojam browser picker - routes links to the right browser",
             "path": hostPath,
             "type": "stdio",
-            // TODO: Replace with the stable extension ID from Chrome Web Store
-            // or from the "key" field in chrome/manifest.json. During development,
-            // load the extension unpacked and copy its ID from chrome://extensions.
-            // The native host will still work for routing (via yojam:// fallback),
-            // but the extension won't be able to use sendNativeMessage until this
-            // is set to the real extension ID.
             "allowed_origins": [
-                "chrome-extension://placeholder_extension_id/"
+                "chrome-extension://\(chromeExtensionId)/"
             ]
         ]
         writeManifest(manifest, to: directory, browserName: browserName)

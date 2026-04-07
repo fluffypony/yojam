@@ -35,10 +35,16 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
 
-        NSWorkspace.shared.open(yojamURL)
-
-        let response = NSExtensionItem()
-        response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
-        context.completeRequest(returningItems: [response])
+        // Use context.open instead of NSWorkspace.shared.open — sandboxed
+        // Safari Web Extensions cannot call NSWorkspace.open directly.
+        context.open(yojamURL) { success in
+            let response = NSExtensionItem()
+            if success {
+                response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
+            } else {
+                response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to open yojam URL"]]
+            }
+            context.completeRequest(returningItems: [response])
+        }
     }
 }

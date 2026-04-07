@@ -5,14 +5,20 @@ import YojamCore
 final class ChangeReconciler {
     private let browserManager: BrowserManager
     private let ruleEngine: RuleEngine
-    private var knownBundleIds: Set<String> = []
+    // §9: Track browser and email client IDs independently to prevent
+    // removing an app that's both a browser and email client from flipping
+    // isInstalled=false on both when removed from only one list.
+    private var knownBrowserIds: Set<String> = []
+    private var knownEmailIds: Set<String> = []
+    private var knownBundleIds: Set<String> {
+        knownBrowserIds.union(knownEmailIds)
+    }
 
     init(browserManager: BrowserManager, ruleEngine: RuleEngine) {
         self.browserManager = browserManager
         self.ruleEngine = ruleEngine
-        // §9: Track both browser and email client bundle IDs
-        knownBundleIds = Set(browserManager.browsers.map(\.bundleIdentifier))
-            .union(browserManager.emailClients.map(\.bundleIdentifier))
+        knownBrowserIds = Set(browserManager.browsers.map(\.bundleIdentifier))
+        knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
     }
 
     func reconcile() {
@@ -23,10 +29,10 @@ final class ChangeReconciler {
             httpHandlers.compactMap { Bundle(url: $0)?.bundleIdentifier })
 
         for appURL in httpHandlers {
-            guard let bundle = Bundle(url: appURL),
-                  let bundleId = bundle.bundleIdentifier,
+            guard let bundleId = CFBundleCopyInfoDictionaryForURL(appURL as CFURL)
+                    .map({ ($0 as NSDictionary)["CFBundleIdentifier"] as? String }) ?? nil,
                   bundleId != Bundle.main.bundleIdentifier,
-                  !knownBundleIds.contains(bundleId) else { continue }
+                  !knownBrowserIds.contains(bundleId) else { continue }
             appDiscovered(bundleId: bundleId, appURL: appURL)
         }
 
@@ -35,12 +41,11 @@ final class ChangeReconciler {
             toOpen: URL(string: "mailto:test@example.com")!)
         var emailClientsChanged = false
         for appURL in mailtoHandlers {
-            guard let bundle = Bundle(url: appURL),
-                  let bundleId = bundle.bundleIdentifier,
+            guard let bundleId = CFBundleCopyInfoDictionaryForURL(appURL as CFURL)
+                    .map({ ($0 as NSDictionary)["CFBundleIdentifier"] as? String }) ?? nil,
                   bundleId != Bundle.main.bundleIdentifier else { continue }
-            // §9: Add mailto handlers to currentIds
             currentIds.insert(bundleId)
-            knownBundleIds.insert(bundleId)
+            knownEmailIds.insert(bundleId)
             if let existingIdx = browserManager.emailClients.firstIndex(where: {
                 $0.bundleIdentifier == bundleId
             }) {
@@ -50,7 +55,8 @@ final class ChangeReconciler {
                     emailClientsChanged = true
                 }
             } else {
-                let name = bundle.infoDictionary?["CFBundleName"] as? String
+                let infoDict = CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?
+                let name = infoDict?["CFBundleName"] as? String
                     ?? appURL.deletingPathExtension().lastPathComponent
                 let entry = BrowserEntry(
                     bundleIdentifier: bundleId, displayName: name,
@@ -81,14 +87,20 @@ final class ChangeReconciler {
                 ruleEngine.disableRulesForApp(bundleId)
             }
         }
-        knownBundleIds = currentIds
+        knownBrowserIds = currentIds.intersection(knownBrowserIds.union(
+            Set(httpHandlers.compactMap {
+                CFBundleCopyInfoDictionaryForURL($0 as CFURL)
+                    .map { ($0 as NSDictionary)["CFBundleIdentifier"] as? String } ?? nil
+            })
+        ))
+        knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
     }
 
     func appDiscovered(bundleId: String, appURL: URL) {
         guard bundleId != Bundle.main.bundleIdentifier,
-              !knownBundleIds.contains(bundleId) else { return }
+              !knownBrowserIds.contains(bundleId) else { return }
         browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
         ruleEngine.enableRulesForApp(bundleId)
-        knownBundleIds.insert(bundleId)
+        knownBrowserIds.insert(bundleId)
     }
 }
