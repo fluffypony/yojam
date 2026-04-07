@@ -6,6 +6,8 @@ final class RoutingSuggestionEngine {
     private var domainPreferences: [String: [String: Int]] = [:]
     private let minimumConfidence = 3
     private let sharedDefaults: UserDefaults
+    // P4: Debounce UserDefaults writes to avoid per-click I/O
+    private let saveDebouncer = Debouncer(delay: 2.0)
 
     init() {
         self.sharedDefaults = SharedRoutingStore().defaults
@@ -27,7 +29,7 @@ final class RoutingSuggestionEngine {
             let sorted = domainPreferences.sorted { $0.value.values.reduce(0, +) > $1.value.values.reduce(0, +) }
             domainPreferences = Dictionary(uniqueKeysWithValues: sorted.prefix(800).map { ($0.key, $0.value) })
         }
-        save()
+        debouncedSave()
     }
 
     func suggestion(for domain: String) -> String? {
@@ -57,6 +59,10 @@ final class RoutingSuggestionEngine {
     }
 
     func clearAll() { domainPreferences = [:]; save() }
+
+    private func debouncedSave() {
+        saveDebouncer.debounce { [weak self] in self?.save() }
+    }
 
     private func save() {
         if let data = try? JSONEncoder().encode(domainPreferences) {

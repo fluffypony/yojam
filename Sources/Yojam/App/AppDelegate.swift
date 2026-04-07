@@ -362,6 +362,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recentlyRoutedURLs[urlKey] = now
         recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
 
+        // Structured decision log
+        DecisionTrace.shared.log(inputURL: request.url, decision: decision, request: request)
+
         switch decision {
         case .openDirect(let entry, let finalURL, let privateWindow, _):
 

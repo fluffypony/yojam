@@ -174,6 +174,10 @@ final class SettingsStore: ObservableObject {
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
 
+    // P2: Cached decoded results to avoid re-deserializing JSON on every routing call
+    private var cachedRules: [Rule]?
+    private var cachedGlobalRewriteRules: [URLRewriteRule]?
+
     init() {
         // App-only defaults (UserDefaults.standard)
         let d = UserDefaults.standard
@@ -272,6 +276,7 @@ final class SettingsStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(rules)
             sharedDefaults.set(data, forKey: Keys.rules)
+            cachedRules = nil // invalidate cache
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode rules: \(error.localizedDescription)")
@@ -279,6 +284,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadRules() -> [Rule] {
+        if let cached = cachedRules { return cached }
         guard let data = sharedDefaults.data(forKey: Keys.rules) else { return BuiltInRules.all }
         let savedRules: [Rule]
         do {
@@ -316,10 +322,12 @@ final class SettingsStore: ObservableObject {
         for rule in BuiltInRules.all where !seenBuiltInIds.contains(rule.id) {
             merged.append(rule)
         }
+        cachedRules = merged
         return merged
     }
 
     func saveGlobalRewriteRules(_ rules: [URLRewriteRule]) {
+        cachedGlobalRewriteRules = nil // invalidate cache
         do {
             let data = try JSONEncoder().encode(rules)
             sharedDefaults.set(data, forKey: Keys.globalRewriteRules)
@@ -330,6 +338,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadGlobalRewriteRules() -> [URLRewriteRule] {
+        if let cached = cachedGlobalRewriteRules { return cached }
         guard let data = sharedDefaults.data(forKey: Keys.globalRewriteRules) else {
             return BuiltInRewriteRules.all
         }
@@ -357,7 +366,9 @@ final class SettingsStore: ObservableObject {
         let finalNew = newBuiltIns.filter { rule in
             !seen.contains("\(rule.name)|\(rule.matchPattern)|\(rule.replacement)")
         }
-        return deduped + finalNew
+        let result = deduped + finalNew
+        cachedGlobalRewriteRules = result
+        return result
     }
 
     // MARK: - Import / Export
