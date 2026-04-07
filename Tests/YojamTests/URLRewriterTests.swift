@@ -1,5 +1,6 @@
 import XCTest
 @testable import Yojam
+import YojamCore
 
 final class URLRewriterTests: XCTestCase {
     func testRegexRewrite() {

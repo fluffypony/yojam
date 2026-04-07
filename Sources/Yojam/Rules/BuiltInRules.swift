@@ -1,4 +1,5 @@
 import Foundation
+import YojamCore
 
 enum BuiltInRules {
     // UUIDs of removed built-in rules, used by loadRules() to drop stale saved copies

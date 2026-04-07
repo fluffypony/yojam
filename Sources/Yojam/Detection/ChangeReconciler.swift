@@ -1,4 +1,5 @@
 import AppKit
+import YojamCore
 
 @MainActor
 final class ChangeReconciler {

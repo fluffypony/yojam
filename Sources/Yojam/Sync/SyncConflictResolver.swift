@@ -1,4 +1,5 @@
 import Foundation
+import YojamCore
 
 enum SyncConflictResolver {
     static func mergeBrowserLists(

@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import TipKit
+import YojamCore
 
 struct BrowsersTab: View {
     @ObservedObject var settingsStore: SettingsStore

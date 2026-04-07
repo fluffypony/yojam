@@ -1,5 +1,6 @@
 import XCTest
 @testable import Yojam
+import YojamCore
 
 final class SettingsStoreTests: XCTestCase {
     @MainActor

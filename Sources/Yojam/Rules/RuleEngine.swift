@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import YojamCore
 
 @MainActor
 final class RuleEngine: ObservableObject {

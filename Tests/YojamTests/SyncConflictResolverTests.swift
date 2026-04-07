@@ -1,5 +1,6 @@
 import XCTest
 @testable import Yojam
+import YojamCore
 
 final class SyncConflictResolverTests: XCTestCase {
     func testRemoteAdditionsAppear() {

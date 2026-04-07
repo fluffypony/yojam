@@ -1,5 +1,6 @@
 import XCTest
 @testable import Yojam
+@testable import YojamCore
 
 final class RegexMatcherTests: XCTestCase {
     func testSimpleMatch() {

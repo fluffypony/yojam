@@ -1,27 +1,25 @@
 import Foundation
 
-struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
-    let id: UUID
-    var bundleIdentifier: String
-    var displayName: String
-    var enabled: Bool
-    var position: Int
-    var profileId: String?
-    var profileName: String?
-    var stripUTMParams: Bool
-    var openInPrivateWindow: Bool
-    var rewriteRules: [URLRewriteRule]
-    var source: BrowserSource
-    var isInstalled: Bool
-    var lastSeenAt: Date?
-    var lastModifiedAt: Date?
-    var customIconData: Data?
+public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public var bundleIdentifier: String
+    public var displayName: String
+    public var enabled: Bool
+    public var position: Int
+    public var profileId: String?
+    public var profileName: String?
+    public var stripUTMParams: Bool
+    public var openInPrivateWindow: Bool
+    public var rewriteRules: [URLRewriteRule]
+    public var source: BrowserSource
+    public var isInstalled: Bool
+    public var lastSeenAt: Date?
+    public var lastModifiedAt: Date?
+    public var customIconData: Data?
     /// Custom CLI launch arguments. Use $URL as a placeholder for the URL.
-    /// When set, the app is launched via Process with these args instead of
-    /// NSWorkspace URL opening. Examples: "$URL", "--url $URL", "--browse $URL"
-    var customLaunchArgs: String?
+    public var customLaunchArgs: String?
 
-    init(
+    public init(
         id: UUID = UUID(),
         bundleIdentifier: String,
         displayName: String,
@@ -57,12 +55,12 @@ struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         self.customLaunchArgs = customLaunchArgs
     }
 
-    var fullDisplayName: String {
+    public var fullDisplayName: String {
         if let profileName { return "\(displayName) — \(profileName)" }
         return displayName
     }
 }
 
-enum BrowserSource: String, Codable, Sendable {
+public enum BrowserSource: String, Codable, Sendable {
     case autoDetected, manual, suggested
 }

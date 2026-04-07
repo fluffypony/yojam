@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import YojamCore
 
 @MainActor
 final class URLRewriter: ObservableObject {

@@ -1,6 +1,7 @@
 import Sparkle
 import SwiftUI
 import TipKit
+import YojamCore
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore

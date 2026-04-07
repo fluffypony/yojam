@@ -1,4 +1,5 @@
 import Foundation
+import YojamCore
 
 enum BuiltInRewriteRules {
     // Stable UUIDs so loadGlobalRewriteRules() can deduplicate across launches.

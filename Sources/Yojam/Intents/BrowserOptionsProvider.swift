@@ -1,4 +1,5 @@
 import AppIntents
+import YojamCore
 
 struct BrowserOptionsProvider: DynamicOptionsProvider {
     @MainActor

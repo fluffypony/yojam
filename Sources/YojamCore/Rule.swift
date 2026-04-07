@@ -1,22 +1,22 @@
 import Foundation
 
-struct Rule: Codable, Identifiable, Equatable, Sendable {
-    let id: UUID
-    var name: String
-    var enabled: Bool
-    var matchType: MatchType
-    var pattern: String
-    var targetBundleId: String
-    var targetAppName: String
-    var isBuiltIn: Bool
-    var priority: Int
-    var stripUTMParams: Bool
-    var rewriteRules: [URLRewriteRule]
-    var sourceAppBundleId: String?
-    var sourceAppName: String?
-    var lastModifiedAt: Date?
+public struct Rule: Codable, Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public var name: String
+    public var enabled: Bool
+    public var matchType: MatchType
+    public var pattern: String
+    public var targetBundleId: String
+    public var targetAppName: String
+    public var isBuiltIn: Bool
+    public var priority: Int
+    public var stripUTMParams: Bool
+    public var rewriteRules: [URLRewriteRule]
+    public var sourceAppBundleId: String?
+    public var sourceAppName: String?
+    public var lastModifiedAt: Date?
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         enabled: Bool = true,
@@ -42,10 +42,10 @@ struct Rule: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-enum MatchType: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum MatchType: String, Codable, CaseIterable, Identifiable, Sendable {
     case domain, domainSuffix, urlPrefix, urlContains, regex
-    var id: String { rawValue }
-    var displayName: String {
+    public var id: String { rawValue }
+    public var displayName: String {
         switch self {
         case .domain: "Domain (exact)"
         case .domainSuffix: "Domain suffix"

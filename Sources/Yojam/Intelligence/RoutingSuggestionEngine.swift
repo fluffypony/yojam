@@ -41,6 +41,21 @@ final class RoutingSuggestionEngine {
         return nil
     }
 
+    /// Returns a flat domain → entryId mapping of all confident suggestions,
+    /// for use in `RoutingConfiguration`.
+    func allSuggestions() -> [String: String] {
+        var result: [String: String] = [:]
+        for (domain, prefs) in domainPreferences {
+            let total = prefs.values.reduce(0, +)
+            guard total >= minimumConfidence else { continue }
+            if let (entryId, count) = prefs.max(by: { $0.value < $1.value }),
+               Double(count) / Double(total) > 0.7 {
+                result[domain] = entryId
+            }
+        }
+        return result
+    }
+
     func clearAll() { domainPreferences = [:]; save() }
 
     private func save() {

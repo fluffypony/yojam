@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import YojamCore
 
 @MainActor
 final class PickerPanel: NSPanel {

@@ -3,18 +3,6 @@ import Combine
 import ServiceManagement
 import YojamCore
 
-enum ActivationMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case always, holdShift, smartFallback
-    var id: String { rawValue }
-    var displayName: String {
-        switch self {
-        case .always: "Always show picker"
-        case .holdShift: "Open directly; hold Shift to choose"
-        case .smartFallback: "Auto-pick when confident"
-        }
-    }
-}
-
 enum PickerLayout: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, smallHorizontal, bigHorizontal, smallVertical, bigVertical
     var id: String { rawValue }
@@ -55,18 +43,6 @@ enum RecentURLRetention: String, Codable, CaseIterable, Identifiable, Sendable {
         case .never: "Never save"
         case .timed: "Auto-delete after..."
         case .forever: "Keep forever"
-        }
-    }
-}
-
-enum DefaultSelectionBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
-    case alwaysFirst, lastUsed, smart
-    var id: String { rawValue }
-    var displayName: String {
-        switch self {
-        case .alwaysFirst: "First in browser list"
-        case .lastUsed: "Last browser I used"
-        case .smart: "Learned preference for this site"
         }
     }
 }

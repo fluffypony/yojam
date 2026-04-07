@@ -151,4 +151,211 @@ final class IngressParityTests: XCTestCase {
         }
         XCTAssertEqual(request.url.scheme, "mailto")
     }
+
+    // MARK: - RouteDecision parity via RoutingService
+
+    /// A minimal configuration with one browser and no rules,
+    /// used to verify that RoutingService produces identical decisions
+    /// for the same URL regardless of ingress origin.
+    private var parityConfig: RoutingConfiguration {
+        let browser = BrowserEntry(
+            bundleIdentifier: "com.apple.Safari",
+            displayName: "Safari"
+        )
+        return RoutingConfiguration(
+            browsers: [browser],
+            emailClients: [],
+            rules: [],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .always,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+    }
+
+    func testRouteDecisionIdenticalAcrossOrigins() {
+        let config = parityConfig
+        // All origins with their typical sentinels
+        let origins: [(IngressOrigin, String?)] = [
+            (.defaultHandler, nil),
+            (.handoff, SourceAppSentinel.handoff),
+            (.airdrop, SourceAppSentinel.airdrop),
+            (.shareExtension, SourceAppSentinel.shareExtension),
+            (.safariExtension, SourceAppSentinel.safariExtension),
+            (.chromeExtension, SourceAppSentinel.chromeExtension),
+            (.firefoxExtension, SourceAppSentinel.firefoxExtension),
+            (.servicesMenu, SourceAppSentinel.servicesMenu),
+            (.urlScheme, SourceAppSentinel.urlScheme),
+            (.intent, nil),
+            (.fileOpen, nil),
+            (.clipboard, nil),
+        ]
+
+        var decisions: [RouteDecision] = []
+        for (origin, sentinel) in origins {
+            let request = IncomingLinkRequest(
+                url: targetURL,
+                sourceAppBundleId: sentinel,
+                origin: origin
+            )
+            let decision = RoutingService.decide(request: request, configuration: config)
+            decisions.append(decision)
+        }
+
+        // All decisions should be identical (same URL, no source-specific rules)
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "Decision for origin \(origins[i].0) should match defaultHandler")
+        }
+
+        // Verify the actual decision type: always mode + 1 browser = showPicker
+        if case .showPicker(let entries, let preselected, let finalURL, let isEmail, _) = first {
+            XCTAssertEqual(entries.count, 1)
+            XCTAssertEqual(preselected, 0)
+            XCTAssertEqual(finalURL, targetURL)
+            XCTAssertFalse(isEmail)
+        } else {
+            XCTFail("Expected showPicker in always mode with browsers available")
+        }
+    }
+
+    func testRouteDecisionWithRuleIdenticalAcrossOrigins() {
+        let browser = BrowserEntry(
+            bundleIdentifier: "com.google.Chrome",
+            displayName: "Chrome"
+        )
+        let rule = Rule(
+            name: "Example",
+            matchType: .domain,
+            pattern: "example.com",
+            targetBundleId: "com.google.Chrome",
+            targetAppName: "Chrome"
+        )
+        let config = RoutingConfiguration(
+            browsers: [browser],
+            emailClients: [],
+            rules: [rule],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .smartFallback,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        // Test with origins that have no source-specific rule filter
+        let origins: [IngressOrigin] = [
+            .defaultHandler, .handoff, .shareExtension, .servicesMenu, .intent,
+        ]
+
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(
+                url: targetURL,
+                origin: origin
+            )
+            let decision = RoutingService.decide(request: request, configuration: config)
+            decisions.append(decision)
+        }
+
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "Rule-matched decision for \(origins[i]) should be identical")
+        }
+
+        // Should be openDirect with Chrome in smartFallback mode
+        if case .openDirect(let entry, _, _, let reason) = first {
+            XCTAssertEqual(entry.bundleIdentifier, "com.google.Chrome")
+            XCTAssertTrue(reason.contains("Example"))
+        } else {
+            XCTFail("Expected openDirect for rule match in smartFallback mode")
+        }
+    }
+
+    func testMailtoDecisionIdenticalAcrossOrigins() {
+        let mailClient = BrowserEntry(
+            bundleIdentifier: "com.apple.mail",
+            displayName: "Mail"
+        )
+        let config = RoutingConfiguration(
+            browsers: [],
+            emailClients: [mailClient],
+            rules: [],
+            globalRewriteRules: [],
+            utmStripParameters: [],
+            globalUTMStrippingEnabled: false,
+            activationMode: .smartFallback,
+            defaultSelectionBehavior: .alwaysFirst,
+            isEnabled: true,
+            learnedDomainPreferences: [:],
+            lastUsedBrowserId: nil,
+            lastUsedEmailClientId: nil
+        )
+
+        let mailtoURL = URL(string: "mailto:test@example.com")!
+        let origins: [IngressOrigin] = [.defaultHandler, .servicesMenu, .intent]
+
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(url: mailtoURL, origin: origin)
+            decisions.append(RoutingService.decide(request: request, configuration: config))
+        }
+
+        let first = decisions[0]
+        for (i, decision) in decisions.enumerated() {
+            XCTAssertEqual(decision, first,
+                           "Mailto decision for \(origins[i]) should be identical")
+        }
+
+        // Single email client in smartFallback → openDirect
+        if case .openDirect(let entry, _, _, _) = first {
+            XCTAssertEqual(entry.bundleIdentifier, "com.apple.mail")
+        } else {
+            XCTFail("Expected openDirect for single mailto client in smartFallback")
+        }
+    }
+
+    func testDisabledRoutingIdenticalAcrossOrigins() {
+        var config = parityConfig
+        // Rebuild with isEnabled = false
+        let disabledConfig = RoutingConfiguration(
+            browsers: config.browsers,
+            emailClients: config.emailClients,
+            rules: config.rules,
+            globalRewriteRules: config.globalRewriteRules,
+            utmStripParameters: config.utmStripParameters,
+            globalUTMStrippingEnabled: config.globalUTMStrippingEnabled,
+            activationMode: config.activationMode,
+            defaultSelectionBehavior: config.defaultSelectionBehavior,
+            isEnabled: false,
+            learnedDomainPreferences: config.learnedDomainPreferences,
+            lastUsedBrowserId: config.lastUsedBrowserId,
+            lastUsedEmailClientId: config.lastUsedEmailClientId
+        )
+
+        let origins: [IngressOrigin] = [.defaultHandler, .handoff, .shareExtension]
+        var decisions: [RouteDecision] = []
+        for origin in origins {
+            let request = IncomingLinkRequest(url: targetURL, origin: origin)
+            decisions.append(RoutingService.decide(request: request, configuration: disabledConfig))
+        }
+
+        for decision in decisions {
+            if case .openSystemDefault(let url) = decision {
+                XCTAssertEqual(url, targetURL)
+            } else {
+                XCTFail("Expected openSystemDefault when routing is disabled")
+            }
+        }
+    }
 }

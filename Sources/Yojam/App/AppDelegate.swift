@@ -273,20 +273,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Process an incoming link request through the routing pipeline.
+    /// Calls `RoutingService.decide()` from YojamCore and executes the result.
     private func handleIncomingRequest(_ request: IncomingLinkRequest) {
-        // Handle forced picker or forced browser from yojam:// params
-        if request.forcePicker {
-            let modifiers = NSEvent.ModifierFlags(rawValue: request.modifierFlags)
-            routeURL(request.url, sourceAppBundleId: request.sourceAppBundleId,
-                     modifiers: modifiers.union(.shift), forcePicker: true,
-                     forcePrivateWindow: request.forcePrivateWindow,
-                     forcedBrowserBundleId: request.forcedBrowserBundleId)
-        } else {
-            let modifiers = NSEvent.ModifierFlags(rawValue: request.modifierFlags)
-            routeURL(request.url, sourceAppBundleId: request.sourceAppBundleId,
-                     modifiers: modifiers,
-                     forcePrivateWindow: request.forcePrivateWindow,
-                     forcedBrowserBundleId: request.forcedBrowserBundleId)
+        let config = buildRoutingConfiguration()
+        let decision = RoutingService.decide(request: request, configuration: config)
+        executeRouteDecision(decision, request: request)
+    }
+
+    /// Snapshot the current routing state for RoutingService.
+    private func buildRoutingConfiguration() -> RoutingConfiguration {
+        let browsers = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
+        let emailClients = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
+        let rules = ruleEngine.rules.filter(\.enabled).sorted {
+            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
+            return $0.priority < $1.priority
+        }.filter { rule in
+            // Pre-filter for installed targets (RoutingService has no NSWorkspace)
+            let isPath = rule.targetBundleId.hasPrefix("/")
+            return isPath
+                ? FileManager.default.isExecutableFile(atPath: rule.targetBundleId)
+                : (NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: rule.targetBundleId) != nil)
+        }
+        let globalRules = settingsStore.loadGlobalRewriteRules().filter {
+            $0.enabled && $0.scope == .global
+        }
+        let utmParams = Set(settingsStore.utmStripList.map { $0.lowercased() })
+
+        return RoutingConfiguration(
+            browsers: browsers,
+            emailClients: emailClients,
+            rules: rules,
+            globalRewriteRules: globalRules,
+            utmStripParameters: utmParams,
+            globalUTMStrippingEnabled: settingsStore.globalUTMStrippingEnabled,
+            activationMode: settingsStore.activationMode,
+            defaultSelectionBehavior: settingsStore.defaultSelectionBehavior,
+            isEnabled: settingsStore.isEnabled,
+            learnedDomainPreferences: routingSuggestionEngine.allSuggestions(),
+            lastUsedBrowserId: browserManager.lastUsedId(isEmail: false),
+            lastUsedEmailClientId: browserManager.lastUsedId(isEmail: true)
+        )
+    }
+
+    /// Execute a RouteDecision from RoutingService via app-only executors.
+    private func executeRouteDecision(_ decision: RouteDecision, request: IncomingLinkRequest) {
+        switch decision {
+        case .openDirect(let entry, let finalURL, let privateWindow, _):
+            // Deduplication
+            let urlKey = finalURL.absoluteString
+            let now = Date()
+            if let lastRouted = recentlyRoutedURLs[urlKey],
+               now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
+            recentlyRoutedURLs[urlKey] = now
+            recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
+
+            recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
+            if let domain = finalURL.host?.lowercased() {
+                routingSuggestionEngine.recordChoice(domain: domain, entryId: entry.id.uuidString)
+            }
+
+            guard let resolvedAppURL = appURL(for: entry.bundleIdentifier) else { return }
+            openURL(finalURL, withAppAt: resolvedAppURL,
+                    profile: entry.profileId,
+                    bundleId: entry.bundleIdentifier,
+                    privateWindow: privateWindow,
+                    customLaunchArgs: entry.customLaunchArgs)
+
+        case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
+            // Deduplication
+            let urlKey = finalURL.absoluteString
+            let now = Date()
+            if let lastRouted = recentlyRoutedURLs[urlKey],
+               now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
+            recentlyRoutedURLs[urlKey] = now
+            recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
+
+            recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
+
+            // Compute smart routing reason when none was provided
+            var effectiveReason = reason
+            if effectiveReason == nil,
+               settingsStore.defaultSelectionBehavior == .smart,
+               let domain = finalURL.host?.lowercased(),
+               routingSuggestionEngine.suggestion(for: domain) != nil {
+                effectiveReason = "Suggested based on your history for \(finalURL.host ?? domain)"
+            }
+
+            let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
+            pickerPanel?.close()
+            pickerPanel = PickerPanel(
+                url: finalURL, entries: entries,
+                preselectedIndex: clampedIndex,
+                settingsStore: settingsStore,
+                matchReason: effectiveReason,
+                onSelect: { [weak self] entry, selectedURL in
+                    self?.handlePickerSelection(entry: entry, url: selectedURL, isEmail: isEmail)
+                },
+                onCopy: { [weak self] url in
+                    self?.clipboardMonitor?.suppressNextChange = true
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                },
+                onDismiss: { [weak self] panel in
+                    guard self?.pickerPanel === panel else { return }
+                    self?.pickerPanel = nil
+                    if NSApp.activationPolicy() == .regular {
+                        let prefsOpen = NSApp.windows.contains { window in
+                            !(window is NSPanel) && window.isVisible && window.frame.width > 100
+                        }
+                        if !prefsOpen { NSApp.setActivationPolicy(.accessory) }
+                    }
+                })
+            pickerPanel?.showAtCursor()
+
+        case .openSystemDefault(let url):
+            openInDefaultBrowser(url)
+
+        case .openSystemMailHandler(let url):
+            NSWorkspace.shared.open(url)
         }
     }
 
