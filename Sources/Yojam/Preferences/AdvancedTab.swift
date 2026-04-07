@@ -20,6 +20,7 @@ struct AdvancedTab: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
                         debugSection.id("Diagnostics")
+                        networkSection.id("Network")
                         utmParametersSection.id("Tracker Parameter List")
                         suppressedDomainsSection.id("Suppressed Clipboard Domains")
                         smartRoutingSection.id("Smart Routing")
@@ -76,6 +77,28 @@ struct AdvancedTab: View {
                     }
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.debugLoggingEnabled)
+                }
+            }
+        }
+    }
+
+    // MARK: - Network
+
+    private var networkSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ThemeSectionTitle(text: "Network")
+            ThemePanel {
+                ThemePanelRow(isLast: true) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Shortlink Resolution")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Resolve bit.ly, t.co, and other shortlinks before routing. Adds up to 3s latency and makes network requests.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    ThemeToggle(isOn: $settingsStore.shortlinkResolutionEnabled)
                 }
             }
         }

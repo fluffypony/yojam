@@ -275,6 +275,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingRequests.append(request)
             return
         }
+        // Opt-in shortlink resolution: async pre-stage before routing
+        if settingsStore.shortlinkResolutionEnabled,
+           let host = request.url.host?.lowercased(),
+           ShortlinkResolver.defaultShortenerHosts.contains(host) {
+            Task { @MainActor in
+                let resolved = await ShortlinkResolver.shared.resolve(request.url)
+                let resolvedRequest = IncomingLinkRequest(
+                    url: resolved,
+                    sourceAppBundleId: request.sourceAppBundleId,
+                    origin: request.origin,
+                    modifierFlags: request.modifierFlags,
+                    receivedAt: request.receivedAt,
+                    metadata: request.metadata,
+                    forcedBrowserBundleId: request.forcedBrowserBundleId,
+                    forcePicker: request.forcePicker,
+                    forcePrivateWindow: request.forcePrivateWindow
+                )
+                self.handleIncomingRequest(resolvedRequest)
+            }
+            return
+        }
         handleIncomingRequest(request)
     }
 

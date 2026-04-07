@@ -155,6 +155,9 @@ final class SettingsStore: ObservableObject {
     @Published var recentURLRetentionMinutes: Int {
         didSet { sharedDefaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
     }
+    @Published var shortlinkResolutionEnabled: Bool {
+        didSet { sharedDefaults.set(shortlinkResolutionEnabled, forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled) }
+    }
     @Published var hasDismissedQuickStart: Bool {
         didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
     }
@@ -220,6 +223,7 @@ final class SettingsStore: ObservableObject {
         self.recentURLRetention = RecentURLRetention(
             rawValue: s.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = s.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
+        self.shortlinkResolutionEnabled = s.bool(forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled)
     }
 
     // MARK: - Complex Data Persistence
@@ -472,6 +476,7 @@ final class SettingsStore: ObservableObject {
         self.pickerInvertOrder = false
         self.recentURLRetention = .forever
         self.recentURLRetentionMinutes = 30
+        self.shortlinkResolutionEnabled = false
         self.hasDismissedQuickStart = false
         self.quickStartVisitedActivation = false
         self.quickStartVisitedBrowsers = false
