@@ -239,21 +239,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.refreshProfileSuggestions()
             }
             // Now that profiles are assigned, drain pending queue.
-            // Small delay so the window server has finished processing the
-            // activation policy before the picker tries NSApp.activate().
-            // Use enqueueOrHandle so shortlink resolution is applied.
+            // Drain synchronously to close the race window where new URLs
+            // arriving between the flag flip and the drain would be processed
+            // out of order. The 0.2s delay for window-server activation policy
+            // only applies to the first picker display, which the normal
+            // enqueueOrHandle → handleIncomingRequest path handles fine.
             let requests = self.pendingRequests
             self.pendingRequests.removeAll()
-            // Flip BEFORE drain so enqueueOrHandle doesn't re-queue them.
-            self.isFinishedLaunching = true
-            if !requests.isEmpty {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    guard let self else { return }
-                    for request in requests {
-                        self.enqueueOrHandle(request)
-                    }
-                }
+            for request in requests {
+                self.handleIncomingRequest(request)
             }
+            // Flip AFTER drain so nothing is re-queued during processing.
+            self.isFinishedLaunching = true
         }
     }
 

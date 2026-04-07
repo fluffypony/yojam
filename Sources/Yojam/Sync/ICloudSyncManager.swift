@@ -100,8 +100,9 @@ final class ICloudSyncManager {
 
         let encoder = JSONEncoder()
 
-        // P6: Compute a hash of the payload to skip identical pushes
-        var payloadParts: [Data] = []
+        // Compute all payloads BEFORE writing to KV store so we can
+        // check total size and skip identical pushes without partial writes.
+        var payloads: [(key: String, data: Data)] = []
 
         // Strip customIconData and filter path-based entries before syncing
         do {
@@ -112,30 +113,21 @@ final class ICloudSyncManager {
                     copy.customIconData = nil
                     return copy
                 }
-            let data = try encoder.encode(browsersToSync)
-            payloadParts.append(data)
-            kvStore.set(data, forKey: "sync_browsers")
+            payloads.append(("sync_browsers", try encoder.encode(browsersToSync)))
         } catch {
             YojamLogger.shared.log("iCloud push browsers failed: \(error.localizedDescription)")
         }
         do {
             let userRules = settingsStore.loadRules().filter { !$0.isBuiltIn }
-            let data = try encoder.encode(userRules)
-            payloadParts.append(data)
-            kvStore.set(data, forKey: "sync_rules")
+            payloads.append(("sync_rules", try encoder.encode(userRules)))
         } catch {
             YojamLogger.shared.log("iCloud push rules failed: \(error.localizedDescription)")
         }
         do {
-            let data = try encoder.encode(settingsStore.loadGlobalRewriteRules())
-            payloadParts.append(data)
-            kvStore.set(data, forKey: "sync_rewrites")
+            payloads.append(("sync_rewrites", try encoder.encode(settingsStore.loadGlobalRewriteRules())))
         } catch {
             YojamLogger.shared.log("iCloud push rewrites failed: \(error.localizedDescription)")
         }
-        kvStore.set(settingsStore.utmStripList, forKey: "sync_utmStripList")
-
-        // §50: Sync email clients (filter path-based entries like browsers)
         do {
             let emailToSync = settingsStore.loadEmailClients()
                 .filter { !$0.bundleIdentifier.hasPrefix("/") }
@@ -144,25 +136,13 @@ final class ICloudSyncManager {
                     copy.customIconData = nil
                     return copy
                 }
-            let data = try encoder.encode(emailToSync)
-            payloadParts.append(data)
-            kvStore.set(data, forKey: "sync_emailClients")
+            payloads.append(("sync_emailClients", try encoder.encode(emailToSync)))
         } catch {
             YojamLogger.shared.log("iCloud push email clients failed: \(error.localizedDescription)")
         }
 
-        // Sync general preferences
-        kvStore.set(settingsStore.activationMode.rawValue, forKey: "sync_activationMode")
-        kvStore.set(settingsStore.defaultSelectionBehavior.rawValue, forKey: "sync_defaultSelection")
-        kvStore.set(settingsStore.verticalThreshold, forKey: "sync_verticalThreshold")
-        kvStore.set(settingsStore.soundEffectsEnabled, forKey: "sync_soundEffects")
-        kvStore.set(settingsStore.globalUTMStrippingEnabled, forKey: "sync_globalUTMStripping")
-        kvStore.set(settingsStore.clipboardMonitoringEnabled, forKey: "sync_clipboardMonitoring")
-        kvStore.set(settingsStore.debugLoggingEnabled, forKey: "sync_debugLogging")
-        kvStore.set(settingsStore.periodicRescanInterval, forKey: "sync_periodicRescanInterval")
-
-        // B-ICLOUD-QUOTA: Check total size BEFORE committing to iCloud
-        let totalBytes = payloadParts.reduce(0) { $0 + $1.count }
+        // Check total size BEFORE committing anything to iCloud
+        let totalBytes = payloads.reduce(0) { $0 + $1.data.count }
         if totalBytes > 1_000_000 {
             YojamLogger.shared.log("iCloud push rejected: payload \(totalBytes) bytes exceeds 1MB quota")
             return
@@ -172,9 +152,23 @@ final class ICloudSyncManager {
         }
 
         // P6: Skip push if payload hasn't changed
-        let currentHash = payloadParts.reduce(0) { $0 ^ $1.hashValue }
+        let currentHash = payloads.reduce(0) { $0 ^ $1.data.hashValue }
         if currentHash == lastPushedHash { return }
         lastPushedHash = currentHash
+
+        // Now commit all payloads
+        for (key, data) in payloads {
+            kvStore.set(data, forKey: key)
+        }
+        kvStore.set(settingsStore.utmStripList, forKey: "sync_utmStripList")
+        kvStore.set(settingsStore.activationMode.rawValue, forKey: "sync_activationMode")
+        kvStore.set(settingsStore.defaultSelectionBehavior.rawValue, forKey: "sync_defaultSelection")
+        kvStore.set(settingsStore.verticalThreshold, forKey: "sync_verticalThreshold")
+        kvStore.set(settingsStore.soundEffectsEnabled, forKey: "sync_soundEffects")
+        kvStore.set(settingsStore.globalUTMStrippingEnabled, forKey: "sync_globalUTMStripping")
+        kvStore.set(settingsStore.clipboardMonitoringEnabled, forKey: "sync_clipboardMonitoring")
+        kvStore.set(settingsStore.debugLoggingEnabled, forKey: "sync_debugLogging")
+        kvStore.set(settingsStore.periodicRescanInterval, forKey: "sync_periodicRescanInterval")
 
         kvStore.synchronize()
     }

@@ -23,9 +23,25 @@ public enum RoutingSnapshotLoader {
         let globalRewrites: [URLRewriteRule] =
             (try? decoder.decode([URLRewriteRule].self,
                 from: defaults.data(forKey: SharedRoutingStore.Keys.globalRewriteRules) ?? Data())) ?? []
-        let learned: [String: String] =
-            (try? decoder.decode([String: String].self,
-                from: defaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences) ?? Data())) ?? [:]
+        // Stored format is [String: [String: Int]] (domain → {entryId: count}).
+        // Flatten to [String: String] (domain → entryId) using the same
+        // confidence logic as RoutingSuggestionEngine.allSuggestions().
+        let learned: [String: String]
+        if let rawData = defaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
+           let full = try? decoder.decode([String: [String: Int]].self, from: rawData) {
+            var flat: [String: String] = [:]
+            for (domain, prefs) in full {
+                let total = prefs.values.reduce(0, +)
+                guard total >= 3 else { continue }
+                if let (entryId, count) = prefs.max(by: { $0.value < $1.value }),
+                   Double(count) / Double(total) > 0.7 {
+                    flat[domain] = entryId
+                }
+            }
+            learned = flat
+        } else {
+            learned = [:]
+        }
 
         let utm = Set((defaults.stringArray(forKey: SharedRoutingStore.Keys.utmStripList) ?? [])
             .map { $0.lowercased() })

@@ -109,8 +109,21 @@ func handlePreview(_ args: [String]) {
         exit(1)
     }
 
+    // Resolve shortlinks if enabled, to match real routing behavior
+    var resolvedURL = url
+    if config.shortlinkResolutionEnabled,
+       let host = url.host?.lowercased(),
+       ShortlinkResolver.defaultShortenerHosts.contains(host) {
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            resolvedURL = await ShortlinkResolver.shared.resolve(url)
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + .seconds(4))
+    }
+
     let request = IncomingLinkRequest(
-        url: url,
+        url: resolvedURL,
         sourceAppBundleId: SourceAppSentinel.cli,
         origin: .urlScheme
     )
