@@ -8,10 +8,16 @@ struct GeneralTab: View {
     @Binding var scrollToSection: String?
     @Binding var selectedTab: PreferencesTab
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
-    @State private var automaticUpdates: Bool = true
 
     private let setDefaultTip = SetDefaultBrowserTip()
     private let activationModeTip = ActivationModeTip()
+
+    private var automaticUpdatesBinding: Binding<Bool> {
+        Binding(
+            get: { updater.automaticallyChecksForUpdates },
+            set: { updater.automaticallyChecksForUpdates = $0 }
+        )
+    }
 
     private var versionString: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -51,10 +57,7 @@ struct GeneralTab: View {
             }
         }
         .background(Theme.bgApp)
-        .onAppear {
-            isDefault = DefaultBrowserManager.isDefaultBrowser
-            automaticUpdates = updater.automaticallyChecksForUpdates
-        }
+        .onAppear { isDefault = DefaultBrowserManager.isDefaultBrowser }
     }
 
     // MARK: - Startup
@@ -85,12 +88,7 @@ struct GeneralTab: View {
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
-                    ThemeToggle(isOn: Binding(
-                        get: { automaticUpdates },
-                        set: { newValue in
-                            automaticUpdates = newValue
-                            updater.automaticallyChecksForUpdates = newValue
-                        }))
+                    ThemeToggle(isOn: automaticUpdatesBinding)
                 }
                 ThemePanelRow(isLast: true, helpText: HelpText.General.defaultBrowser) {
                     VStack(alignment: .leading, spacing: 2) {
