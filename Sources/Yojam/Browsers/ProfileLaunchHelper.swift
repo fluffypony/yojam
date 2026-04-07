@@ -8,9 +8,9 @@ enum ProfileLaunchHelper {
         case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac",
              "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium":
             return ["--profile-directory=\(profileId)"]
-        case "org.mozilla.firefox":
-            // Firefox: -P expects profile name
-            return ["-P", profileId]
+        case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
+            // Firefox: -P expects profile name; --new-instance needed when already running
+            return ["-P", profileId, "--new-instance"]
         default:
             return []
         }
@@ -35,7 +35,7 @@ enum ProfileLaunchHelper {
             return ["--incognito"]
         case "com.microsoft.edgemac":
             return ["--inprivate"]
-        case "org.mozilla.firefox":
+        case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
             return ["-private-window"]
         default:
             return []
@@ -49,6 +49,8 @@ enum ProfileLaunchHelper {
          .replacingOccurrences(of: "\n", with: "")
          .replacingOccurrences(of: "\r", with: "")
          .replacingOccurrences(of: "\t", with: "")
+         .replacingOccurrences(of: "\u{2028}", with: "%E2%80%A8")
+         .replacingOccurrences(of: "\u{2029}", with: "%E2%80%A9")
     }
 
     /// Open a URL in a private window via AppleScript GUI scripting.

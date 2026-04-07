@@ -233,19 +233,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
                 browserManager.refreshProfileSuggestions()
             }
-            // Now that profiles are assigned, allow URL routing and drain pending queue.
+            // Now that profiles are assigned, drain pending queue THEN flip the flag.
+            // This ensures URLs arriving during drain don't bypass the queue.
             // Small delay so the window server has finished processing the
             // activation policy before the picker tries NSApp.activate().
-            isFinishedLaunching = true
-            if !pendingRequests.isEmpty {
-                let requests = pendingRequests
-                pendingRequests.removeAll()
+            let requests = self.pendingRequests
+            self.pendingRequests.removeAll()
+            if !requests.isEmpty {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    guard let self else { return }
                     for request in requests {
-                        self?.handleIncomingRequest(request)
+                        self.handleIncomingRequest(request)
                     }
                 }
             }
+            // Flip AFTER drain so no incoming URL races ahead of queued ones
+            self.isFinishedLaunching = true
         }
     }
 
@@ -321,15 +324,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Execute a RouteDecision from RoutingService via app-only executors.
     private func executeRouteDecision(_ decision: RouteDecision, request: IncomingLinkRequest) {
+        // Hoist deduplication to top so ALL decision paths are deduped,
+        // including .openSystemMailHandler (prevents mailto loop when
+        // Yojam is the default mail handler and routing is disabled).
+        let deduplicationURL: URL
+        switch decision {
+        case .openDirect(_, let url, _, _): deduplicationURL = url
+        case .showPicker(_, _, let url, _, _): deduplicationURL = url
+        case .openSystemDefault(let url): deduplicationURL = url
+        case .openSystemMailHandler(let url): deduplicationURL = url
+        }
+        let urlKey = deduplicationURL.absoluteString
+        let now = Date()
+        if let lastRouted = recentlyRoutedURLs[urlKey],
+           now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
+        recentlyRoutedURLs[urlKey] = now
+        recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
+
         switch decision {
         case .openDirect(let entry, let finalURL, let privateWindow, _):
-            // Deduplication
-            let urlKey = finalURL.absoluteString
-            let now = Date()
-            if let lastRouted = recentlyRoutedURLs[urlKey],
-               now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
-            recentlyRoutedURLs[urlKey] = now
-            recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
 
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
             if let domain = finalURL.host?.lowercased() {
@@ -344,14 +357,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     customLaunchArgs: entry.customLaunchArgs)
 
         case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
-            // Deduplication
-            let urlKey = finalURL.absoluteString
-            let now = Date()
-            if let lastRouted = recentlyRoutedURLs[urlKey],
-               now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
-            recentlyRoutedURLs[urlKey] = now
-            recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
-
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
 
             // Compute smart routing reason when none was provided
@@ -550,8 +555,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Routing Pipeline
+    // MARK: - Legacy Routing (thin wrapper around unified pipeline)
 
+    /// Legacy entry point. Constructs an `IncomingLinkRequest` and routes
+    /// through the unified `RoutingService.decide` pipeline.
     func routeURL(
         _ url: URL, sourceAppBundleId: String? = nil,
         modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags,
@@ -559,283 +566,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         forcePrivateWindow: Bool = false,
         forcedBrowserBundleId: String? = nil
     ) {
-        guard let url = URLSanitizer.sanitize(url) else { return }
-
-        guard settingsStore.isEnabled else {
-            if url.scheme?.lowercased() == "mailto" {
-                NSWorkspace.shared.open(url)
-            } else {
-                openInDefaultBrowser(url)
-            }
-            return
-        }
-
-        // URL deduplication
-        let urlKey = url.absoluteString
-        let now = Date()
-        if let lastRouted = recentlyRoutedURLs[urlKey],
-           now.timeIntervalSince(lastRouted) < deduplicationWindow {
-            return
-        }
-        recentlyRoutedURLs[urlKey] = now
-        recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
-
-        recentURLsManager.add(url, retention: settingsStore.recentURLRetention)
-
-        var processedURL = url
-
-        // Step 1: Global rewrites
-        processedURL = urlRewriter.applyGlobalRewrites(to: processedURL)
-
-        let isMailto = processedURL.scheme?.lowercased() == "mailto"
-
-        // Step 2: Global UTM stripping before rule evaluation (skip for mailto)
-        if settingsStore.globalUTMStrippingEnabled && !isMailto {
-            processedURL = utmStripper.strip(processedURL)
-        }
-
-        // Handle forced browser from yojam:// browser= parameter
-        if let forcedBundleId = forcedBrowserBundleId,
-           let entry = browserManager.browsers.first(where: {
-               $0.bundleIdentifier == forcedBundleId && $0.isInstalled
-           }),
-           let resolvedAppURL = appURL(for: forcedBundleId) {
-            var finalURL = urlRewriter.applyBrowserRewrites(to: processedURL, browser: entry)
-            if entry.stripUTMParams || settingsStore.globalUTMStrippingEnabled {
-                finalURL = utmStripper.strip(finalURL)
-            }
-            let priv = forcePrivateWindow || entry.openInPrivateWindow
-            openURL(finalURL, withAppAt: resolvedAppURL,
-                profile: entry.profileId,
-                bundleId: entry.bundleIdentifier,
-                privateWindow: priv,
-                customLaunchArgs: entry.customLaunchArgs)
-            return
-        }
-
-        // Handle forcePicker
-        if forcePicker {
-            if isMailto {
-                showPicker(for: processedURL, isEmail: true)
-            } else {
-                showPicker(for: processedURL)
-            }
-            return
-        }
-
-        // Step 4: Evaluate rules (with source app context)
-        if let match = ruleEngine.evaluate(
-               processedURL, sourceAppBundleId: sourceAppBundleId
-           ) {
-            processedURL = urlRewriter.applyRuleRewrites(
-                to: processedURL, rule: match)
-
-            // Apply UTM stripping: rule > browser > global (already applied globally above)
-            let matchedEntry = browserManager.browsers.first {
-                $0.bundleIdentifier == match.targetBundleId
-            }
-            if match.stripUTMParams {
-                processedURL = utmStripper.strip(processedURL)
-            } else if let entry = matchedEntry, entry.stripUTMParams {
-                processedURL = utmStripper.strip(processedURL)
-            }
-
-            if let appURL = appURL(for: match.targetBundleId) {
-                let ruleLabel = match.name.isEmpty ? match.pattern : match.name
-                let reason = "Matched rule: \(ruleLabel)"
-                let priv = forcePrivateWindow || (matchedEntry?.openInPrivateWindow ?? false)
-                switch settingsStore.activationMode {
-                case .always:
-                    showPicker(
-                        for: processedURL,
-                        preselectedBundleId: match.targetBundleId,
-                        matchReason: reason)
-                case .holdShift:
-                    if modifiers.contains(.shift) {
-                        showPicker(
-                            for: processedURL,
-                            preselectedBundleId: match.targetBundleId,
-                            matchReason: reason)
-                    } else {
-                        // Apply browser-specific rewrites only for direct open
-                        if let entry = matchedEntry {
-                            processedURL = urlRewriter.applyBrowserRewrites(
-                                to: processedURL, browser: entry)
-                        }
-                        openURL(processedURL, withAppAt: appURL,
-                            profile: matchedEntry?.profileId,
-                            bundleId: match.targetBundleId,
-                            privateWindow: priv,
-                            customLaunchArgs: matchedEntry?.customLaunchArgs)
-                    }
-                case .smartFallback:
-                    // Apply browser-specific rewrites only for direct open
-                    if let entry = matchedEntry {
-                        processedURL = urlRewriter.applyBrowserRewrites(
-                            to: processedURL, browser: entry)
-                    }
-                    openURL(processedURL, withAppAt: appURL,
-                        profile: matchedEntry?.profileId,
-                        bundleId: match.targetBundleId,
-                        privateWindow: priv,
-                        customLaunchArgs: matchedEntry?.customLaunchArgs)
-                }
-                return
-            }
-        }
-
-        // Step 5: No rule matched — handle mailto or show picker/default
-        if isMailto {
-            handleMailtoURL(processedURL, modifiers: modifiers)
-            return
-        }
-
-        switch settingsStore.activationMode {
-        case .always:
-            showPicker(for: processedURL)
-        case .smartFallback:
-            let domain = processedURL.host?.lowercased() ?? ""
-            if let suggestion = routingSuggestionEngine.suggestion(for: domain),
-               let entry = browserManager.browsers.first(where: {
-                   $0.id.uuidString == suggestion && $0.enabled && $0.isInstalled
-               }),
-               let resolvedAppURL = appURL(for: entry.bundleIdentifier) {
-                var finalURL = urlRewriter.applyBrowserRewrites(to: processedURL, browser: entry)
-                if entry.stripUTMParams || settingsStore.globalUTMStrippingEnabled {
-                    finalURL = utmStripper.strip(finalURL)
-                }
-                let priv = forcePrivateWindow || entry.openInPrivateWindow
-                openURL(finalURL, withAppAt: resolvedAppURL,
-                    profile: entry.profileId,
-                    bundleId: entry.bundleIdentifier,
-                    privateWindow: priv,
-                    customLaunchArgs: entry.customLaunchArgs)
-            } else {
-                showPicker(for: processedURL)
-            }
-        case .holdShift:
-            if modifiers.contains(.shift) {
-                showPicker(for: processedURL)
-            } else {
-                openInDefaultBrowser(processedURL)
-            }
-        }
-    }
-
-    private func handleMailtoURL(
-        _ url: URL, modifiers: NSEvent.ModifierFlags
-    ) {
-        guard settingsStore.isEnabled else {
-            NSWorkspace.shared.open(url)
-            return
-        }
-
-        let clients = browserManager.emailClients.filter(\.enabled)
-
-        if settingsStore.activationMode == .holdShift && modifiers.contains(.shift) {
-            showPicker(for: url, isEmail: true)
-            return
-        }
-
-        if settingsStore.activationMode == .holdShift && !modifiers.contains(.shift) {
-            if let client = clients.first(where: { appURL(for: $0.bundleIdentifier) != nil }),
-               let resolvedURL = appURL(for: client.bundleIdentifier) {
-                openURL(url, withAppAt: resolvedURL,
-                    profile: client.profileId,
-                    bundleId: client.bundleIdentifier,
-                    privateWindow: client.openInPrivateWindow,
-                    customLaunchArgs: client.customLaunchArgs)
-            } else {
-                NSWorkspace.shared.open(url)
-            }
-            return
-        }
-
-        if settingsStore.activationMode != .always,
-           clients.count == 1, let client = clients.first,
-           let appURL = appURL(for: client.bundleIdentifier) {
-            openURL(url, withAppAt: appURL,
-                profile: client.profileId,
-                bundleId: client.bundleIdentifier,
-                privateWindow: client.openInPrivateWindow,
-                customLaunchArgs: client.customLaunchArgs)
-        } else {
-            showPicker(for: url, isEmail: true)
-        }
-    }
-
-    private func showPicker(
-        for url: URL, preselectedBundleId: String? = nil,
-        isEmail: Bool = false, matchReason: String? = nil
-    ) {
-        let entries: [BrowserEntry]
-        if isEmail {
-            entries = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
-        } else {
-            entries = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
-        }
-
-        guard !entries.isEmpty else {
-            if isEmail {
-                NSWorkspace.shared.open(url)
-            } else {
-                openInDefaultBrowser(url)
-            }
-            return
-        }
-
-        let preselectedIndex: Int
-        if let bundleId = preselectedBundleId,
-           let idx = entries.firstIndex(where: {
-               $0.bundleIdentifier == bundleId
-           }) {
-            preselectedIndex = idx
-        } else {
-            preselectedIndex = resolveDefaultIndex(
-                entries: entries, url: url, isEmail: isEmail)
-        }
-
-        // Clamp to valid range
-        let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
-
-        // Compute smart routing matchReason when none was provided
-        var effectiveMatchReason = matchReason
-        if effectiveMatchReason == nil,
-           settingsStore.defaultSelectionBehavior == .smart,
-           let domain = url.host?.lowercased(),
-           routingSuggestionEngine.suggestion(for: domain) != nil {
-            effectiveMatchReason = "Suggested based on your history for \(url.host ?? domain)"
-        }
-
-        pickerPanel?.close()
-        pickerPanel = PickerPanel(
-            url: url, entries: entries,
-            preselectedIndex: clampedIndex,
-            settingsStore: settingsStore,
-            matchReason: effectiveMatchReason,
-            onSelect: { [weak self] entry, finalURL in
-                self?.handlePickerSelection(
-                    entry: entry, url: finalURL, isEmail: isEmail)
-            },
-            onCopy: { [weak self] url in
-                self?.clipboardMonitor?.suppressNextChange = true
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(
-                    url.absoluteString, forType: .string)
-            },
-            onDismiss: { [weak self] panel in
-                guard self?.pickerPanel === panel else { return }
-                self?.pickerPanel = nil
-                if NSApp.activationPolicy() == .regular {
-                    let prefsOpen = NSApp.windows.contains { window in
-                        !(window is NSPanel) && window.isVisible && window.frame.width > 100
-                    }
-                    if !prefsOpen {
-                        NSApp.setActivationPolicy(.accessory)
-                    }
-                }
-            })
-        pickerPanel?.showAtCursor()
+        let request = IncomingLinkRequest(
+            url: url,
+            sourceAppBundleId: sourceAppBundleId,
+            origin: .defaultHandler,
+            modifierFlags: modifiers.rawValue,
+            forcedBrowserBundleId: forcedBrowserBundleId,
+            forcePicker: forcePicker,
+            forcePrivateWindow: forcePrivateWindow
+        )
+        enqueueOrHandle(request)
     }
 
     private func handlePickerSelection(
@@ -1048,31 +788,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bundleId: first.bundleIdentifier,
             privateWindow: first.openInPrivateWindow,
             customLaunchArgs: first.customLaunchArgs)
-    }
-
-    private func resolveDefaultIndex(
-        entries: [BrowserEntry], url: URL, isEmail: Bool = false
-    ) -> Int {
-        switch settingsStore.defaultSelectionBehavior {
-        case .alwaysFirst:
-            return 0
-        case .lastUsed:
-            if let lastId = browserManager.lastUsedId(isEmail: isEmail),
-               let idx = entries.firstIndex(where: { $0.id == lastId }) {
-                return idx
-            }
-            return 0
-        case .smart:
-            if let domain = url.host?.lowercased(),
-               let suggestedEntryId = routingSuggestionEngine
-                   .suggestion(for: domain),
-               let idx = entries.firstIndex(where: {
-                   $0.id.uuidString == suggestedEntryId
-               }) {
-                return idx
-            }
-            return 0
-        }
     }
 
     /// Resolve a browser entry's identifier to an app/executable URL.
