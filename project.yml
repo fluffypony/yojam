@@ -147,10 +147,13 @@ targets:
       path: Sources/YojamShareExtension/YojamShareExtension.entitlements
     settings:
       base:
+        INFOPLIST_FILE: Sources/YojamShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/YojamShareExtension/YojamShareExtension.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.ShareExtension
         PRODUCT_NAME: YojamShareExtension
         CODE_SIGN_STYLE: Automatic
         APPLICATION_EXTENSION_API_ONLY: YES
+        GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
@@ -174,10 +177,13 @@ targets:
       path: Sources/YojamSafariExtension/YojamSafariExtension.entitlements
     settings:
       base:
+        INFOPLIST_FILE: Sources/YojamSafariExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/YojamSafariExtension/YojamSafariExtension.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.SafariExtension
         PRODUCT_NAME: YojamSafariExtension
         CODE_SIGN_STYLE: Automatic
         APPLICATION_EXTENSION_API_ONLY: YES
+        GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
