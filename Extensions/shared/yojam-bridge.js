@@ -44,8 +44,46 @@ export async function sendToYojam(targetURL, sourceSentinel) {
     }
   }
 
+  // Detect Safari for correct sentinel in fallback
+  const isSafari =
+    typeof chrome !== "undefined" &&
+    chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
+  const effectiveSentinel = isSafari
+    ? "com.yojam.source.safari-extension"
+    : sourceSentinel;
+
   // Fall back to opening a yojam:// URL in a throwaway tab.
-  const url = buildYojamURL(targetURL, sourceSentinel);
+  const url = buildYojamURL(targetURL, effectiveSentinel);
   const tab = await chrome.tabs.create({ url, active: false });
   setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 600);
+}
+
+/**
+ * Preview a URL's routing decision without opening it.
+ * Returns a RouteDecisionPreview object, or null on failure.
+ * @param {string} targetURL - The URL to preview.
+ * @param {string} sourceSentinel - The source app sentinel identifier.
+ * @returns {Promise<object|null>} The preview object or null.
+ */
+export async function previewInYojam(targetURL, sourceSentinel) {
+  if (
+    !(typeof chrome !== "undefined" && chrome.runtime?.sendNativeMessage)
+  ) {
+    return null;
+  }
+  try {
+    const resp = await Promise.race([
+      chrome.runtime.sendNativeMessage("org.yojam.host", {
+        action: "preview",
+        url: targetURL,
+        source: sourceSentinel,
+      }),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("preview timeout")), 1500)
+      ),
+    ]);
+    return resp?.ok ? resp.preview : null;
+  } catch (_e) {
+    return null;
+  }
 }

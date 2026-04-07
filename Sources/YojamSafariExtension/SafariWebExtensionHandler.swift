@@ -3,48 +3,97 @@ import SafariServices
 import YojamCore
 
 /// Handles messages from the Yojam Safari Web Extension's background script.
-/// Receives a URL from the extension, builds a `yojam://route?...` URL,
-/// and opens it to forward to the main app.
+/// Supports `route` (forward to main app) and `preview` (return routing decision).
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
         guard let message = request?.userInfo?[SFExtensionMessageKey] as? [String: Any],
-              let urlString = message["url"] as? String,
+              let action = message["action"] as? String
+        else {
+            sendError(context, message: "Invalid message")
+            return
+        }
+
+        switch action {
+        case "route":
+            handleRoute(message: message, context: context)
+        case "preview":
+            handlePreview(message: message, context: context)
+        default:
+            sendError(context, message: "Unknown action: \(action)")
+        }
+    }
+
+    private func handleRoute(message: [String: Any], context: NSExtensionContext) {
+        guard let urlString = message["url"] as? String,
               let targetURL = URL(string: urlString)
         else {
-            let response = NSExtensionItem()
-            response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Invalid URL"]]
-            context.completeRequest(returningItems: [response])
+            sendError(context, message: "Invalid URL")
             return
         }
 
-        // Always use the Safari sentinel. The shared background.js doesn't
-        // know it's running in Safari and sends the Chrome sentinel, so we
-        // override unconditionally here since we know this handler only runs
-        // inside the Safari Web Extension.
+        // Always use Safari sentinel — shared background.js sends Chrome sentinel.
         let source = SourceAppSentinel.safariExtension
 
-        guard let yojamURL = YojamCommand.buildRoute(
-            target: targetURL,
-            source: source
-        ) else {
-            let response = NSExtensionItem()
-            response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to build route"]]
-            context.completeRequest(returningItems: [response])
+        guard let yojamURL = YojamCommand.buildRoute(target: targetURL, source: source) else {
+            sendError(context, message: "Failed to build route")
             return
         }
 
-        // Use context.open instead of NSWorkspace.shared.open — sandboxed
-        // Safari Web Extensions cannot call NSWorkspace.open directly.
+        // Use context.open instead of NSWorkspace — sandboxed extension.
         context.open(yojamURL) { success in
             let response = NSExtensionItem()
             if success {
                 response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
             } else {
-                response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to open yojam URL"]]
+                response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to open URL"]]
             }
             context.completeRequest(returningItems: [response])
         }
+    }
+
+    private func handlePreview(message: [String: Any], context: NSExtensionContext) {
+        guard let urlString = message["url"] as? String,
+              let targetURL = URL(string: urlString),
+              let scheme = targetURL.scheme?.lowercased(),
+              ["http", "https", "mailto"].contains(scheme)
+        else {
+            sendError(context, message: "Invalid URL")
+            return
+        }
+
+        let store = SharedRoutingStore()
+        guard let config = RoutingSnapshotLoader.loadConfiguration(from: store) else {
+            sendError(context, message: "Cannot load config")
+            return
+        }
+
+        let request = IncomingLinkRequest(
+            url: targetURL,
+            sourceAppBundleId: SourceAppSentinel.safariExtension,
+            origin: .safariExtension
+        )
+        let decision = RoutingService.decide(request: request, configuration: config)
+        let preview = RouteDecisionPreview.from(decision)
+
+        let encoder = JSONEncoder()
+        if let previewData = try? encoder.encode(preview),
+           let previewDict = try? JSONSerialization.jsonObject(with: previewData) as? [String: Any] {
+            let response = NSExtensionItem()
+            response.userInfo = [SFExtensionMessageKey: [
+                "status": "ok",
+                "preview": previewDict
+            ]]
+            context.completeRequest(returningItems: [response])
+        } else {
+            sendError(context, message: "Failed to encode preview")
+        }
+    }
+
+    private func sendError(_ context: NSExtensionContext, message: String) {
+        let response = NSExtensionItem()
+        response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": message]]
+        context.completeRequest(returningItems: [response])
     }
 }

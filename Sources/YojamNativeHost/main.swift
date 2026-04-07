@@ -1,12 +1,19 @@
 import Foundation
 import YojamCore
 
+signal(SIGPIPE, SIG_IGN)
+
 // MARK: - Native Messaging Protocol (length-prefixed JSON over stdio)
 
 /// Reads a single length-prefixed JSON message from stdin.
 func readMessage() -> HostRequest? {
     var lengthBytes = [UInt8](repeating: 0, count: 4)
-    guard fread(&lengthBytes, 1, 4, stdin) == 4 else { return nil }
+    var totalRead = 0
+    while totalRead < 4 {
+        let n = fread(&lengthBytes + totalRead, 1, 4 - totalRead, stdin)
+        if n == 0 { return nil } // clean EOF or error
+        totalRead += n
+    }
     let length = UInt32(lengthBytes[0])
         | (UInt32(lengthBytes[1]) << 8)
         | (UInt32(lengthBytes[2]) << 16)
@@ -14,14 +21,26 @@ func readMessage() -> HostRequest? {
     guard length > 0, length < 1_048_576 else { return nil }
 
     var buffer = [UInt8](repeating: 0, count: Int(length))
-    guard fread(&buffer, 1, Int(length), stdin) == Int(length) else { return nil }
+    var bodyRead = 0
+    while bodyRead < Int(length) {
+        let n = fread(&buffer + bodyRead, 1, Int(length) - bodyRead, stdin)
+        if n == 0 { return nil }
+        bodyRead += n
+    }
     let data = Data(buffer)
     return try? JSONDecoder().decode(HostRequest.self, from: data)
 }
 
 /// Writes a length-prefixed JSON message to stdout.
+/// Has a hardcoded fallback when encoding fails so the extension never hangs.
 func writeMessage(_ response: HostResponse) {
-    guard let data = try? JSONEncoder().encode(response) else { return }
+    let data: Data
+    if let encoded = try? JSONEncoder().encode(response) {
+        data = encoded
+    } else {
+        // Hardcoded fallback when encoding fails
+        data = Data(#"{"ok":false,"error":"encode_failed"}"#.utf8)
+    }
     var length = UInt32(data.count)
     let lengthBytes = withUnsafeBytes(of: &length) { Array($0) }
     fwrite(lengthBytes, 1, 4, stdout)
@@ -31,17 +50,29 @@ func writeMessage(_ response: HostResponse) {
     fflush(stdout)
 }
 
+/// Validate that source is a trusted sentinel, else fall back to chromeExtension.
+func validatedSource(_ raw: String?) -> String {
+    guard let raw, SourceAppSentinel.all.contains(raw) else {
+        return SourceAppSentinel.chromeExtension
+    }
+    return raw
+}
+
 // MARK: - Request / Response Types
 
 struct HostRequest: Decodable {
     let action: String    // "route" | "preview"
     let url: String
     let source: String?
+    let modifiers: [String]?
+    let forceBrowser: String?
+    let forcePicker: Bool?
+    let forcePrivate: Bool?
 }
 
 struct HostResponse: Encodable {
     let ok: Bool
-    let target: String?
+    let preview: RouteDecisionPreview?
     let error: String?
 }
 
@@ -52,36 +83,80 @@ while let req = readMessage() {
     case "route":
         guard let targetURL = URL(string: req.url),
               let scheme = targetURL.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme)
+              ["http", "https", "mailto"].contains(scheme),
+              req.url.count <= 32_768
         else {
-            writeMessage(HostResponse(ok: false, target: nil, error: "Invalid URL"))
+            writeMessage(HostResponse(ok: false, preview: nil, error: "Invalid URL"))
             break
         }
 
-        // Build a yojam:// URL and open it to forward to the main app.
-        let source = req.source ?? SourceAppSentinel.chromeExtension
-        if let yojamURL = YojamCommand.buildRoute(target: targetURL, source: source) {
-            // Use /usr/bin/open to launch the yojam:// URL. The native host
-            // runs as a bare tool with no AppKit, so NSWorkspace is unavailable.
+        let source = validatedSource(req.source)
+        if let yojamURL = YojamCommand.buildRoute(
+            target: targetURL, source: source,
+            browser: req.forceBrowser,
+            pick: req.forcePicker ?? false,
+            privateWindow: req.forcePrivate ?? false
+        ) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             process.arguments = [yojamURL.absoluteString]
-            try? process.run()
-            process.waitUntilExit()
-            writeMessage(HostResponse(ok: true, target: nil, error: nil))
+
+            do {
+                try process.run()
+                let sem = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async { process.waitUntilExit(); sem.signal() }
+                if sem.wait(timeout: .now() + .seconds(10)) == .timedOut {
+                    process.terminate()
+                    writeMessage(HostResponse(ok: false, preview: nil, error: "open timed out"))
+                } else if process.terminationStatus != 0 {
+                    writeMessage(HostResponse(ok: false, preview: nil,
+                                              error: "open failed (\(process.terminationStatus))"))
+                } else {
+                    writeMessage(HostResponse(ok: true, preview: nil, error: nil))
+                }
+            } catch {
+                writeMessage(HostResponse(ok: false, preview: nil,
+                                          error: "Launch failed: \(error.localizedDescription)"))
+            }
         } else {
-            writeMessage(HostResponse(ok: false, target: nil, error: "Failed to build route URL"))
+            writeMessage(HostResponse(ok: false, preview: nil, error: "Failed to build route URL"))
         }
 
     case "preview":
-        // Future: return the RouteDecision without opening anything.
-        // For now, return a simple acknowledgment.
-        writeMessage(HostResponse(ok: true, target: nil, error: nil))
+        guard let targetURL = URL(string: req.url),
+              let scheme = targetURL.scheme?.lowercased(),
+              ["http", "https", "mailto"].contains(scheme),
+              req.url.count <= 32_768
+        else {
+            writeMessage(HostResponse(ok: false, preview: nil, error: "Invalid URL"))
+            continue  // preview is NOT one-shot; keep loop running
+        }
+
+        let store = SharedRoutingStore(requireAppGroup: true)
+        guard let config = RoutingSnapshotLoader.loadConfiguration(from: store) else {
+            writeMessage(HostResponse(ok: false, preview: nil, error: "Cannot load config"))
+            continue
+        }
+
+        let source = validatedSource(req.source)
+        let shiftHeld = req.modifiers?.contains("shift") ?? false
+        let request = IncomingLinkRequest(
+            url: targetURL,
+            sourceAppBundleId: source,
+            origin: .urlScheme,
+            modifierFlags: shiftHeld ? (1 << 17) : 0,
+            forcedBrowserBundleId: req.forceBrowser,
+            forcePicker: req.forcePicker ?? false,
+            forcePrivateWindow: req.forcePrivate ?? false
+        )
+        let decision = RoutingService.decide(request: request, configuration: config)
+        writeMessage(HostResponse(ok: true, preview: .from(decision), error: nil))
+        // IMPORTANT: do NOT break — keep processing further preview messages
 
     default:
-        writeMessage(HostResponse(ok: false, target: nil, error: "Unknown action: \(req.action)"))
+        writeMessage(HostResponse(ok: false, preview: nil, error: "Unknown action: \(req.action)"))
     }
 
-    // One-shot for route actions: the extension opens a new host per message.
+    // One-shot for route actions only: the extension opens a new host per message.
     if req.action == "route" { break }
 }
