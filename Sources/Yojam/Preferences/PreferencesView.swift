@@ -126,9 +126,9 @@ enum SettingsSearchIndex {
         // About
         SettingsSearchItem(tab: .about, section: "About", title: "About Yojam",
                            subtitle: "Version copyright credits author riccardo spagni"),
-        SettingsSearchItem(tab: .about, section: "About", title: "Website",
+        SettingsSearchItem(tab: .about, section: "Links", title: "Website",
                            subtitle: "yojam.org homepage link"),
-        SettingsSearchItem(tab: .about, section: "About", title: "Source Code",
+        SettingsSearchItem(tab: .about, section: "Links", title: "Source Code",
                            subtitle: "github fluffypony yojam open source repository"),
         SettingsSearchItem(tab: .about, section: "License", title: "License",
                            subtitle: "BSD 3-clause license terms copyright"),
@@ -372,7 +372,7 @@ struct PreferencesView: View {
                 routingSuggestionEngine: routingSuggestionEngine,
                 scrollToSection: $scrollToSection)
         case .about:
-            AboutTab()
+            AboutTab(scrollToSection: $scrollToSection)
         }
     }
 }

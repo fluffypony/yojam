@@ -2,18 +2,27 @@ import SwiftUI
 import AppKit
 
 struct AboutTab: View {
+    @Binding var scrollToSection: String?
+
     var body: some View {
         VStack(spacing: 0) {
             ThemeContentHeader(title: "About", subtitle: "Version, credits, and license.")
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    headerSection
-                    linksSection
-                    licenseSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        headerSection.id("About")
+                        linksSection.id("Links")
+                        licenseSection.id("License")
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
                 }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
+                .onChange(of: scrollToSection) { _, section in
+                    guard let section else { return }
+                    withAnimation { proxy.scrollTo(section, anchor: .top) }
+                    scrollToSection = nil
+                }
             }
         }
         .background(Theme.bgApp)
