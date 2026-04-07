@@ -74,7 +74,7 @@
 	<key>SUFeedURL</key>
 	<string>https://yojam.org/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>PLACEHOLDER_ED25519_PUBLIC_KEY</string>
+	<string>UoXaVVJyS2+xwKUsL4UM25gXmhUAJMwce9wLfXM86zU=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 </dict>

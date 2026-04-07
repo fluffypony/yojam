@@ -40,7 +40,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         SUFeedURL: https://yojam.org/appcast.xml
-        SUPublicEDKey: PLACEHOLDER_ED25519_PUBLIC_KEY
+        SUPublicEDKey: UoXaVVJyS2+xwKUsL4UM25gXmhUAJMwce9wLfXM86zU=
         SUEnableAutomaticChecks: true
         CFBundleURLTypes:
           - CFBundleURLName: Web URL
