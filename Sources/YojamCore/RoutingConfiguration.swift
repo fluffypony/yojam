@@ -28,6 +28,8 @@ public struct RoutingConfiguration: Sendable {
     public let lastUsedBrowserId: UUID?
     /// UUID of the last-used email client.
     public let lastUsedEmailClientId: UUID?
+    /// Whether shortlink resolution is enabled (opt-in async pre-stage).
+    public let shortlinkResolutionEnabled: Bool
 
     public init(
         browsers: [BrowserEntry],
@@ -41,7 +43,8 @@ public struct RoutingConfiguration: Sendable {
         isEnabled: Bool,
         learnedDomainPreferences: [String: String],
         lastUsedBrowserId: UUID?,
-        lastUsedEmailClientId: UUID?
+        lastUsedEmailClientId: UUID?,
+        shortlinkResolutionEnabled: Bool = false
     ) {
         self.browsers = browsers
         self.emailClients = emailClients
@@ -55,5 +58,6 @@ public struct RoutingConfiguration: Sendable {
         self.learnedDomainPreferences = learnedDomainPreferences
         self.lastUsedBrowserId = lastUsedBrowserId
         self.lastUsedEmailClientId = lastUsedEmailClientId
+        self.shortlinkResolutionEnabled = shortlinkResolutionEnabled
     }
 }

@@ -199,14 +199,19 @@ targets:
     platform: macOS
     sources:
       - path: Sources/YojamNativeHost
+        excludes:
+          - YojamNativeHost.entitlements
     dependencies:
       - target: YojamCore
         embed: false
+    entitlements:
+      path: Sources/YojamNativeHost/YojamNativeHost.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.NativeHost
         PRODUCT_NAME: YojamNativeHost
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Sources/YojamNativeHost/YojamNativeHost.entitlements
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"

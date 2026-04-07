@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Shared storage for all routing-relevant state, backed by the App Group
 /// `UserDefaults(suiteName: "group.org.yojam.shared")`.
@@ -7,11 +8,13 @@ import Foundation
 /// Web Extension handler, and the Native Messaging Host. The main app is
 /// the only writer; extensions and the host read from it.
 ///
+/// `UserDefaults` is thread-safe, so no actor isolation is needed.
+/// This class can be used from any isolation domain (CLI, native host, etc.).
+///
 /// Per the hard-cut product policy: there is no migration from
 /// `UserDefaults.standard`. Users upgrading from a pre-release build
 /// must reconfigure from Preferences.
-@MainActor
-public final class SharedRoutingStore: ObservableObject {
+public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
     public static let suiteName = "group.org.yojam.shared"
 
     public let defaults: UserDefaults
@@ -20,14 +23,18 @@ public final class SharedRoutingStore: ObservableObject {
     /// False means we fell back to .standard (only expected during swift test).
     public let isUsingAppGroup: Bool
 
-    public init() {
+    /// - Parameter requireAppGroup: When `true`, crashes if the App Group
+    ///   entitlement is missing. Use `true` in signed binaries (native host,
+    ///   CLI) and `false` only in test/unsigned builds.
+    public init(requireAppGroup: Bool = false) {
         if let suite = UserDefaults(suiteName: SharedRoutingStore.suiteName) {
             self.defaults = suite
             self.isUsingAppGroup = true
         } else {
-            // Fall back to standard only when the App Group entitlement is
-            // missing (swift test, unsigned debug builds). In a signed .app
-            // bundle this should never happen.
+            if requireAppGroup {
+                fatalError("SharedRoutingStore: App Group '\(SharedRoutingStore.suiteName)' unavailable — check entitlements")
+            }
+            os_log(.error, "SharedRoutingStore: App Group unavailable, falling back to .standard (test-only)")
             self.defaults = UserDefaults.standard
             self.isUsingAppGroup = false
         }
@@ -50,5 +57,9 @@ public final class SharedRoutingStore: ObservableObject {
         public static let recentURLTimestamps = "recentURLTimestamps"
         public static let verticalThreshold = "verticalThreshold"
         public static let soundEffects = "soundEffects"
+        public static let shortlinkResolutionEnabled = "shortlinkResolutionEnabled"
+        public static let lastUsedBrowserId = "lastUsedBrowserId"
+        public static let lastUsedEmailId = "lastUsedEmailId"
+        public static let installedBundleIds = "installedBundleIds"
     }
 }
