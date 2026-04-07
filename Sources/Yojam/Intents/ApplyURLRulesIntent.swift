@@ -1,4 +1,5 @@
 import AppIntents
+import YojamCore
 
 struct ApplyURLRulesIntent: AppIntent {
     static let title: LocalizedStringResource = "Apply URL Rules"
@@ -10,7 +11,6 @@ struct ApplyURLRulesIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let store = SettingsStore()
-        // §14: Apply global rewrites and UTM stripping before rule evaluation
         var processedURL = url
         processedURL = URLRewriter(settingsStore: store).applyGlobalRewrites(to: processedURL)
         if store.globalUTMStrippingEnabled {

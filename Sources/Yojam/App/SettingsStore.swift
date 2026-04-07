@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import ServiceManagement
+import YojamCore
 
 enum ActivationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case always, holdShift, smartFallback
@@ -72,7 +73,12 @@ enum DefaultSelectionBehavior: String, Codable, CaseIterable, Identifiable, Send
 
 @MainActor
 final class SettingsStore: ObservableObject {
+    /// App-only settings (launch at login, Quick Start, clipboard, Sparkle, etc.)
     private let defaults = UserDefaults.standard
+    /// Routing-relevant settings shared via App Group with extensions.
+    /// Per hard-cut policy: no fallback to .standard for routing data.
+    let sharedStore = SharedRoutingStore()
+    private var sharedDefaults: UserDefaults { sharedStore.defaults }
     private var isRevertingLaunchAtLogin = false
 
     private enum Keys {
@@ -108,19 +114,19 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(isFirstLaunch, forKey: Keys.isFirstLaunch) }
     }
     @Published var isEnabled: Bool {
-        didSet { defaults.set(isEnabled, forKey: Keys.isEnabled) }
+        didSet { sharedDefaults.set(isEnabled, forKey: Keys.isEnabled) }
     }
     @Published var activationMode: ActivationMode {
-        didSet { defaults.set(activationMode.rawValue, forKey: Keys.activationMode) }
+        didSet { sharedDefaults.set(activationMode.rawValue, forKey: Keys.activationMode) }
     }
     @Published var defaultSelectionBehavior: DefaultSelectionBehavior {
-        didSet { defaults.set(defaultSelectionBehavior.rawValue, forKey: Keys.defaultSelection) }
+        didSet { sharedDefaults.set(defaultSelectionBehavior.rawValue, forKey: Keys.defaultSelection) }
     }
     @Published var verticalThreshold: Int {
-        didSet { defaults.set(verticalThreshold, forKey: Keys.verticalThreshold) }
+        didSet { sharedDefaults.set(verticalThreshold, forKey: Keys.verticalThreshold) }
     }
     @Published var soundEffectsEnabled: Bool {
-        didSet { defaults.set(soundEffectsEnabled, forKey: Keys.soundEffects) }
+        didSet { sharedDefaults.set(soundEffectsEnabled, forKey: Keys.soundEffects) }
     }
     @Published var launchAtLogin: Bool {
         didSet {
@@ -141,7 +147,7 @@ final class SettingsStore: ObservableObject {
         }
     }
     @Published var globalUTMStrippingEnabled: Bool {
-        didSet { defaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping) }
+        didSet { sharedDefaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping) }
     }
     @Published var clipboardMonitoringEnabled: Bool {
         didSet { defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring) }
@@ -156,22 +162,22 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(periodicRescanInterval, forKey: Keys.periodicRescanInterval) }
     }
     @Published var utmStripList: [String] {
-        didSet { defaults.set(utmStripList, forKey: Keys.utmStripList) }
+        didSet { sharedDefaults.set(utmStripList, forKey: Keys.utmStripList) }
     }
     @Published var suppressedClipboardDomains: [String] {
         didSet { defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains) }
     }
     @Published var pickerLayout: PickerLayout {
-        didSet { defaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout) }
+        didSet { sharedDefaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout) }
     }
     @Published var pickerInvertOrder: Bool {
-        didSet { defaults.set(pickerInvertOrder, forKey: Keys.pickerInvertOrder) }
+        didSet { sharedDefaults.set(pickerInvertOrder, forKey: Keys.pickerInvertOrder) }
     }
     @Published var recentURLRetention: RecentURLRetention {
-        didSet { defaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention) }
+        didSet { sharedDefaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention) }
     }
     @Published var recentURLRetentionMinutes: Int {
-        didSet { defaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
+        didSet { sharedDefaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
     }
     @Published var hasDismissedQuickStart: Bool {
         didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
@@ -190,44 +196,54 @@ final class SettingsStore: ObservableObject {
     @Published var pendingScrollToSection: String?
 
     init() {
+        // App-only defaults (UserDefaults.standard)
         let d = UserDefaults.standard
         d.register(defaults: [
             Keys.isFirstLaunch: true,
+            Keys.periodicRescanInterval: 1800.0,
+        ])
+
+        // Routing defaults (App Group suite)
+        let s = sharedStore.defaults
+        s.register(defaults: [
             Keys.isEnabled: true,
             Keys.activationMode: ActivationMode.always.rawValue,
             Keys.defaultSelection: DefaultSelectionBehavior.alwaysFirst.rawValue,
             Keys.verticalThreshold: 8,
             Keys.soundEffects: true,
-            Keys.periodicRescanInterval: 1800.0,
         ])
+
+        // App-only settings from .standard
         self.isFirstLaunch = d.object(forKey: Keys.isFirstLaunch) as? Bool ?? true
-        self.isEnabled = d.object(forKey: Keys.isEnabled) as? Bool ?? true
-        self.activationMode = ActivationMode(
-            rawValue: d.string(forKey: Keys.activationMode) ?? "") ?? .always
-        self.defaultSelectionBehavior = DefaultSelectionBehavior(
-            rawValue: d.string(forKey: Keys.defaultSelection) ?? "") ?? .alwaysFirst
-        self.verticalThreshold = d.object(forKey: Keys.verticalThreshold) as? Int ?? 8
-        self.soundEffectsEnabled = d.object(forKey: Keys.soundEffects) as? Bool ?? true
         self.launchAtLogin = d.bool(forKey: Keys.launchAtLogin)
-        self.globalUTMStrippingEnabled = d.bool(forKey: Keys.globalUTMStripping)
         self.clipboardMonitoringEnabled = d.bool(forKey: Keys.clipboardMonitoring)
         self.iCloudSyncEnabled = d.bool(forKey: Keys.iCloudSync)
         self.debugLoggingEnabled = d.bool(forKey: Keys.debugLogging)
         self.periodicRescanInterval = d.object(forKey: Keys.periodicRescanInterval)
             as? TimeInterval ?? 1800
-        self.utmStripList = d.stringArray(forKey: Keys.utmStripList)
-            ?? UTMStripper.defaultParameters
         self.suppressedClipboardDomains = d.stringArray(forKey: Keys.suppressedClipboardDomains) ?? []
-        self.pickerLayout = PickerLayout(
-            rawValue: d.string(forKey: Keys.pickerLayout) ?? "") ?? .auto
-        self.pickerInvertOrder = d.bool(forKey: Keys.pickerInvertOrder)
-        self.recentURLRetention = RecentURLRetention(
-            rawValue: d.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
-        self.recentURLRetentionMinutes = d.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
         self.hasDismissedQuickStart = d.bool(forKey: Keys.hasDismissedQuickStart)
         self.quickStartVisitedActivation = d.bool(forKey: Keys.quickStartVisitedActivation)
         self.quickStartVisitedBrowsers = d.bool(forKey: Keys.quickStartVisitedBrowsers)
         self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
+
+        // Routing settings from App Group suite
+        self.isEnabled = s.object(forKey: Keys.isEnabled) as? Bool ?? true
+        self.activationMode = ActivationMode(
+            rawValue: s.string(forKey: Keys.activationMode) ?? "") ?? .always
+        self.defaultSelectionBehavior = DefaultSelectionBehavior(
+            rawValue: s.string(forKey: Keys.defaultSelection) ?? "") ?? .alwaysFirst
+        self.verticalThreshold = s.object(forKey: Keys.verticalThreshold) as? Int ?? 8
+        self.soundEffectsEnabled = s.object(forKey: Keys.soundEffects) as? Bool ?? true
+        self.globalUTMStrippingEnabled = s.bool(forKey: Keys.globalUTMStripping)
+        self.utmStripList = s.stringArray(forKey: Keys.utmStripList)
+            ?? UTMStripper.defaultParameters
+        self.pickerLayout = PickerLayout(
+            rawValue: s.string(forKey: Keys.pickerLayout) ?? "") ?? .auto
+        self.pickerInvertOrder = s.bool(forKey: Keys.pickerInvertOrder)
+        self.recentURLRetention = RecentURLRetention(
+            rawValue: s.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
+        self.recentURLRetentionMinutes = s.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
     }
 
     // MARK: - Complex Data Persistence
@@ -235,7 +251,7 @@ final class SettingsStore: ObservableObject {
     func saveBrowsers(_ browsers: [BrowserEntry]) {
         do {
             let data = try JSONEncoder().encode(browsers)
-            defaults.set(data, forKey: Keys.browsers)
+            sharedDefaults.set(data, forKey: Keys.browsers)
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode browsers: \(error.localizedDescription)")
@@ -243,7 +259,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadBrowsers() -> [BrowserEntry] {
-        guard let data = defaults.data(forKey: Keys.browsers) else { return [] }
+        guard let data = sharedDefaults.data(forKey: Keys.browsers) else { return [] }
         do {
             return try JSONDecoder().decode([BrowserEntry].self, from: data)
         } catch {
@@ -255,7 +271,7 @@ final class SettingsStore: ObservableObject {
     func saveEmailClients(_ clients: [BrowserEntry]) {
         do {
             let data = try JSONEncoder().encode(clients)
-            defaults.set(data, forKey: Keys.emailClients)
+            sharedDefaults.set(data, forKey: Keys.emailClients)
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode email clients: \(error.localizedDescription)")
@@ -263,7 +279,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadEmailClients() -> [BrowserEntry] {
-        guard let data = defaults.data(forKey: Keys.emailClients) else { return [] }
+        guard let data = sharedDefaults.data(forKey: Keys.emailClients) else { return [] }
         do {
             return try JSONDecoder().decode([BrowserEntry].self, from: data)
         } catch {
@@ -275,7 +291,7 @@ final class SettingsStore: ObservableObject {
     func saveRules(_ rules: [Rule]) {
         do {
             let data = try JSONEncoder().encode(rules)
-            defaults.set(data, forKey: Keys.rules)
+            sharedDefaults.set(data, forKey: Keys.rules)
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode rules: \(error.localizedDescription)")
@@ -283,7 +299,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadRules() -> [Rule] {
-        guard let data = defaults.data(forKey: Keys.rules) else { return BuiltInRules.all }
+        guard let data = sharedDefaults.data(forKey: Keys.rules) else { return BuiltInRules.all }
         let savedRules: [Rule]
         do {
             savedRules = try JSONDecoder().decode([Rule].self, from: data)
@@ -322,7 +338,7 @@ final class SettingsStore: ObservableObject {
     func saveGlobalRewriteRules(_ rules: [URLRewriteRule]) {
         do {
             let data = try JSONEncoder().encode(rules)
-            defaults.set(data, forKey: Keys.globalRewriteRules)
+            sharedDefaults.set(data, forKey: Keys.globalRewriteRules)
             objectWillChange.send()
         } catch {
             YojamLogger.shared.log("Failed to encode rewrite rules: \(error.localizedDescription)")
@@ -330,7 +346,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func loadGlobalRewriteRules() -> [URLRewriteRule] {
-        guard let data = defaults.data(forKey: Keys.globalRewriteRules) else {
+        guard let data = sharedDefaults.data(forKey: Keys.globalRewriteRules) else {
             return BuiltInRewriteRules.all
         }
         let savedRules: [URLRewriteRule]
@@ -428,9 +444,12 @@ final class SettingsStore: ObservableObject {
     }
 
     func resetToDefaults() {
+        // Clear app-only settings
         if let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
         }
+        // Clear shared routing settings
+        sharedDefaults.removePersistentDomain(forName: SharedRoutingStore.suiteName)
         self.isEnabled = true
         self.activationMode = .always
         self.defaultSelectionBehavior = .alwaysFirst

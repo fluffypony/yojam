@@ -15,8 +15,8 @@ final class BrowserManager: ObservableObject {
         self.settingsStore = settingsStore
         self.browsers = settingsStore.loadBrowsers()
         self.emailClients = settingsStore.loadEmailClients()
-        if UserDefaults.standard.data(forKey: "browsers") == nil { performInitialDetection() }
-        if UserDefaults.standard.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
+        if settingsStore.sharedStore.defaults.data(forKey: "browsers") == nil { performInitialDetection() }
+        if settingsStore.sharedStore.defaults.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
         deduplicateProfileEntries()
         refreshProfileSuggestions()
     }
@@ -164,13 +164,13 @@ final class BrowserManager: ObservableObject {
     // §11: Store and retrieve by UUID instead of positional index
     func lastUsedId(isEmail: Bool) -> UUID? {
         let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
-        guard let idString = UserDefaults.standard.string(forKey: key) else { return nil }
+        guard let idString = settingsStore.sharedStore.defaults.string(forKey: key) else { return nil }
         return UUID(uuidString: idString)
     }
 
     func recordLastUsed(_ entry: BrowserEntry, isEmail: Bool) {
         let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
-        UserDefaults.standard.set(entry.id.uuidString, forKey: key)
+        settingsStore.sharedStore.defaults.set(entry.id.uuidString, forKey: key)
     }
 
     /// Regenerate suggested browser entries for profiles not yet in the active list.

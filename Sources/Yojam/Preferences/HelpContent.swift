@@ -50,7 +50,7 @@ enum HelpText {
         static let urlTester = "Paste a URL to preview how Yojam would handle it: which rewrites apply, what gets stripped, and where it ends up."
         static let ruleMatchType = "Domain exact: one domain only. Domain suffix: includes subdomains. URL prefix: matches the start of the URL. URL contains: matches anywhere in the URL. Regex: full pattern matching."
         static let rulePriority = "Lower numbers run first. When two rules match the same URL, the lower number wins."
-        static let ruleSourceApp = "Only applies when the link came from a specific app (e.g. com.apple.mail). Leave blank to match all apps."
+        static let ruleSourceApp = "Only applies when the link came from a specific app (e.g. com.apple.mail). Leave blank to match all apps.\n\nFor links from Handoff, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic IDs like com.yojam.source.handoff and com.yojam.source.airdrop."
         static let rewriteMatch = "A regex pattern matched against the full URL. Use capture groups like (.*) to grab parts you want to keep."
         static let rewriteReplacement = "The replacement URL. Use $1, $2, etc. to insert captured groups from the match pattern."
     }
@@ -66,6 +66,24 @@ enum HelpText {
         static let resetAll = "Wipes all settings, rules, and learned preferences back to factory defaults."
         static let trackerParameterList = "URL parameters that get stripped when tracker removal is on. One per line."
         static let suppressedClipboardDomains = "Domains to skip when clipboard monitoring is on. URLs from these won't trigger the notification."
+    }
+
+    // MARK: - Integrations Tab
+    enum Integrations {
+        static let defaultBrowser = "When Yojam is your default browser, all link clicks in other apps go through Yojam's routing pipeline."
+        static let weblocHandler = "When enabled, AirDropped links (which arrive as .webloc files) are routed through Yojam instead of opening in the default browser."
+        static let yojamScheme = "The yojam:// URL scheme is used by the Share Extension, browser extensions, and automation tools like Shortcuts, Raycast, and Alfred to send links to Yojam."
+        static let handoff = "When Handoff is enabled and Yojam is your default browser, pages you're viewing on your iPhone or iPad can be continued on your Mac through Yojam."
+        static let shareExtension = "The Share Extension adds \"Open in Yojam\" to the macOS share menu in Safari, Notes, Mail, Finder, and other apps."
+        static let safariExtension = "The Safari Web Extension adds a toolbar button, context menu item, and Alt+Shift+Y shortcut to route links through Yojam."
+        static let servicesMenu = "Highlight any URL in any Cocoa app, right-click, and choose Services > Open in Yojam. You can also assign a global keyboard shortcut in System Settings > Keyboard > Keyboard Shortcuts > Services."
+        static let nativeMessaging = "The native messaging host lets browser extensions communicate with Yojam without triggering the OS protocol-handler prompt on every click."
+        static let appGroup = "The App Group container (group.org.yojam.shared) is used to share routing configuration between the main app and its extensions."
+    }
+
+    // MARK: - Source App Sentinels
+    enum Sentinels {
+        static let ruleSourceHelp = "For links from Handoff, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic bundle IDs. You can target these in rules:\n\n\u{2022} com.yojam.source.handoff\n\u{2022} com.yojam.source.airdrop\n\u{2022} com.yojam.source.share-extension\n\u{2022} com.yojam.source.service\n\u{2022} com.yojam.source.safari-extension\n\u{2022} com.yojam.source.chrome-extension\n\u{2022} com.yojam.source.firefox-extension\n\u{2022} com.yojam.source.url-scheme"
     }
 
     // MARK: - Picker

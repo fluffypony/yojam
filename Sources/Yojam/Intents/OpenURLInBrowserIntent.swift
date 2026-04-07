@@ -1,5 +1,6 @@
 import AppIntents
 import AppKit
+import YojamCore
 
 struct OpenURLInBrowserIntent: AppIntent {
     static let title: LocalizedStringResource = "Open URL in Browser"
@@ -14,68 +15,29 @@ struct OpenURLInBrowserIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let store = SettingsStore()
-        let rewriter = URLRewriter(settingsStore: store)
-        let stripper = UTMStripper(settingsStore: store)
-        var processedURL = url
-
-        // §13: Apply global rewrites (previously skipped by intents)
-        processedURL = rewriter.applyGlobalRewrites(to: processedURL)
-
-        if let bundleId = browser {
-            let entry = store.loadBrowsers().first {
-                $0.bundleIdentifier == bundleId && $0.enabled
-            }
-
-            if let entry {
-                processedURL = rewriter.applyBrowserRewrites(to: processedURL, browser: entry)
-                if stripUTM || entry.stripUTMParams {
-                    processedURL = stripper.strip(processedURL)
-                } else if store.globalUTMStrippingEnabled {
-                    processedURL = stripper.strip(processedURL)
-                }
-            } else if stripUTM || store.globalUTMStrippingEnabled {
-                processedURL = stripper.strip(processedURL)
-            }
-
-            // §13: Delegate to AppDelegate for full launch path (private window, custom args)
-            if let delegate = NSApp.delegate as? AppDelegate {
-                let appURL = delegate.appURL(for: bundleId)
-                if let appURL {
-                    delegate.openURL(
-                        processedURL,
-                        withAppAt: appURL,
-                        profile: entry?.profileId,
-                        bundleId: bundleId,
-                        privateWindow: entry?.openInPrivateWindow ?? false,
-                        customLaunchArgs: entry?.customLaunchArgs)
-                    return .result()
-                }
-            }
-
-            // Fallback: NSWorkspace open
-            if let appURL = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: bundleId
-            ) {
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = true
-                var arguments: [String] = []
-                if let profile = entry?.profileId {
-                    arguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
-                        forProfile: profile, browserBundleId: bundleId))
-                }
-                if entry?.openInPrivateWindow == true {
-                    arguments.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
-                        browserBundleId: bundleId))
-                }
-                if !arguments.isEmpty { config.arguments = arguments }
-                try await NSWorkspace.shared.open(
-                    [processedURL], withApplicationAt: appURL,
-                    configuration: config)
-            }
-        } else if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.routeURL(processedURL)
+        guard let delegate = NSApp.delegate as? AppDelegate else {
+            return .result()
         }
+
+        // Route through the unified ingress coordinator instead of
+        // partially re-implementing the routing pipeline.
+        let request = IncomingLinkRequest(
+            url: url,
+            sourceAppBundleId: nil,
+            origin: .intent,
+            forcedBrowserBundleId: browser,
+            forcePicker: false,
+            forcePrivateWindow: false
+        )
+
+        // Use routeURL directly since enqueueOrHandle is private.
+        // The intent runs after launch, so isFinishedLaunching is true.
+        if let bundleId = browser {
+            delegate.routeURL(url, forcedBrowserBundleId: bundleId)
+        } else {
+            delegate.routeURL(url)
+        }
+
         return .result()
     }
 }

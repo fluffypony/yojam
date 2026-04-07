@@ -1,4 +1,5 @@
 import Foundation
+import YojamCore
 
 @MainActor
 final class RecentURLsManager {
@@ -6,8 +7,10 @@ final class RecentURLsManager {
     private(set) var recentURLs: [URL] = []
     private var timestamps: [URL: Date] = [:]
     private var cleanupTimer: Timer?
+    private let sharedDefaults: UserDefaults
 
     init() {
+        self.sharedDefaults = SharedRoutingStore().defaults
         loadFromDefaults()
     }
 
@@ -67,20 +70,21 @@ final class RecentURLsManager {
     // MARK: - Persistence
 
     private func saveToDefaults() {
-        let d = UserDefaults.standard
-        d.set(recentURLs.map(\.absoluteString), forKey: "recentURLs")
+        sharedDefaults.set(recentURLs.map(\.absoluteString),
+                          forKey: SharedRoutingStore.Keys.recentURLs)
         let tsDict = Dictionary(uniqueKeysWithValues: timestamps.map {
             ($0.key.absoluteString, $0.value.timeIntervalSince1970)
         })
-        d.set(tsDict, forKey: "recentURLTimestamps")
+        sharedDefaults.set(tsDict, forKey: SharedRoutingStore.Keys.recentURLTimestamps)
     }
 
     private func loadFromDefaults() {
-        let d = UserDefaults.standard
-        if let strings = d.stringArray(forKey: "recentURLs") {
+        if let strings = sharedDefaults.stringArray(
+            forKey: SharedRoutingStore.Keys.recentURLs) {
             recentURLs = strings.compactMap { URL(string: $0) }
         }
-        if let tsDict = d.dictionary(forKey: "recentURLTimestamps") as? [String: TimeInterval] {
+        if let tsDict = sharedDefaults.dictionary(
+            forKey: SharedRoutingStore.Keys.recentURLTimestamps) as? [String: TimeInterval] {
             for (urlStr, ts) in tsDict {
                 if let url = URL(string: urlStr) {
                     timestamps[url] = Date(timeIntervalSince1970: ts)

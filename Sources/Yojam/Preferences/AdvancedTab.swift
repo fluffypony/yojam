@@ -293,8 +293,8 @@ struct AdvancedTab: View {
     private func redetectBrowsers() {
         settingsStore.saveBrowsers([])
         settingsStore.saveEmailClients([])
-        UserDefaults.standard.removeObject(forKey: "browsers")
-        UserDefaults.standard.removeObject(forKey: "emailClients")
+        settingsStore.sharedStore.defaults.removeObject(forKey: "browsers")
+        settingsStore.sharedStore.defaults.removeObject(forKey: "emailClients")
         browserManager.browsers = []
         browserManager.suggestedBrowsers = []
         browserManager.emailClients = []

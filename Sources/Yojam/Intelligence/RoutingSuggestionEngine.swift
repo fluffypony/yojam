@@ -1,13 +1,15 @@
 import Foundation
+import YojamCore
 
 @MainActor
 final class RoutingSuggestionEngine {
     private var domainPreferences: [String: [String: Int]] = [:]
     private let minimumConfidence = 3
-    private let key = "learnedDomainPreferences"
+    private let sharedDefaults: UserDefaults
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: key),
+        self.sharedDefaults = SharedRoutingStore().defaults
+        if let data = sharedDefaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
            let decoded = try? JSONDecoder().decode(
                [String: [String: Int]].self, from: data
            ) {
@@ -43,7 +45,7 @@ final class RoutingSuggestionEngine {
 
     private func save() {
         if let data = try? JSONEncoder().encode(domainPreferences) {
-            UserDefaults.standard.set(data, forKey: key)
+            sharedDefaults.set(data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
         }
     }
 }

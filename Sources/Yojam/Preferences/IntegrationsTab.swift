@@ -46,7 +46,7 @@ struct IntegrationsTab: View {
                     detail: DefaultBrowserManager.isDefaultBrowser
                         ? "Yojam is your default browser"
                         : "Yojam is not the default browser",
-                    helpText: "When Yojam is your default browser, all link clicks in other apps go through Yojam's routing pipeline.",
+                    helpText: HelpText.Integrations.defaultBrowser,
                     action: ("Set as Default", {
                         DefaultBrowserManager.promptSetDefault()
                     })
@@ -58,7 +58,7 @@ struct IntegrationsTab: View {
                     detail: DefaultBrowserManager.isWeblocHandler
                         ? "Yojam handles internet-location files"
                         : "Not registered for .webloc files",
-                    helpText: "When enabled, AirDropped links (which arrive as .webloc files) are routed through Yojam instead of opening in the default browser.",
+                    helpText: HelpText.Integrations.weblocHandler,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
                     }),
@@ -71,7 +71,7 @@ struct IntegrationsTab: View {
                     detail: DefaultBrowserManager.isYojamSchemeRegistered
                         ? "Registered"
                         : "Not registered",
-                    helpText: "The yojam:// URL scheme is used by the Share Extension, browser extensions, and automation tools like Shortcuts, Raycast, and Alfred to send links to Yojam.",
+                    helpText: HelpText.Integrations.yojamScheme,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
                     }),
@@ -82,7 +82,7 @@ struct IntegrationsTab: View {
                     icon: "hand.raised",
                     status: .info,
                     detail: "Check System Settings > General > AirDrop & Handoff",
-                    helpText: "When Handoff is enabled and Yojam is your default browser, pages you're viewing on your iPhone or iPad can be continued on your Mac through Yojam.",
+                    helpText: HelpText.Integrations.handoff,
                     isLast: true
                 )
             }
@@ -102,7 +102,7 @@ struct IntegrationsTab: View {
                     icon: "square.and.arrow.up",
                     status: .info,
                     detail: "Enable in System Settings > Privacy & Security > Extensions > Sharing",
-                    helpText: "The Share Extension adds \"Open in Yojam\" to the macOS share menu in Safari, Notes, Mail, Finder, and other apps.",
+                    helpText: HelpText.Integrations.shareExtension,
                     isLast: false
                 )
                 IntegrationRow(
@@ -110,7 +110,7 @@ struct IntegrationsTab: View {
                     icon: "safari",
                     status: .info,
                     detail: "Enable in Safari > Settings > Extensions",
-                    helpText: "The Safari Web Extension adds a toolbar button, context menu item, and Alt+Shift+Y shortcut to route links through Yojam.",
+                    helpText: HelpText.Integrations.safariExtension,
                     isLast: false
                 )
                 IntegrationRow(
@@ -118,7 +118,7 @@ struct IntegrationsTab: View {
                     icon: "contextualmenu.and.cursorarrow",
                     status: .ok,
                     detail: "\"Open in Yojam\" appears in the Services menu",
-                    helpText: "Highlight any URL in any Cocoa app, right-click, and choose Services > Open in Yojam. You can also assign a global keyboard shortcut in System Settings > Keyboard > Keyboard Shortcuts > Services.",
+                    helpText: HelpText.Integrations.servicesMenu,
                     isLast: true
                 )
             }
@@ -132,7 +132,7 @@ struct IntegrationsTab: View {
     private var browserHostsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             ThemeSectionTitle(text: "Browser Native Messaging",
-                             helpText: "The native messaging host lets browser extensions communicate with Yojam without triggering the OS protocol-handler prompt on every click.")
+                             helpText: HelpText.Integrations.nativeMessaging)
             ThemePanel {
                 IntegrationRow(
                     name: "Chrome / Chromium",
@@ -141,7 +141,7 @@ struct IntegrationsTab: View {
                     detail: NativeMessagingInstaller.isManifestInstalled(for: "Chrome")
                         ? "Manifest installed"
                         : "Not installed",
-                    helpText: "Installs the native messaging host manifest so the Chrome extension can route links directly without a protocol-handler prompt.",
+                    helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
                         NativeMessagingInstaller.installAll()
                     }),
@@ -154,7 +154,7 @@ struct IntegrationsTab: View {
                     detail: NativeMessagingInstaller.isManifestInstalled(for: "Firefox")
                         ? "Manifest installed"
                         : "Not installed",
-                    helpText: "Installs the native messaging host manifest for Firefox.",
+                    helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
                         NativeMessagingInstaller.installAll()
                     }),
@@ -187,7 +187,7 @@ struct IntegrationsTab: View {
                     detail: appGroupAccessible
                         ? "App Group container is accessible"
                         : "Cannot access App Group container",
-                    helpText: "The App Group container (group.org.yojam.shared) is used to share routing configuration between the main app and its extensions. If this fails, check that the App Group entitlement is configured correctly.",
+                    helpText: HelpText.Integrations.appGroup,
                     isLast: true
                 )
             }
