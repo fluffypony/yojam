@@ -374,9 +374,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.handlePickerSelection(entry: entry, url: selectedURL, isEmail: isEmail)
                 },
                 onCopy: { [weak self] url in
-                    self?.clipboardMonitor?.suppressNextChange = true
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    self?.clipboardMonitor?.updateExpectedChangeCount()
                 },
                 onDismiss: { [weak self] panel in
                     guard self?.pickerPanel === panel else { return }

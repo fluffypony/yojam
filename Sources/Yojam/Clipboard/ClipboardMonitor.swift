@@ -15,10 +15,10 @@ final class ClipboardMonitor {
         self.lastChangeCount = NSPasteboard.general.changeCount
     }
 
-    // §41: Invalidate timer if object is deallocated without calling stop()
-    // MainActor.assumeIsolated is safe here: @MainActor classes are always
-    // deallocated on the main thread in practice with Swift 6 runtime.
-    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
+    // Rely on explicit stop() calls from applicationWillTerminate and
+    // dynamic service toggle sinks. Removed deinit timer invalidation
+    // because MainActor.assumeIsolated traps in Swift 6 strict concurrency
+    // when deinit runs off the main actor.
 
     func start() {
         timer = Timer.scheduledTimer(
@@ -30,16 +30,25 @@ final class ClipboardMonitor {
 
     func stop() { timer?.invalidate(); timer = nil }
 
+    /// Synchronize the expected change count after programmatic pasteboard writes.
+    /// Call this AFTER setting the pasteboard content (clearContents + setString)
+    /// to prevent the next poll from seeing the write as a user-initiated change.
+    func updateExpectedChangeCount() {
+        lastChangeCount = NSPasteboard.general.changeCount
+    }
+
     private func checkClipboard() {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
         // §25: Skip self-triggered clipboard writes
         if suppressNextChange { suppressNextChange = false; return }
-        // §24: Guard against excessively large clipboard text before trimming
+        // §24: Guard against excessively large clipboard text
         guard let rawString = pasteboard.string(forType: .string),
               rawString.count < 2048 else { return }
+        // Trim first, then check length
         let string = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard string.count < 2048 else { return }
         guard !string.isEmpty,
               let url = URL(string: string),
               let scheme = url.scheme?.lowercased(),

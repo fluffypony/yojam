@@ -11,10 +11,10 @@ final class PeriodicScanner {
         self.reconciler = reconciler; self.interval = interval
     }
 
-    // §41: Invalidate timer if object is deallocated without calling stop()
-    // MainActor.assumeIsolated is safe here: @MainActor classes are always
-    // deallocated on the main thread in practice with Swift 6 runtime.
-    deinit { MainActor.assumeIsolated { timer?.invalidate() } }
+    // Rely on explicit stop() calls from applicationWillTerminate and
+    // config-change sinks. Removed deinit timer invalidation because
+    // MainActor.assumeIsolated traps in Swift 6 strict concurrency
+    // when deinit runs off the main actor.
 
     func start() {
         timer = Timer.scheduledTimer(

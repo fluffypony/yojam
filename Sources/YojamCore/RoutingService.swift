@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Pure decision engine for URL routing. Zero AppKit dependencies.
@@ -327,16 +328,12 @@ public enum RoutingService {
 
     /// Produces a valid UUID string deterministically from a bundle ID,
     /// so that synthetic BrowserEntry objects created for the same rule
-    /// target across calls are Equatable.
+    /// target across calls are Equatable. Uses MD5 for collision resistance
+    /// (non-security usage — just needs uniqueness).
     private static func deterministicUUID(for bundleId: String) -> String {
-        var hash = bundleId.utf8.reduce(into: [UInt8](repeating: 0, count: 16)) { bytes, byte in
-            for i in bytes.indices {
-                bytes[i] = bytes[i] &+ byte &+ UInt8(i)
-            }
-        }
-        // Set version 4 and variant bits for a valid UUID.
-        hash[6] = (hash[6] & 0x0F) | 0x40
-        hash[8] = (hash[8] & 0x3F) | 0x80
+        var hash = Array(Insecure.MD5.hash(data: Data(bundleId.utf8)))
+        hash[6] = (hash[6] & 0x0F) | 0x30  // version 3 (name-based)
+        hash[8] = (hash[8] & 0x3F) | 0x80  // RFC 4122 variant
         return String(format: "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
                       hash[0], hash[1], hash[2], hash[3],
                       hash[4], hash[5], hash[6], hash[7],

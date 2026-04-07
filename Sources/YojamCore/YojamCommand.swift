@@ -37,14 +37,22 @@ public enum YojamCommand: Sendable {
                   ["http", "https", "mailto"].contains(scheme)
             else { return nil }
 
-            let source = queryItems.first(where: { $0.name == "source" })?.value
+            let rawSource = queryItems.first(where: { $0.name == "source" })?.value
+            // Only trusted sentinels pass through; untrusted input falls back
+            // to .urlScheme to prevent source spoofing from external callers.
+            let source: String
+            if let rawSource, SourceAppSentinel.all.contains(rawSource) {
+                source = rawSource
+            } else {
+                source = SourceAppSentinel.urlScheme
+            }
             let browser = queryItems.first(where: { $0.name == "browser" })?.value
             let pick = queryItems.first(where: { $0.name == "pick" })?.value == "1"
             let priv = queryItems.first(where: { $0.name == "private" })?.value == "1"
 
             let request = IncomingLinkRequest(
                 url: targetURL,
-                sourceAppBundleId: source ?? SourceAppSentinel.urlScheme,
+                sourceAppBundleId: source,
                 origin: .urlScheme,
                 forcedBrowserBundleId: browser,
                 forcePicker: pick,
