@@ -271,6 +271,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
     }
 
+    /// Handles file open events from Finder (e.g. double-clicking an .html
+    /// file when Yojam is the default handler for that type). AppKit
+    /// dispatches `kAEOpenDocuments` Apple Events through this delegate
+    /// method; without it, file opens are silently dropped and the picker
+    /// never appears for local HTML files.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        // Capture modifiers immediately to avoid race conditions with the
+        // user releasing keys before we read them.
+        let modifiers = NSEvent.modifierFlags
+
+        // The originating Apple Event (if any) lets us identify the source
+        // app via its sender PID — same approach used for kAEGetURL events.
+        let sourceAppBundleId: String? = NSAppleEventManager.shared()
+            .currentAppleEvent
+            .flatMap { SourceAppResolver.resolveSourceApp(from: $0) }
+
+        for url in urls {
+            // Cold-launch case: AppKit may invoke this before our subsystems
+            // are ready. Queue the URL just like the kAEGetURL path does.
+            guard isFinishedLaunching else {
+                pendingURLs.append((url, sourceAppBundleId, modifiers))
+                continue
+            }
+            routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
+        }
+    }
+
     func routeURL(
         _ url: URL, sourceAppBundleId: String? = nil,
         modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
