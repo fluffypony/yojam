@@ -110,16 +110,23 @@ func handlePreview(_ args: [String]) {
     }
 
     // Resolve shortlinks if enabled, to match real routing behavior
-    var resolvedURL = url
+    let resolvedURL: URL
     if config.shortlinkResolutionEnabled,
        let host = url.host?.lowercased(),
        ShortlinkResolver.defaultShortenerHosts.contains(host) {
+        // Use nonisolated(unsafe) to bridge async shortlink resolution
+        // into the synchronous CLI context. Safe because the semaphore
+        // ensures sequential access.
+        nonisolated(unsafe) var result = url
         let sem = DispatchSemaphore(value: 0)
         Task {
-            resolvedURL = await ShortlinkResolver.shared.resolve(url)
+            result = await ShortlinkResolver.shared.resolve(url)
             sem.signal()
         }
         _ = sem.wait(timeout: .now() + .seconds(4))
+        resolvedURL = result
+    } else {
+        resolvedURL = url
     }
 
     let request = IncomingLinkRequest(
