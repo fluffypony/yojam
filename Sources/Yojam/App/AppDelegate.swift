@@ -341,17 +341,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 continue
             }
 
+            // Determine origin. Internet-location files (.webloc/.inetloc/.url)
+            // could come from AirDrop or from Finder double-click. We tag as
+            // .airdrop only when the source app is the AirDrop/Sharing agent;
+            // otherwise it's a normal file open.
             let origin: IngressOrigin
+            let isInternetLocationFile: Bool
             if incoming.isFileURL {
                 let ext = incoming.pathExtension.lowercased()
-                origin = ["webloc", "inetloc", "url"].contains(ext) ? .airdrop : .fileOpen
+                isInternetLocationFile = ["webloc", "inetloc", "url"].contains(ext)
+                let isFromAirDrop = sourceAppBundleId == "com.apple.sharingd"
+                    || sourceAppBundleId == nil && isInternetLocationFile
+                origin = isFromAirDrop ? .airdrop : .fileOpen
             } else {
+                isInternetLocationFile = false
                 origin = .fileOpen
             }
 
             let effectiveSource: String?
             if origin == .airdrop {
                 effectiveSource = SourceAppSentinel.airdrop
+            } else if isInternetLocationFile {
+                // Internet-location file opened from Finder — preserve
+                // the actual source app if we have one.
+                effectiveSource = sourceAppBundleId
             } else {
                 effectiveSource = sourceAppBundleId
             }

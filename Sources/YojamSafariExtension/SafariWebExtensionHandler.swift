@@ -19,7 +19,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
 
-        let source = (message["source"] as? String) ?? SourceAppSentinel.safariExtension
+        // Always use the Safari sentinel. The shared background.js doesn't
+        // know it's running in Safari and sends the Chrome sentinel, so we
+        // override unconditionally here since we know this handler only runs
+        // inside the Safari Web Extension.
+        let source = SourceAppSentinel.safariExtension
 
         guard let yojamURL = YojamCommand.buildRoute(
             target: targetURL,

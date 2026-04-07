@@ -90,12 +90,20 @@ enum NativeMessagingInstaller {
 
     private static func resolveHostPath() -> String? {
         let bundle = Bundle.main
-        // In the .app bundle: Contents/MacOS/YojamNativeHost
-        let hostURL = bundle.bundleURL
-            .appendingPathComponent("Contents/MacOS/YojamNativeHost")
-        if FileManager.default.isExecutableFile(atPath: hostURL.path) {
-            return hostURL.path
+        // xcodegen tool targets with `copy: destination: executables` go to
+        // Contents/MacOS. Check multiple locations for robustness.
+        let candidates = [
+            bundle.bundleURL.appendingPathComponent("Contents/MacOS/YojamNativeHost"),
+            bundle.bundleURL.appendingPathComponent("Contents/Helpers/YojamNativeHost"),
+            bundle.bundleURL.appendingPathComponent("Contents/MacOS/yojamnativehost"),
+        ]
+        for candidate in candidates {
+            if FileManager.default.isExecutableFile(atPath: candidate.path) {
+                return candidate.path
+            }
         }
+        YojamLogger.shared.log(
+            "YojamNativeHost not found in any expected location: \(candidates.map(\.path))")
         return nil
     }
 
@@ -107,9 +115,13 @@ enum NativeMessagingInstaller {
             "description": "Yojam browser picker - routes links to the right browser",
             "path": hostPath,
             "type": "stdio",
+            // TODO: Replace with the stable extension ID from Chrome Web Store
+            // or from the "key" field in chrome/manifest.json. During development,
+            // load the extension unpacked and copy its ID from chrome://extensions.
+            // The native host will still work for routing (via yojam:// fallback),
+            // but the extension won't be able to use sendNativeMessage until this
+            // is set to the real extension ID.
             "allowed_origins": [
-                // The extension's stable Chrome Web Store ID will go here.
-                // During development, use chrome://extensions to find the ID.
                 "chrome-extension://placeholder_extension_id/"
             ]
         ]

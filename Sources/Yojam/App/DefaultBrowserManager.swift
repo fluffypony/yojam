@@ -45,6 +45,8 @@ enum DefaultBrowserManager {
             "com.apple.web-internet-location" as CFString, .viewer, cfBundleId)
         LSSetDefaultRoleHandlerForContentType(
             "com.apple.internet-location" as CFString, .viewer, cfBundleId)
+        LSSetDefaultRoleHandlerForContentType(
+            "public.url" as CFString, .viewer, cfBundleId)
 
         // Register the yojam:// scheme (used by extensions and automation)
         LSSetDefaultHandlerForURLScheme("yojam" as CFString, cfBundleId)
