@@ -678,13 +678,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         customLaunchArgs: String? = nil
     ) {
         // AppleScript-based private window for Safari/Orion
-        // Run off-main to avoid beachballing UI (the script has a 0.3s delay)
+        // Run off-main to avoid beachballing UI (the script has a 0.3s delay).
+        // Falls back to normal open if AppleScript fails (permissions, locale).
         if privateWindow, let bundleId,
            ProfileLaunchHelper.appleScriptPrivateWindowApps.contains(bundleId),
            let appName = ProfileLaunchHelper.appName(forBundleId: bundleId) {
+            let capturedAppURL = appURL
             Task.detached {
-                ProfileLaunchHelper.openPrivateWindowViaAppleScript(
+                let success = ProfileLaunchHelper.openPrivateWindowViaAppleScript(
                     url: url, appName: appName)
+                if !success {
+                    // Fall back to normal window open on main actor
+                    await MainActor.run {
+                        let config = NSWorkspace.OpenConfiguration()
+                        config.activates = true
+                        Task {
+                            try? await NSWorkspace.shared.open(
+                                [url], withApplicationAt: capturedAppURL, configuration: config)
+                        }
+                    }
+                }
             }
             return
         }

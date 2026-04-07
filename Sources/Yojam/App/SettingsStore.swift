@@ -93,16 +93,16 @@ final class SettingsStore: ObservableObject {
         didSet { sharedDefaults.set(isEnabled, forKey: Keys.isEnabled) }
     }
     @Published var activationMode: ActivationMode {
-        didSet { sharedDefaults.set(activationMode.rawValue, forKey: Keys.activationMode) }
+        didSet { sharedDefaults.set(activationMode.rawValue, forKey: Keys.activationMode); routingDataDidChange.send() }
     }
     @Published var defaultSelectionBehavior: DefaultSelectionBehavior {
-        didSet { sharedDefaults.set(defaultSelectionBehavior.rawValue, forKey: Keys.defaultSelection) }
+        didSet { sharedDefaults.set(defaultSelectionBehavior.rawValue, forKey: Keys.defaultSelection); routingDataDidChange.send() }
     }
     @Published var verticalThreshold: Int {
-        didSet { sharedDefaults.set(verticalThreshold, forKey: Keys.verticalThreshold) }
+        didSet { sharedDefaults.set(verticalThreshold, forKey: Keys.verticalThreshold); routingDataDidChange.send() }
     }
     @Published var soundEffectsEnabled: Bool {
-        didSet { sharedDefaults.set(soundEffectsEnabled, forKey: Keys.soundEffects) }
+        didSet { sharedDefaults.set(soundEffectsEnabled, forKey: Keys.soundEffects); routingDataDidChange.send() }
     }
     @Published var launchAtLogin: Bool {
         didSet {
@@ -123,7 +123,7 @@ final class SettingsStore: ObservableObject {
         }
     }
     @Published var globalUTMStrippingEnabled: Bool {
-        didSet { sharedDefaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping) }
+        didSet { sharedDefaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping); routingDataDidChange.send() }
     }
     @Published var clipboardMonitoringEnabled: Bool {
         didSet { defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring) }
@@ -138,7 +138,7 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(periodicRescanInterval, forKey: Keys.periodicRescanInterval) }
     }
     @Published var utmStripList: [String] {
-        didSet { sharedDefaults.set(utmStripList, forKey: Keys.utmStripList) }
+        didSet { sharedDefaults.set(utmStripList, forKey: Keys.utmStripList); routingDataDidChange.send() }
     }
     @Published var suppressedClipboardDomains: [String] {
         didSet { defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains) }

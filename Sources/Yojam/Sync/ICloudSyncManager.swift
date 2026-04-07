@@ -53,7 +53,11 @@ final class ICloudSyncManager {
             ? pullSuppressionWindow + 0.1
             : 10.0
         DispatchQueue.main.asyncAfter(deadline: .now() + initialPushDelay) { [weak self] in
-            self?.pushToCloud()
+            guard let self else { return }
+            // On first device / empty iCloud, no remote notification arrives.
+            // Allow push after the delay so sync can start.
+            self.hasReceivedRemoteData = true
+            self.pushToCloud()
         }
 
         // 4. B-ICLOUD-BROAD: Use dedicated publisher for routing-data changes only,
