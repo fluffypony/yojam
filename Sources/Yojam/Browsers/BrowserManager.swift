@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import YojamCore
 
 @MainActor
 final class BrowserManager: ObservableObject {
@@ -51,7 +52,7 @@ final class BrowserManager: ObservableObject {
         for appURL in httpHandlers {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
-                  bundleId != Bundle.main.bundleIdentifier,
+                  !YojamBundleIDs.isOwnedByYojam(bundleId),
                   !seenBundleIds.contains(bundleId) else { continue }
             seenBundleIds.insert(bundleId)
             let name = bundle.infoDictionary?["CFBundleName"] as? String
@@ -79,7 +80,7 @@ final class BrowserManager: ObservableObject {
         for appURL in mailtoHandlers {
             guard let bundle = Bundle(url: appURL),
                   let bundleId = bundle.bundleIdentifier,
-                  bundleId != Bundle.main.bundleIdentifier,
+                  !YojamBundleIDs.isOwnedByYojam(bundleId),
                   !seenBundleIds.contains(bundleId) else { continue }
             seenBundleIds.insert(bundleId)
             let name = bundle.infoDictionary?["CFBundleName"] as? String
@@ -234,7 +235,7 @@ final class BrowserManager: ObservableObject {
                 $0.lowercased() == "http" || $0.lowercased() == "https"
             }) ?? false
         }
-        guard handlesHTTP, bundleId != Bundle.main.bundleIdentifier else { return }
+        guard handlesHTTP, !YojamBundleIDs.isOwnedByYojam(bundleId) else { return }
         let name = bundle.infoDictionary?["CFBundleName"] as? String ?? "Unknown"
         let entry = BrowserEntry(
             bundleIdentifier: bundleId, displayName: name, source: .suggested

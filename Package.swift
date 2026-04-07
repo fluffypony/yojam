@@ -1,8 +1,11 @@
 // NOTE: This Package.swift is for source organization, dependency resolution,
-// and `swift test` only. The canonical build artifact is the Xcode project.
-// Run `xcodegen generate` to produce Yojam.xcodeproj.
-// The SPM executable target does NOT produce a proper .app bundle with
-// Info.plist, entitlements, or URL scheme registration.
+// and `swift test` only. The canonical build artifact — with .appex bundles
+// for the Share Extension and Safari Web Extension, the native messaging host
+// binary, and proper entitlements — is produced by `xcodegen generate && xcodebuild`.
+//
+// `swift build` produces only the bare Yojam executable and YojamCore library.
+// It does NOT produce a working .app bundle with Info.plist, entitlements,
+// URL scheme registration, or embedded extensions.
 
 // swift-tools-version: 6.1
 import PackageDescription
@@ -11,15 +14,21 @@ let package = Package(
     name: "Yojam",
     platforms: [.macOS(.v14)],
     products: [
+        .library(name: "YojamCore", targets: ["YojamCore"]),
         .executable(name: "Yojam", targets: ["Yojam"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
     ],
     targets: [
+        .target(
+            name: "YojamCore",
+            path: "Sources/YojamCore"
+        ),
         .executableTarget(
             name: "Yojam",
             dependencies: [
+                "YojamCore",
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/Yojam",
@@ -30,6 +39,11 @@ let package = Package(
             name: "YojamTests",
             dependencies: ["Yojam"],
             path: "Tests/YojamTests"
+        ),
+        .testTarget(
+            name: "YojamCoreTests",
+            dependencies: ["YojamCore"],
+            path: "Tests/YojamCoreTests"
         )
     ]
 )

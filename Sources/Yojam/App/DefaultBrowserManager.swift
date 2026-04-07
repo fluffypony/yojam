@@ -39,6 +39,16 @@ enum DefaultBrowserManager {
             "public.html" as CFString, .viewer, cfBundleId)
         LSSetDefaultRoleHandlerForContentType(
             "public.xhtml" as CFString, .viewer, cfBundleId)
+
+        // Register for internet-location file types (AirDrop .webloc support)
+        LSSetDefaultRoleHandlerForContentType(
+            "com.apple.web-internet-location" as CFString, .viewer, cfBundleId)
+        LSSetDefaultRoleHandlerForContentType(
+            "com.apple.internet-location" as CFString, .viewer, cfBundleId)
+
+        // Register the yojam:// scheme (used by extensions and automation)
+        LSSetDefaultHandlerForURLScheme("yojam" as CFString, cfBundleId)
+
         YojamLogger.shared.log("Registered as default browser (CoreServices)")
     }
 
@@ -49,8 +59,6 @@ enum DefaultBrowserManager {
     static var isDefaultBrowser: Bool {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
 
-        // Check via NSWorkspace (non-deprecated replacement for
-        // LSCopyDefaultHandlerForURLScheme).
         if let appURL = NSWorkspace.shared.urlForApplication(
             toOpen: URL(string: "https://example.com")!
         ), let defaultBundle = Bundle(url: appURL),
@@ -59,5 +67,23 @@ enum DefaultBrowserManager {
         }
 
         return false
+    }
+
+    /// Check if Yojam is registered as the handler for .webloc files.
+    static var isWeblocHandler: Bool {
+        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
+        guard let handler = LSCopyDefaultRoleHandlerForContentType(
+            "com.apple.web-internet-location" as CFString, .viewer
+        )?.takeRetainedValue() as String? else { return false }
+        return handler == bundleId
+    }
+
+    /// Check if the yojam:// scheme is registered.
+    static var isYojamSchemeRegistered: Bool {
+        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
+        guard let handler = LSCopyDefaultHandlerForURLScheme(
+            "yojam" as CFString
+        )?.takeRetainedValue() as String? else { return false }
+        return handler == bundleId
     }
 }

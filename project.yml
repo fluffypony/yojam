@@ -21,6 +21,18 @@ packages:
     from: "2.7.0"
 
 targets:
+  YojamCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/YojamCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.core
+        APPLICATION_EXTENSION_API_ONLY: YES
+        PRODUCT_NAME: YojamCore
+        SKIP_INSTALL: YES
+
   Yojam:
     type: application
     platform: macOS
@@ -31,6 +43,23 @@ targets:
           - Resources/Yojam.entitlements
           - Resources/menubar.svg
     dependencies:
+      - target: YojamCore
+        embed: true
+      - target: YojamShareExtension
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
+      - target: YojamSafariExtension
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
+      - target: YojamNativeHost
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
       - package: Sparkle
     info:
       path: Sources/Yojam/Resources/Info.plist
@@ -50,7 +79,12 @@ targets:
           - CFBundleURLName: Mail URL
             CFBundleURLSchemes:
               - mailto
+          - CFBundleURLName: Yojam Control
+            CFBundleURLSchemes:
+              - yojam
         NSAppleEventsUsageDescription: "Yojam needs to send Apple Events to open private browsing windows in Safari and Orion."
+        NSUserActivityTypes:
+          - NSUserActivityTypeBrowsingWeb
         CFBundleDocumentTypes:
           - CFBundleTypeName: HTML Document
             CFBundleTypeRole: Viewer
@@ -62,11 +96,28 @@ targets:
             LSItemContentTypes:
               - public.xhtml
             LSHandlerRank: Default
+          - CFBundleTypeName: Web Internet Location
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.apple.web-internet-location
+              - com.apple.internet-location
+              - public.url
+        NSServices:
+          - NSMenuItem:
+              default: Open in Yojam
+            NSMessage: openURLViaService
+            NSPortName: Yojam
+            NSSendTypes:
+              - public.url
+              - public.plain-text
     entitlements:
       path: Sources/Yojam/Resources/Yojam.entitlements
       properties:
         com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)$(CFBundleIdentifier)"
         com.apple.security.automation.apple-events: true
+        com.apple.security.application-groups:
+          - group.org.yojam.shared
     settings:
       base:
         INFOPLIST_FILE: Sources/Yojam/Resources/Info.plist
@@ -76,6 +127,81 @@ targets:
         PRODUCT_NAME: Yojam
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+
+  YojamShareExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/YojamShareExtension
+        excludes:
+          - Info.plist
+          - YojamShareExtension.entitlements
+    dependencies:
+      - target: YojamCore
+        embed: false
+    info:
+      path: Sources/YojamShareExtension/Info.plist
+    entitlements:
+      path: Sources/YojamShareExtension/YojamShareExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.ShareExtension
+        PRODUCT_NAME: YojamShareExtension
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+          - "@executable_path/../../../../Frameworks"
+
+  YojamSafariExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/YojamSafariExtension
+        excludes:
+          - Info.plist
+          - YojamSafariExtension.entitlements
+          - Resources
+    dependencies:
+      - target: YojamCore
+        embed: false
+    info:
+      path: Sources/YojamSafariExtension/Info.plist
+    entitlements:
+      path: Sources/YojamSafariExtension/YojamSafariExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.SafariExtension
+        PRODUCT_NAME: YojamSafariExtension
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+          - "@executable_path/../../../../Frameworks"
+    preBuildScripts:
+      - name: Copy Safari Extension Resources
+        script: |
+          rsync -av --delete "${SRCROOT}/Extensions/shared/" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"
+          cp "${SRCROOT}/Extensions/safari/manifest.json" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"
+
+  YojamNativeHost:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/YojamNativeHost
+    dependencies:
+      - target: YojamCore
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.NativeHost
+        PRODUCT_NAME: YojamNativeHost
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
 
@@ -90,3 +216,11 @@ targets:
       base:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Yojam.app/Contents/MacOS/Yojam"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  YojamCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/YojamCoreTests
+    dependencies:
+      - target: YojamCore

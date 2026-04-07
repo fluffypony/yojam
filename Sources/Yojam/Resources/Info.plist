@@ -30,6 +30,20 @@
 				<string>public.xhtml</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Web Internet Location</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.apple.web-internet-location</string>
+				<string>com.apple.internet-location</string>
+				<string>public.url</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -62,6 +76,14 @@
 				<string>mailto</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Yojam Control</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>yojam</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -71,6 +93,29 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Yojam needs to send Apple Events to open private browsing windows in Safari and Orion.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>NSUserActivityTypeBrowsingWeb</string>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Open in Yojam</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>openURLViaService</string>
+			<key>NSPortName</key>
+			<string>Yojam</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.url</string>
+				<string>public.plain-text</string>
+			</array>
+		</dict>
+	</array>
 	<key>SUFeedURL</key>
 	<string>https://yojam.org/appcast.xml</string>
 	<key>SUPublicEDKey</key>

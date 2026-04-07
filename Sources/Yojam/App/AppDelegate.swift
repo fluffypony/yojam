@@ -3,6 +3,7 @@ import Combine
 import Sparkle
 import SwiftUI
 import TipKit
+import YojamCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -44,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var recentlyRoutedURLs: [String: Date] = [:]
     private let deduplicationWindow: TimeInterval = 0.5
-    private var pendingURLs: [(URL, String?, NSEvent.ModifierFlags)] = []
+    private var pendingRequests: [IncomingLinkRequest] = []
     private var isFinishedLaunching = false
 
     override init() {
@@ -54,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         urlRewriter = URLRewriter(settingsStore: store)
         utmStripper = UTMStripper(settingsStore: store)
         super.init()
+        NSApp.servicesProvider = self
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -63,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.prohibited)
 
         // Register URL handler early so cold-launch URLs aren't lost.
-        // URLs arriving before didFinishLaunching are queued in pendingURLs.
+        // URLs arriving before didFinishLaunching are queued in pendingRequests.
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURL(event:reply:)),
@@ -187,12 +189,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DefaultBrowserManager.promptSetDefault()
             settingsStore.isFirstLaunch = false
             // Auto-open Preferences so the user sees the Quick Start card
-            if pendingURLs.isEmpty {
+            if pendingRequests.isEmpty {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.showPreferences()
                 }
             }
         }
+
+        // Install native messaging host manifests on every launch to
+        // repair them after the app bundle is moved.
+        NativeMessagingInstaller.installAll()
 
         // Profile discovery - async to avoid blocking launch.
         // Auto-assign the default profile to each base browser entry.
@@ -228,12 +234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Small delay so the window server has finished processing the
             // activation policy before the picker tries NSApp.activate().
             isFinishedLaunching = true
-            if !pendingURLs.isEmpty {
-                let urls = pendingURLs
-                pendingURLs.removeAll()
+            if !pendingRequests.isEmpty {
+                let requests = pendingRequests
+                pendingRequests.removeAll()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    for (url, source, mods) in urls {
-                        self?.routeURL(url, sourceAppBundleId: source, modifiers: mods)
+                    for request in requests {
+                        self?.handleIncomingRequest(request)
                     }
                 }
             }
@@ -248,7 +254,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         iCloudSyncManager?.stopSync()
     }
 
-    // MARK: - URL Handling
+    // MARK: - Unified Ingress Coordinator
+
+    /// Single entry point for all ingress paths. Queues requests during cold
+    /// launch, then routes them once subsystems are ready.
+    private func enqueueOrHandle(_ request: IncomingLinkRequest) {
+        guard isFinishedLaunching else {
+            pendingRequests.append(request)
+            return
+        }
+        handleIncomingRequest(request)
+    }
+
+    /// Process an incoming link request through the routing pipeline.
+    private func handleIncomingRequest(_ request: IncomingLinkRequest) {
+        // Handle forced picker or forced browser from yojam:// params
+        if request.forcePicker {
+            let modifiers = NSEvent.ModifierFlags(rawValue: request.modifierFlags)
+            routeURL(request.url, sourceAppBundleId: request.sourceAppBundleId,
+                     modifiers: modifiers.union(.shift), forcePicker: true,
+                     forcePrivateWindow: request.forcePrivateWindow,
+                     forcedBrowserBundleId: request.forcedBrowserBundleId)
+        } else {
+            let modifiers = NSEvent.ModifierFlags(rawValue: request.modifierFlags)
+            routeURL(request.url, sourceAppBundleId: request.sourceAppBundleId,
+                     modifiers: modifiers,
+                     forcePrivateWindow: request.forcePrivateWindow,
+                     forcedBrowserBundleId: request.forcedBrowserBundleId)
+        }
+    }
+
+    // MARK: - URL Handling (Apple Events)
 
     @objc private func handleGetURL(
         event: NSAppleEventDescriptor,
@@ -259,48 +295,142 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let urlString = event.paramDescriptor(
             forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: urlString) else { return }
-        let sourceAppBundleId = SourceAppResolver.resolveSourceApp(
-            from: event)
 
-        // Queue URLs that arrive before subsystems are ready (cold launch)
-        guard isFinishedLaunching else {
-            pendingURLs.append((url, sourceAppBundleId, modifiers))
+        // Handle yojam:// scheme before anything else
+        if url.scheme?.lowercased() == "yojam" {
+            guard let command = YojamCommand.parse(url) else {
+                YojamLogger.shared.log("Rejected malformed yojam:// URL: \(url)")
+                return
+            }
+            switch command {
+            case .route(let request):
+                enqueueOrHandle(request)
+            case .openSettings:
+                showPreferences()
+            }
             return
         }
 
-        routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
+        let sourceAppBundleId = SourceAppResolver.resolveSourceApp(
+            from: event)
+
+        let request = IncomingLinkRequest(
+            url: url,
+            sourceAppBundleId: sourceAppBundleId,
+            origin: .defaultHandler,
+            modifierFlags: modifiers.rawValue
+        )
+
+        enqueueOrHandle(request)
     }
 
     /// Handles file open events from Finder (e.g. double-clicking an .html
-    /// file when Yojam is the default handler for that type). AppKit
-    /// dispatches `kAEOpenDocuments` Apple Events through this delegate
-    /// method; without it, file opens are silently dropped and the picker
-    /// never appears for local HTML files.
+    /// file when Yojam is the default handler for that type), AirDropped
+    /// .webloc files, and other internet-location files.
     func application(_ application: NSApplication, open urls: [URL]) {
-        // Capture modifiers immediately to avoid race conditions with the
-        // user releasing keys before we read them.
         let modifiers = NSEvent.modifierFlags
 
-        // The originating Apple Event (if any) lets us identify the source
-        // app via its sender PID — same approach used for kAEGetURL events.
         let sourceAppBundleId: String? = NSAppleEventManager.shared()
             .currentAppleEvent
             .flatMap { SourceAppResolver.resolveSourceApp(from: $0) }
 
-        for url in urls {
-            // Cold-launch case: AppKit may invoke this before our subsystems
-            // are ready. Queue the URL just like the kAEGetURL path does.
-            guard isFinishedLaunching else {
-                pendingURLs.append((url, sourceAppBundleId, modifiers))
+        for incoming in urls {
+            // Normalize through IncomingLinkExtractor for .webloc/.url support
+            guard let normalized = IncomingLinkExtractor.normalize(incoming) else {
+                YojamLogger.shared.log("Refused inbound file: \(incoming.path)")
                 continue
             }
-            routeURL(url, sourceAppBundleId: sourceAppBundleId, modifiers: modifiers)
+
+            let origin: IngressOrigin
+            if incoming.isFileURL {
+                let ext = incoming.pathExtension.lowercased()
+                origin = ["webloc", "inetloc", "url"].contains(ext) ? .airdrop : .fileOpen
+            } else {
+                origin = .fileOpen
+            }
+
+            let effectiveSource: String?
+            if origin == .airdrop {
+                effectiveSource = SourceAppSentinel.airdrop
+            } else {
+                effectiveSource = sourceAppBundleId
+            }
+
+            let request = IncomingLinkRequest(
+                url: normalized,
+                sourceAppBundleId: effectiveSource,
+                origin: origin,
+                modifierFlags: modifiers.rawValue
+            )
+            enqueueOrHandle(request)
         }
     }
 
+    // MARK: - Handoff
+
+    func application(_ application: NSApplication,
+                     willContinueUserActivityWithType userActivityType: String) -> Bool {
+        return userActivityType == NSUserActivityTypeBrowsingWeb
+    }
+
+    func application(_ application: NSApplication,
+                     continue userActivity: NSUserActivity,
+                     restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+              let url = userActivity.webpageURL else { return false }
+        let modifiers = NSEvent.modifierFlags
+        let request = IncomingLinkRequest(
+            url: url,
+            sourceAppBundleId: SourceAppSentinel.handoff,
+            origin: .handoff,
+            modifierFlags: modifiers.rawValue
+        )
+        enqueueOrHandle(request)
+        return true
+    }
+
+    func application(_ application: NSApplication,
+                     didFailToContinueUserActivityWithType userActivityType: String,
+                     error: any Error) {
+        YojamLogger.shared.log("Handoff continuation failed for \(userActivityType): \(error)")
+    }
+
+    // MARK: - Services Menu
+
+    @objc func openURLViaService(_ pasteboard: NSPasteboard,
+                                 userData: String?,
+                                 error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        let candidates: [URL]
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            candidates = urls
+        } else if let text = pasteboard.string(forType: .string) {
+            let detector = try? NSDataDetector(
+                types: NSTextCheckingResult.CheckingType.link.rawValue)
+            let range = NSRange(text.startIndex..., in: text)
+            candidates = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
+        } else {
+            candidates = []
+        }
+        let modifiers = NSEvent.modifierFlags
+        for url in candidates {
+            let request = IncomingLinkRequest(
+                url: url,
+                sourceAppBundleId: SourceAppSentinel.servicesMenu,
+                origin: .servicesMenu,
+                modifierFlags: modifiers.rawValue
+            )
+            enqueueOrHandle(request)
+        }
+    }
+
+    // MARK: - Routing Pipeline
+
     func routeURL(
         _ url: URL, sourceAppBundleId: String? = nil,
-        modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
+        modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags,
+        forcePicker: Bool = false,
+        forcePrivateWindow: Bool = false,
+        forcedBrowserBundleId: String? = nil
     ) {
         guard let url = URLSanitizer.sanitize(url) else { return }
 
@@ -337,6 +467,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             processedURL = utmStripper.strip(processedURL)
         }
 
+        // Handle forced browser from yojam:// browser= parameter
+        if let forcedBundleId = forcedBrowserBundleId,
+           let entry = browserManager.browsers.first(where: {
+               $0.bundleIdentifier == forcedBundleId && $0.isInstalled
+           }),
+           let resolvedAppURL = appURL(for: forcedBundleId) {
+            var finalURL = urlRewriter.applyBrowserRewrites(to: processedURL, browser: entry)
+            if entry.stripUTMParams || settingsStore.globalUTMStrippingEnabled {
+                finalURL = utmStripper.strip(finalURL)
+            }
+            let priv = forcePrivateWindow || entry.openInPrivateWindow
+            openURL(finalURL, withAppAt: resolvedAppURL,
+                profile: entry.profileId,
+                bundleId: entry.bundleIdentifier,
+                privateWindow: priv,
+                customLaunchArgs: entry.customLaunchArgs)
+            return
+        }
+
+        // Handle forcePicker
+        if forcePicker {
+            if isMailto {
+                showPicker(for: processedURL, isEmail: true)
+            } else {
+                showPicker(for: processedURL)
+            }
+            return
+        }
+
         // Step 4: Evaluate rules (with source app context)
         if let match = ruleEngine.evaluate(
                processedURL, sourceAppBundleId: sourceAppBundleId
@@ -357,6 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let appURL = appURL(for: match.targetBundleId) {
                 let ruleLabel = match.name.isEmpty ? match.pattern : match.name
                 let reason = "Matched rule: \(ruleLabel)"
+                let priv = forcePrivateWindow || (matchedEntry?.openInPrivateWindow ?? false)
                 switch settingsStore.activationMode {
                 case .always:
                     showPicker(
@@ -378,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         openURL(processedURL, withAppAt: appURL,
                             profile: matchedEntry?.profileId,
                             bundleId: match.targetBundleId,
-                            privateWindow: matchedEntry?.openInPrivateWindow ?? false,
+                            privateWindow: priv,
                             customLaunchArgs: matchedEntry?.customLaunchArgs)
                     }
                 case .smartFallback:
@@ -390,7 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     openURL(processedURL, withAppAt: appURL,
                         profile: matchedEntry?.profileId,
                         bundleId: match.targetBundleId,
-                        privateWindow: matchedEntry?.openInPrivateWindow ?? false,
+                        privateWindow: priv,
                         customLaunchArgs: matchedEntry?.customLaunchArgs)
                 }
                 return
@@ -417,10 +577,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if entry.stripUTMParams || settingsStore.globalUTMStrippingEnabled {
                     finalURL = utmStripper.strip(finalURL)
                 }
+                let priv = forcePrivateWindow || entry.openInPrivateWindow
                 openURL(finalURL, withAppAt: resolvedAppURL,
                     profile: entry.profileId,
                     bundleId: entry.bundleIdentifier,
-                    privateWindow: entry.openInPrivateWindow,
+                    privateWindow: priv,
                     customLaunchArgs: entry.customLaunchArgs)
             } else {
                 showPicker(for: processedURL)
@@ -449,7 +610,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // §27: holdShift without Shift → open in first resolvable email client
         if settingsStore.activationMode == .holdShift && !modifiers.contains(.shift) {
             if let client = clients.first(where: { appURL(for: $0.bundleIdentifier) != nil }),
                let resolvedURL = appURL(for: client.bundleIdentifier) {
@@ -459,7 +619,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     privateWindow: client.openInPrivateWindow,
                     customLaunchArgs: client.customLaunchArgs)
             } else {
-                // No resolvable email client — fall through to system handler
                 NSWorkspace.shared.open(url)
             }
             return
@@ -486,7 +645,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isEmail {
             entries = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
         } else {
-            // §55: Use isInstalled flag instead of redundant appURL IPC per entry
             entries = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
         }
 
@@ -533,7 +691,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     entry: entry, url: finalURL, isEmail: isEmail)
             },
             onCopy: { [weak self] url in
-                // §25: Suppress clipboard monitor detection of our own write
                 self?.clipboardMonitor?.suppressNextChange = true
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(
@@ -542,8 +699,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onDismiss: { [weak self] panel in
                 guard self?.pickerPanel === panel else { return }
                 self?.pickerPanel = nil
-                // If preferences isn't open, revert to .accessory so
-                // the picker doesn't leave an icon in Cmd+Tab.
                 if NSApp.activationPolicy() == .regular {
                     let prefsOpen = NSApp.windows.contains { window in
                         !(window is NSPanel) && window.isVisible && window.frame.width > 100
@@ -563,7 +718,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         finalURL = urlRewriter.applyBrowserRewrites(
             to: finalURL, browser: entry)
 
-        // Apply UTM stripping: per-browser > global
         if entry.stripUTMParams {
             finalURL = utmStripper.strip(finalURL)
         } else if settingsStore.globalUTMStrippingEnabled {
@@ -604,14 +758,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 url: url, appName: appName) {
                 return
             }
-            // Fall through to normal open if AppleScript failed (e.g. non-English locale)
         }
 
         // Custom CLI launch: run the app executable with user-defined args
         if let template = customLaunchArgs, !template.isEmpty {
             let execURL: URL
             if appURL.pathExtension == "app" {
-                // .app bundle — find the real executable inside
                 if let bundle = Bundle(url: appURL),
                    let exec = bundle.executableURL {
                     execURL = exec
@@ -622,14 +774,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         .appendingPathComponent(name)
                 }
             } else {
-                // Bare executable (path stored as bundleIdentifier)
                 execURL = appURL
             }
 
             var args = shellSplitArguments(template)
                 .map { $0.replacingOccurrences(of: "$URL", with: url.absoluteString) }
 
-            // Also honor profile and private-window settings
             if let profile, let bundleId {
                 args.append(contentsOf: ProfileLaunchHelper.launchArguments(
                     forProfile: profile, browserBundleId: bundleId))
@@ -642,7 +792,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let process = Process()
             process.executableURL = execURL
             process.arguments = args
-            // §51: Set termination handler to log completion/failure
             process.terminationHandler = { proc in
                 if proc.terminationStatus != 0 {
                     let status = proc.terminationStatus
@@ -672,9 +821,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserBundleId: bundleId))
         }
 
-        // When arguments are present, launch the executable directly via Process
-        // so that arguments like --profile-directory and --incognito are honored
-        // even when the browser is already running (NSWorkspace ignores them).
         if !arguments.isEmpty {
             let execURL: URL
             if appURL.pathExtension == "app" {
@@ -709,7 +855,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 YojamLogger.shared.log("Profile launch failed: \(error.localizedDescription)")
-                // Fall back to standard NSWorkspace launch
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 config.arguments = arguments
@@ -755,7 +900,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tokens
     }
 
-    // §19: Iterate until an enabled browser actually resolves, not just the first enabled
     private func openInDefaultBrowser(_ url: URL) {
         guard let first = browserManager.browsers.first(where: { entry in
             entry.enabled && appURL(for: entry.bundleIdentifier) != nil
@@ -786,7 +930,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .alwaysFirst:
             return 0
         case .lastUsed:
-            // Look up last-used UUID in the filtered entries list, not the full list
             if let lastId = browserManager.lastUsedId(isEmail: isEmail),
                let idx = entries.firstIndex(where: { $0.id == lastId }) {
                 return idx
@@ -801,14 +944,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                }) {
                 return idx
             }
-            // §53: Removed redundant ruleEngine.evaluate — this block is only reachable
-            // when the global evaluate in Step 4 already failed to find a match.
             return 0
         }
     }
 
     /// Resolve a browser entry's identifier to an app/executable URL.
-    /// Handles both real bundle IDs and bare executable paths.
     func appURL(for bundleId: String) -> URL? {
         if bundleId.hasPrefix("/") {
             let url = URL(fileURLWithPath: bundleId)
@@ -843,30 +983,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
 
-        // Activate and bring the Settings window to front.
-        // Uses a polling approach: the window may not exist yet on
-        // reopen (SwiftUI recreates it lazily after Cmd+W).
         self.bringPreferencesToFront(attempts: 5)
-
-        // Watch for all windows closing to hide from Cmd+Tab again
         startWindowCloseObserver()
     }
 
     private func bringPreferencesToFront(attempts: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            // Re-assert .regular in case the window server was slow
-            // to process the initial policy change (common on first launch).
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
             }
             NSApp.activate()
-            // Find any non-panel window — don't filter on isVisible or size
-            // since SwiftUI may still be laying it out.
             for window in NSApp.windows where !(window is NSPanel) {
                 window.makeKeyAndOrderFront(nil)
                 return
             }
-            // Window doesn't exist yet, retry
             if attempts > 1 {
                 self?.bringPreferencesToFront(attempts: attempts - 1)
             }
@@ -879,8 +1009,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startWindowCloseObserver() {
         stopWindowCloseObserver()
 
-        // Find the Settings window after a short delay (gives SwiftUI
-        // time to present it) and observe its visibility via KVO.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             let settingsWindow = NSApp.windows.first { window in
@@ -901,9 +1029,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Belt-and-suspenders: poll every 0.5s using the window server
-        // as the source of truth (bypasses any stale isVisible state).
-        // §47: Reduced polling frequency (was 0.5s)
         windowCheckTimer = Timer.scheduledTimer(
             withTimeInterval: 2.0, repeats: true
         ) { [weak self] _ in
@@ -911,8 +1036,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Ask the window server directly whether this process has any
-    /// normal-layer (non-panel) windows on screen.
     private func checkWindowServerAndHide() {
         let pid = ProcessInfo.processInfo.processIdentifier
         guard let infoList = CGWindowListCopyWindowInfo(
@@ -924,9 +1047,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let ownerPID = info[kCGWindowOwnerPID] as? Int32,
                   ownerPID == pid,
                   let layer = info[kCGWindowLayer] as? Int,
-                  layer == 0  // kCGNormalWindowLevel
+                  layer == 0
             else { return false }
-            // Ignore tiny internal windows
             if let bounds = info[kCGWindowBounds] as? [String: CGFloat],
                let w = bounds["Width"], let h = bounds["Height"],
                w <= 1 || h <= 1 {
