@@ -15,7 +15,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "YojamCore", targets: ["YojamCore"]),
-        .executable(name: "Yojam", targets: ["Yojam"])
+        .executable(name: "Yojam", targets: ["Yojam"]),
+        .executable(name: "yojam-cli", targets: ["YojamCLI"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
@@ -34,6 +35,12 @@ let package = Package(
             path: "Sources/Yojam",
             exclude: ["Resources/Info.plist", "Resources/Yojam.entitlements", "Resources/menubar.svg"],
             resources: [.process("Resources")]
+        ),
+        .executableTarget(
+            name: "YojamCLI",
+            dependencies: ["YojamCore"],
+            path: "Sources/YojamCLI",
+            exclude: ["YojamCLI.entitlements"]
         ),
         .testTarget(
             name: "YojamTests",

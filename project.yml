@@ -216,6 +216,28 @@ targets:
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
 
+  YojamCLI:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/YojamCLI
+        excludes:
+          - YojamCLI.entitlements
+    dependencies:
+      - target: YojamCore
+        embed: false
+    entitlements:
+      path: Sources/YojamCLI/YojamCLI.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.CLI
+        PRODUCT_NAME: yojam-cli
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Sources/YojamCLI/YojamCLI.entitlements
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+
   YojamTests:
     type: bundle.unit-test
     platform: macOS
