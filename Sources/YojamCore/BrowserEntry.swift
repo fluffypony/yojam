@@ -59,6 +59,35 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         if let profileName { return "\(displayName) — \(profileName)" }
         return displayName
     }
+
+    // Manual Codable to tolerate schema evolution: any new field uses
+    // decodeIfPresent with a default, so older persisted JSON doesn't crash.
+    enum CodingKeys: String, CodingKey {
+        case id, bundleIdentifier, displayName, enabled, position
+        case profileId, profileName, stripUTMParams, openInPrivateWindow
+        case rewriteRules, source, isInstalled, lastSeenAt, lastModifiedAt
+        case customIconData, customLaunchArgs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        bundleIdentifier = try c.decode(String.self, forKey: .bundleIdentifier)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? bundleIdentifier
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        position = try c.decodeIfPresent(Int.self, forKey: .position) ?? 0
+        profileId = try c.decodeIfPresent(String.self, forKey: .profileId)
+        profileName = try c.decodeIfPresent(String.self, forKey: .profileName)
+        stripUTMParams = try c.decodeIfPresent(Bool.self, forKey: .stripUTMParams) ?? false
+        openInPrivateWindow = try c.decodeIfPresent(Bool.self, forKey: .openInPrivateWindow) ?? false
+        rewriteRules = try c.decodeIfPresent([URLRewriteRule].self, forKey: .rewriteRules) ?? []
+        source = try c.decodeIfPresent(BrowserSource.self, forKey: .source) ?? .autoDetected
+        isInstalled = try c.decodeIfPresent(Bool.self, forKey: .isInstalled) ?? true
+        lastSeenAt = try c.decodeIfPresent(Date.self, forKey: .lastSeenAt)
+        lastModifiedAt = try c.decodeIfPresent(Date.self, forKey: .lastModifiedAt)
+        customIconData = try c.decodeIfPresent(Data.self, forKey: .customIconData)
+        customLaunchArgs = try c.decodeIfPresent(String.self, forKey: .customLaunchArgs)
+    }
 }
 
 public enum BrowserSource: String, Codable, Sendable {

@@ -368,6 +368,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 effectiveReason = "Suggested based on your history for \(finalURL.host ?? domain)"
             }
 
+            guard !entries.isEmpty else {
+                if isEmail { NSWorkspace.shared.open(finalURL) }
+                else { openInDefaultBrowser(finalURL) }
+                return
+            }
             let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
             pickerPanel?.close()
             pickerPanel = PickerPanel(

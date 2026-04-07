@@ -17,13 +17,15 @@ public enum IncomingLinkExtractor {
            ["http", "https", "mailto"].contains(scheme) {
             return incoming
         }
-        guard incoming.isFileURL else { return incoming }
+        // Reject non-file, non-routable remote URLs (e.g. ftp://, data://)
+        guard incoming.isFileURL else { return nil }
         let ext = incoming.pathExtension.lowercased()
 
         // Allowlist of local file extensions we will route.
+        // HTML files are excluded: file:// URLs pass through to URLSanitizer
+        // which rejects non-http(s)/mailto schemes, so they'd be silently
+        // dropped anyway. Let the system handle local HTML normally.
         switch ext {
-        case "html", "xhtml", "htm":
-            return incoming  // keep current behavior: open local HTML
         case "webloc", "inetloc":
             return parseInternetLocation(incoming)
         case "url":
@@ -36,8 +38,10 @@ public enum IncomingLinkExtractor {
     private static func parseInternetLocation(_ fileURL: URL) -> URL? {
         let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         if let size = attrs?[.size] as? Int, size > maxFileSize { return nil }
-        guard let data = try? Data(contentsOf: fileURL),
-              let plist = try? PropertyListSerialization.propertyList(
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        // Post-read size guard in case attributesOfItem failed (permission denied)
+        guard data.count <= maxFileSize else { return nil }
+        guard let plist = try? PropertyListSerialization.propertyList(
                   from: data, options: [], format: nil) as? [String: Any],
               let urlString = plist["URL"] as? String,
               let parsed = URL(string: urlString),
@@ -48,10 +52,25 @@ public enum IncomingLinkExtractor {
     }
 
     private static func parseWindowsURLShortcut(_ fileURL: URL) -> URL? {
-        // INI format: look for `URL=…` line.
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+        // Size guard: same limit as internet-location files
+        let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        if let size = attrs?[.size] as? Int, size > maxFileSize { return nil }
+        // Try multiple encodings: Windows .url files are typically Windows-1252 or UTF-8
+        let contents: String
+        if let utf8 = try? String(contentsOf: fileURL, encoding: .utf8) {
+            contents = utf8
+        } else if let latin1 = try? String(contentsOf: fileURL, encoding: .windowsCP1252) {
+            contents = latin1
+        } else if let utf16 = try? String(contentsOf: fileURL, encoding: .utf16) {
+            contents = utf16
+        } else {
+            return nil
+        }
+        guard contents.count <= maxFileSize else { return nil }
+        // INI format: look for `URL=…` line, strip `;` comments
         for line in contents.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix(";") { continue }
             if trimmed.hasPrefix("URL=") {
                 let raw = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
                 if let parsed = URL(string: raw),

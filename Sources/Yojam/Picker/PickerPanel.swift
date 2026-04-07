@@ -45,7 +45,7 @@ final class PickerPanel: NSPanel {
         let displayEntries: [BrowserEntry]
         let adjustedPreselection: Int
         if settingsStore.pickerInvertOrder {
-            displayEntries = entries.reversed()
+            displayEntries = Array(entries.reversed())
             adjustedPreselection = entries.count - 1 - preselectedIndex
         } else {
             displayEntries = entries

@@ -40,6 +40,22 @@ public enum RegexMatcher: Sendable {
     public static func replaceMatches(in input: String, pattern: String, replacement: String) -> String {
         guard input.count < 8192 else { return input }
         guard let regex = cachedRegex(pattern: pattern) else { return input }
+        // Validate template backreferences to avoid NSInvalidArgumentException
+        // crash from invalid $99-style references.
+        let maxGroup = regex.numberOfCaptureGroups
+        let backrefPattern = try? NSRegularExpression(pattern: "\\$(\\d+)")
+        if let backrefPattern {
+            let range = NSRange(replacement.startIndex..., in: replacement)
+            let matches = backrefPattern.matches(in: replacement, range: range)
+            for match in matches {
+                if let groupRange = Range(match.range(at: 1), in: replacement),
+                   let groupNum = Int(replacement[groupRange]),
+                   groupNum > maxGroup {
+                    logger.warning("Invalid backreference $\(groupNum) in template (max \(maxGroup) groups)")
+                    return input
+                }
+            }
+        }
         return regex.stringByReplacingMatches(
             in: input,
             range: NSRange(input.startIndex..., in: input),
