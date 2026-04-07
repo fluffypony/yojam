@@ -67,7 +67,8 @@ struct IntegrationsTab: View {
                     helpText: HelpText.Integrations.defaultBrowser,
                     action: ("Set as Default", {
                         DefaultBrowserManager.promptSetDefault()
-                        refreshStatus()
+                        // Delay refresh — promptSetDefault uses async NSWorkspace APIs
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { refreshStatus() }
                     })
                 )
                 IntegrationRow(
@@ -80,7 +81,8 @@ struct IntegrationsTab: View {
                     helpText: HelpText.Integrations.weblocHandler,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
-                        refreshStatus()
+                        // Delay refresh — promptSetDefault uses async NSWorkspace APIs
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { refreshStatus() }
                     }),
                     isLast: false
                 )
@@ -94,7 +96,8 @@ struct IntegrationsTab: View {
                     helpText: HelpText.Integrations.yojamScheme,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
-                        refreshStatus()
+                        // Delay refresh — promptSetDefault uses async NSWorkspace APIs
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { refreshStatus() }
                     }),
                     isLast: false
                 )

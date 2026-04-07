@@ -100,26 +100,35 @@ final class ChangeReconciler {
             }
         }
 
-        // Bundle-ID-based: defer LS IPC to background
+        // Bundle-ID-based: defer LS IPC to background.
+        // Keep these IDs in currentIds (and thus knownBrowserIds) until
+        // the deferred check confirms they're truly gone, so they aren't
+        // dropped from the persisted installed-ID set prematurely.
+        for id in bundleRemoved { currentIds.insert(id) }
         if !bundleRemoved.isEmpty {
             let idsToCheck = bundleRemoved
             Task.detached {
-                var stillInstalled: Set<String> = []
+                var confirmed: Set<String> = []
                 for bundleId in idsToCheck {
                     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil {
-                        stillInstalled.insert(bundleId)
+                        confirmed.insert(bundleId)
                     }
                 }
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     for bundleId in idsToCheck {
-                        if stillInstalled.contains(bundleId) {
-                            // App still exists — keep in known set
+                        if confirmed.contains(bundleId) {
+                            // Still installed — already in knownBrowserIds
                         } else {
+                            self.knownBrowserIds.remove(bundleId)
                             self.browserManager.handleAppRemoved(bundleId: bundleId)
                             self.ruleEngine.disableRulesForApp(bundleId)
                         }
                     }
+                    // Re-persist after deferred resolution
+                    let allInstalled = Array(self.knownBundleIds)
+                    SharedRoutingStore().defaults.set(allInstalled,
+                        forKey: SharedRoutingStore.Keys.installedBundleIds)
                 }
             }
         }
