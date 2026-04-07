@@ -13,6 +13,9 @@ final class ChangeReconciler {
     private var knownBundleIds: Set<String> {
         knownBrowserIds.union(knownEmailIds)
     }
+    // P11: Cache (bundleId, appURL, mtime) to skip re-reading Info.plist
+    // when the app binary hasn't changed on disk.
+    private var appInfoCache: [URL: (bundleId: String, mtime: Date)] = [:]
 
     init(browserManager: BrowserManager, ruleEngine: RuleEngine) {
         self.browserManager = browserManager
@@ -21,16 +24,28 @@ final class ChangeReconciler {
         knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
     }
 
+    // P11: Resolve bundleId from appURL using mtime cache to skip redundant reads
+    private func cachedBundleId(for appURL: URL) -> String? {
+        let mtime = (try? FileManager.default.attributesOfItem(
+            atPath: appURL.path)[.modificationDate] as? Date) ?? .distantPast
+        if let cached = appInfoCache[appURL], cached.mtime == mtime {
+            return cached.bundleId
+        }
+        guard let infoDict = CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?,
+              let bundleId = infoDict["CFBundleIdentifier"] as? String else { return nil }
+        appInfoCache[appURL] = (bundleId, mtime)
+        return bundleId
+    }
+
     func reconcile() {
         // HTTP handler discovery
         let httpHandlers = NSWorkspace.shared.urlsForApplications(
             toOpen: URL(string: "https://example.com")!)
-        var currentIds = Set(
-            httpHandlers.compactMap { Bundle(url: $0)?.bundleIdentifier })
+        // P11: Use mtime-cached bundle ID lookup instead of Bundle(url:) per handler
+        var currentIds = Set(httpHandlers.compactMap { cachedBundleId(for: $0) })
 
         for appURL in httpHandlers {
-            guard let bundleId = CFBundleCopyInfoDictionaryForURL(appURL as CFURL)
-                    .map({ ($0 as NSDictionary)["CFBundleIdentifier"] as? String }) ?? nil,
+            guard let bundleId = cachedBundleId(for: appURL),
                   bundleId != Bundle.main.bundleIdentifier,
                   !knownBrowserIds.contains(bundleId) else { continue }
             appDiscovered(bundleId: bundleId, appURL: appURL)
@@ -41,8 +56,7 @@ final class ChangeReconciler {
             toOpen: URL(string: "mailto:test@example.com")!)
         var emailClientsChanged = false
         for appURL in mailtoHandlers {
-            guard let bundleId = CFBundleCopyInfoDictionaryForURL(appURL as CFURL)
-                    .map({ ($0 as NSDictionary)["CFBundleIdentifier"] as? String }) ?? nil,
+            guard let bundleId = cachedBundleId(for: appURL),
                   bundleId != Bundle.main.bundleIdentifier else { continue }
             currentIds.insert(bundleId)
             knownEmailIds.insert(bundleId)
@@ -55,8 +69,7 @@ final class ChangeReconciler {
                     emailClientsChanged = true
                 }
             } else {
-                let infoDict = CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?
-                let name = infoDict?["CFBundleName"] as? String
+                let name = (CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?)?["CFBundleName"] as? String
                     ?? appURL.deletingPathExtension().lastPathComponent
                 let entry = BrowserEntry(
                     bundleIdentifier: bundleId, displayName: name,
@@ -71,20 +84,43 @@ final class ChangeReconciler {
         }
 
         // §9: Verify actual existence before removing — retain manual path-based entries
+        // P11: Defer the LSCopyDefault/urlForApplication IPC to a background task
+        // for non-path bundle IDs, then apply results on main actor.
         let removed = knownBundleIds.subtracting(currentIds)
-        for bundleId in removed {
-            let stillExists: Bool
-            if bundleId.hasPrefix("/") {
-                stillExists = FileManager.default.isExecutableFile(atPath: bundleId)
-            } else {
-                stillExists = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
-            }
+        let pathRemoved = removed.filter { $0.hasPrefix("/") }
+        let bundleRemoved = removed.subtracting(pathRemoved)
 
-            if stillExists {
+        // Path-based: check synchronously (just a stat call)
+        for bundleId in pathRemoved {
+            if FileManager.default.isExecutableFile(atPath: bundleId) {
                 currentIds.insert(bundleId)
             } else {
                 browserManager.handleAppRemoved(bundleId: bundleId)
                 ruleEngine.disableRulesForApp(bundleId)
+            }
+        }
+
+        // Bundle-ID-based: defer LS IPC to background
+        if !bundleRemoved.isEmpty {
+            let idsToCheck = bundleRemoved
+            Task.detached {
+                var stillInstalled: Set<String> = []
+                for bundleId in idsToCheck {
+                    if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil {
+                        stillInstalled.insert(bundleId)
+                    }
+                }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    for bundleId in idsToCheck {
+                        if stillInstalled.contains(bundleId) {
+                            // App still exists — keep in known set
+                        } else {
+                            self.browserManager.handleAppRemoved(bundleId: bundleId)
+                            self.ruleEngine.disableRulesForApp(bundleId)
+                        }
+                    }
+                }
             }
         }
         // B-PATHS: Verify path-based entries that don't come from urlsForApplications
@@ -100,12 +136,10 @@ final class ChangeReconciler {
         }
         if pathBrowsersChanged { browserManager.save() }
 
-        knownBrowserIds = currentIds.intersection(knownBrowserIds.union(
-            Set(httpHandlers.compactMap {
-                CFBundleCopyInfoDictionaryForURL($0 as CFURL)
-                    .map { ($0 as NSDictionary)["CFBundleIdentifier"] as? String } ?? nil
-            })
-        ))
+        // P11: Rebuild from currentIds which already used the mtime cache
+        knownBrowserIds = currentIds.intersection(
+            knownBrowserIds.union(Set(httpHandlers.compactMap { cachedBundleId(for: $0) }))
+        )
         knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
 
         // Persist installed bundle IDs for CLI/native-host preview filtering

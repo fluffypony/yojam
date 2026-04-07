@@ -5,6 +5,14 @@ struct IntegrationsTab: View {
     @ObservedObject var settingsStore: SettingsStore
     @Binding var scrollToSection: String?
 
+    // P7: Cache integration status at appear to avoid LaunchServices IPC in body
+    @State private var isDefaultBrowser = false
+    @State private var isWeblocHandler = false
+    @State private var isYojamSchemeRegistered = false
+    @State private var isChromeHostInstalled = false
+    @State private var isFirefoxHostInstalled = false
+    @State private var isAppGroupAccessible = false
+
     var body: some View {
         VStack(spacing: 0) {
             ThemeContentHeader(
@@ -30,6 +38,16 @@ struct IntegrationsTab: View {
             }
         }
         .background(Theme.bgApp)
+        .onAppear { refreshStatus() }
+    }
+
+    private func refreshStatus() {
+        isDefaultBrowser = DefaultBrowserManager.isDefaultBrowser
+        isWeblocHandler = DefaultBrowserManager.isWeblocHandler
+        isYojamSchemeRegistered = DefaultBrowserManager.isYojamSchemeRegistered
+        isChromeHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Chrome")
+        isFirefoxHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Firefox")
+        isAppGroupAccessible = UserDefaults(suiteName: SharedRoutingStore.suiteName) != nil
     }
 
     // MARK: - System Registrations
@@ -42,38 +60,41 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Default browser",
                     icon: "globe",
-                    status: DefaultBrowserManager.isDefaultBrowser ? .ok : .warning,
-                    detail: DefaultBrowserManager.isDefaultBrowser
+                    status: isDefaultBrowser ? .ok : .warning,
+                    detail: isDefaultBrowser
                         ? "Yojam is your default browser"
                         : "Yojam is not the default browser",
                     helpText: HelpText.Integrations.defaultBrowser,
                     action: ("Set as Default", {
                         DefaultBrowserManager.promptSetDefault()
+                        refreshStatus()
                     })
                 )
                 IntegrationRow(
                     name: ".webloc handler",
                     icon: "doc.text",
-                    status: DefaultBrowserManager.isWeblocHandler ? .ok : .info,
-                    detail: DefaultBrowserManager.isWeblocHandler
+                    status: isWeblocHandler ? .ok : .info,
+                    detail: isWeblocHandler
                         ? "Yojam handles internet-location files"
                         : "Not registered for .webloc files",
                     helpText: HelpText.Integrations.weblocHandler,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
+                        refreshStatus()
                     }),
                     isLast: false
                 )
                 IntegrationRow(
                     name: "yojam:// scheme",
                     icon: "link",
-                    status: DefaultBrowserManager.isYojamSchemeRegistered ? .ok : .warning,
-                    detail: DefaultBrowserManager.isYojamSchemeRegistered
+                    status: isYojamSchemeRegistered ? .ok : .warning,
+                    detail: isYojamSchemeRegistered
                         ? "Registered"
                         : "Not registered",
                     helpText: HelpText.Integrations.yojamScheme,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
+                        refreshStatus()
                     }),
                     isLast: false
                 )
@@ -137,26 +158,28 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Chrome / Chromium",
                     icon: "network",
-                    status: NativeMessagingInstaller.isManifestInstalled(for: "Chrome") ? .ok : .notInstalled,
-                    detail: NativeMessagingInstaller.isManifestInstalled(for: "Chrome")
+                    status: isChromeHostInstalled ? .ok : .notInstalled,
+                    detail: isChromeHostInstalled
                         ? "Manifest installed"
                         : "Not installed",
                     helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
                         NativeMessagingInstaller.installAll()
+                        refreshStatus()
                     }),
                     isLast: false
                 )
                 IntegrationRow(
                     name: "Firefox",
                     icon: "flame",
-                    status: NativeMessagingInstaller.isManifestInstalled(for: "Firefox") ? .ok : .notInstalled,
-                    detail: NativeMessagingInstaller.isManifestInstalled(for: "Firefox")
+                    status: isFirefoxHostInstalled ? .ok : .notInstalled,
+                    detail: isFirefoxHostInstalled
                         ? "Manifest installed"
                         : "Not installed",
                     helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
                         NativeMessagingInstaller.installAll()
+                        refreshStatus()
                     }),
                     isLast: false
                 )
@@ -165,6 +188,7 @@ struct IntegrationsTab: View {
                     Spacer()
                     ThemeButton("Reinstall All Browser Helpers", isPrimary: true) {
                         NativeMessagingInstaller.installAll()
+                        refreshStatus()
                     }
                     Spacer()
                 }
@@ -183,8 +207,8 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Shared container",
                     icon: "externaldrive",
-                    status: appGroupAccessible ? .ok : .error,
-                    detail: appGroupAccessible
+                    status: isAppGroupAccessible ? .ok : .error,
+                    detail: isAppGroupAccessible
                         ? "App Group container is accessible"
                         : "Cannot access App Group container",
                     helpText: HelpText.Integrations.appGroup,
@@ -195,9 +219,6 @@ struct IntegrationsTab: View {
         .id("App Group Storage")
     }
 
-    private var appGroupAccessible: Bool {
-        UserDefaults(suiteName: SharedRoutingStore.suiteName) != nil
-    }
 }
 
 // MARK: - Integration Row
