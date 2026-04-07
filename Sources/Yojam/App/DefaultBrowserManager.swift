@@ -32,24 +32,31 @@ enum DefaultBrowserManager {
         // Supplementary: older CoreServices API for robustness.
         // This ensures macOS System Settings reflects the change.
         let cfBundleId = bundleId as CFString
-        LSSetDefaultHandlerForURLScheme("http" as CFString, cfBundleId)
-        LSSetDefaultHandlerForURLScheme("https" as CFString, cfBundleId)
-        LSSetDefaultHandlerForURLScheme("mailto" as CFString, cfBundleId)
-        LSSetDefaultRoleHandlerForContentType(
-            "public.html" as CFString, .viewer, cfBundleId)
-        LSSetDefaultRoleHandlerForContentType(
-            "public.xhtml" as CFString, .viewer, cfBundleId)
+        let schemeResults: [(String, OSStatus)] = [
+            ("http", LSSetDefaultHandlerForURLScheme("http" as CFString, cfBundleId)),
+            ("https", LSSetDefaultHandlerForURLScheme("https" as CFString, cfBundleId)),
+            ("mailto", LSSetDefaultHandlerForURLScheme("mailto" as CFString, cfBundleId)),
+            ("yojam", LSSetDefaultHandlerForURLScheme("yojam" as CFString, cfBundleId)),
+        ]
+        for (scheme, status) in schemeResults where status != noErr {
+            YojamLogger.shared.log("LSSetDefaultHandlerForURLScheme(\(scheme)) failed: \(status)")
+        }
 
-        // Register for internet-location file types (AirDrop .webloc support)
-        LSSetDefaultRoleHandlerForContentType(
-            "com.apple.web-internet-location" as CFString, .viewer, cfBundleId)
-        LSSetDefaultRoleHandlerForContentType(
-            "com.apple.internet-location" as CFString, .viewer, cfBundleId)
-        LSSetDefaultRoleHandlerForContentType(
-            "public.url" as CFString, .viewer, cfBundleId)
-
-        // Register the yojam:// scheme (used by extensions and automation)
-        LSSetDefaultHandlerForURLScheme("yojam" as CFString, cfBundleId)
+        let contentResults: [(String, OSStatus)] = [
+            ("public.html", LSSetDefaultRoleHandlerForContentType(
+                "public.html" as CFString, .viewer, cfBundleId)),
+            ("public.xhtml", LSSetDefaultRoleHandlerForContentType(
+                "public.xhtml" as CFString, .viewer, cfBundleId)),
+            ("com.apple.web-internet-location", LSSetDefaultRoleHandlerForContentType(
+                "com.apple.web-internet-location" as CFString, .viewer, cfBundleId)),
+            ("com.apple.internet-location", LSSetDefaultRoleHandlerForContentType(
+                "com.apple.internet-location" as CFString, .viewer, cfBundleId)),
+            ("public.url", LSSetDefaultRoleHandlerForContentType(
+                "public.url" as CFString, .viewer, cfBundleId)),
+        ]
+        for (type, status) in contentResults where status != noErr {
+            YojamLogger.shared.log("LSSetDefaultRoleHandlerForContentType(\(type)) failed: \(status)")
+        }
 
         YojamLogger.shared.log("Registered as default browser (CoreServices)")
     }

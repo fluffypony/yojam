@@ -474,8 +474,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if incoming.isFileURL {
                 let ext = incoming.pathExtension.lowercased()
                 isInternetLocationFile = ["webloc", "inetloc", "url"].contains(ext)
+                // Only mark as airdrop when source is the sharing daemon.
+                // A nil source with an internet-location file is more likely
+                // a normal Finder open, not AirDrop.
                 let isFromAirDrop = sourceAppBundleId == "com.apple.sharingd"
-                    || sourceAppBundleId == nil && isInternetLocationFile
                 origin = isFromAirDrop ? .airdrop : .fileOpen
             } else {
                 isInternetLocationFile = false

@@ -14,6 +14,10 @@ final class AppInstallMonitor {
 
     init(reconciler: ChangeReconciler) { self.reconciler = reconciler }
 
+    // IMPORTANT: stopMonitoring() must be called before this object is released.
+    // Uses Unmanaged.passUnretained(self) in FSEvents context, so deallocation
+    // without stopping would cause a use-after-free in the callback.
+
     func startMonitoring() {
         let pathsCF = watchedPaths as CFArray
         var context = FSEventStreamContext()

@@ -21,13 +21,23 @@ final class YojamLogger: @unchecked Sendable {
 
     var isEnabled: Bool { UserDefaults.standard.bool(forKey: "debugLogging") }
 
+    /// Sanitize a URL for logging: strips query, fragment, and credentials
+    /// to prevent OAuth/session tokens from ending up in log files.
+    static func sanitize(_ url: URL) -> String {
+        guard var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return "[url]" }
+        c.user = nil; c.password = nil; c.query = nil; c.fragment = nil
+        return c.string ?? "[url]"
+    }
+
     func log(_ message: String, file: String = #file, line: Int = #line) {
-        osLog.info("\(message)")
+        // Cap message length to prevent log bloat from malicious URLs
+        let capped = message.count > 2048 ? String(message.prefix(2048)) + "…[truncated]" : message
+        osLog.info("\(capped)")
         guard isEnabled else { return }
         let fileName = URL(fileURLWithPath: file).lastPathComponent
         queue.async { [self] in
             let timestamp = dateFormatter.string(from: Date())
-            let entry = "[\(timestamp)] [\(fileName):\(line)] \(message)\n"
+            let entry = "[\(timestamp)] [\(fileName):\(line)] \(capped)\n"
             let logFile = logDir.appendingPathComponent("yojam.log")
 
             // §45: Rotate log file if it exceeds 10MB
