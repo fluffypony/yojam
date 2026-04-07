@@ -256,6 +256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Unified Ingress Coordinator
 
+    /// Public entry point for AppIntents and other in-process callers
+    /// that need to route an IncomingLinkRequest through the unified pipeline.
+    func routeIncomingRequest(_ request: IncomingLinkRequest) {
+        enqueueOrHandle(request)
+    }
+
     /// Single entry point for all ingress paths. Queues requests during cold
     /// launch, then routes them once subsystems are ready.
     private func enqueueOrHandle(_ request: IncomingLinkRequest) {
