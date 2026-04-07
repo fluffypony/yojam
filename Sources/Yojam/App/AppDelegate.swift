@@ -233,22 +233,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserManager.save()
                 browserManager.refreshProfileSuggestions()
             }
-            // Now that profiles are assigned, drain pending queue THEN flip the flag.
-            // This ensures URLs arriving during drain don't bypass the queue.
+            // Now that profiles are assigned, drain pending queue.
             // Small delay so the window server has finished processing the
             // activation policy before the picker tries NSApp.activate().
+            // Use enqueueOrHandle so shortlink resolution is applied.
             let requests = self.pendingRequests
             self.pendingRequests.removeAll()
+            // Flip BEFORE drain so enqueueOrHandle doesn't re-queue them.
+            self.isFinishedLaunching = true
             if !requests.isEmpty {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     guard let self else { return }
                     for request in requests {
-                        self.handleIncomingRequest(request)
+                        self.enqueueOrHandle(request)
                     }
                 }
             }
-            // Flip AFTER drain so no incoming URL races ahead of queued ones
-            self.isFinishedLaunching = true
         }
     }
 

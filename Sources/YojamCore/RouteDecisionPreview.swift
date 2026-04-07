@@ -50,6 +50,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
     public static func from(_ decision: RouteDecision) -> RouteDecisionPreview {
         switch decision {
         case .openDirect(let browser, let finalURL, let privateWindow, let reason):
+            let isMailto = finalURL.scheme?.lowercased() == "mailto"
             return RouteDecisionPreview(
                 kind: .openDirect,
                 summary: "Would open in \(browser.fullDisplayName)",
@@ -58,7 +59,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 finalURL: finalURL.absoluteString,
                 reason: reason,
                 privateWindow: privateWindow,
-                isEmail: false,
+                isEmail: isMailto,
                 preselectedDisplayName: nil,
                 pickerCandidates: nil
             )

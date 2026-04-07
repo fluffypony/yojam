@@ -138,10 +138,23 @@ while let req = readMessage() {
             continue
         }
 
+        // Resolve shortlinks if enabled, to match real routing behavior
+        var resolvedURL = targetURL
+        if config.shortlinkResolutionEnabled,
+           let host = targetURL.host?.lowercased(),
+           ShortlinkResolver.defaultShortenerHosts.contains(host) {
+            let sem = DispatchSemaphore(value: 0)
+            Task {
+                resolvedURL = await ShortlinkResolver.shared.resolve(targetURL)
+                sem.signal()
+            }
+            _ = sem.wait(timeout: .now() + .seconds(4))
+        }
+
         let source = validatedSource(req.source)
         let shiftHeld = req.modifiers?.contains("shift") ?? false
         let request = IncomingLinkRequest(
-            url: targetURL,
+            url: resolvedURL,
             sourceAppBundleId: source,
             origin: .urlScheme,
             modifierFlags: shiftHeld ? (1 << 17) : 0,

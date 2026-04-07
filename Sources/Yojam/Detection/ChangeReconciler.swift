@@ -94,6 +94,11 @@ final class ChangeReconciler {
             })
         ))
         knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
+
+        // Persist installed bundle IDs for CLI/native-host preview filtering
+        let allInstalled = Array(knownBundleIds)
+        SharedRoutingStore().defaults.set(allInstalled,
+            forKey: SharedRoutingStore.Keys.installedBundleIds)
     }
 
     func appDiscovered(bundleId: String, appURL: URL) {

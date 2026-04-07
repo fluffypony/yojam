@@ -17,23 +17,21 @@ final class IncomingLinkExtractorTests: XCTestCase {
         XCTAssertEqual(IncomingLinkExtractor.normalize(url)?.absoluteString, "mailto:test@example.com")
     }
 
-    func testLocalHTMLAllowed() {
+    func testLocalHTMLRejected() {
+        // Local HTML files are no longer routed — file:// URLs would be
+        // rejected by URLSanitizer anyway.
         let url = URL(fileURLWithPath: "/tmp/test.html")
-        let result = IncomingLinkExtractor.normalize(url)
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result?.path, "/tmp/test.html")
+        XCTAssertNil(IncomingLinkExtractor.normalize(url))
     }
 
-    func testLocalXHTMLAllowed() {
+    func testLocalXHTMLRejected() {
         let url = URL(fileURLWithPath: "/tmp/test.xhtml")
-        let result = IncomingLinkExtractor.normalize(url)
-        XCTAssertNotNil(result)
+        XCTAssertNil(IncomingLinkExtractor.normalize(url))
     }
 
-    func testLocalHTMAllowed() {
+    func testLocalHTMRejected() {
         let url = URL(fileURLWithPath: "/tmp/test.htm")
-        let result = IncomingLinkExtractor.normalize(url)
-        XCTAssertNotNil(result)
+        XCTAssertNil(IncomingLinkExtractor.normalize(url))
     }
 
     func testArbitraryLocalFileRejected() {
