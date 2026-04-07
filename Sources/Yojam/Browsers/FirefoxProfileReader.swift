@@ -13,7 +13,10 @@ struct FirefoxProfileReader {
             .appendingPathComponent(appSupportName)
         let profilesIni = profilesDir.appendingPathComponent("profiles.ini")
         guard let content = try? String(contentsOf: profilesIni, encoding: .utf8)
-        else { return [] }
+        else {
+            YojamLogger.shared.log("FirefoxProfileReader: profiles.ini not found at \(profilesIni.path)")
+            return []
+        }
 
         // Parse all sections
         var sections: [(header: String, entries: [String: String])] = []
@@ -21,6 +24,7 @@ struct FirefoxProfileReader {
         var currentEntries: [String: String] = [:]
         for line in content.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix(";") || trimmed.hasPrefix("#") { continue } // INI comments
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
                 if !currentHeader.isEmpty {
                     sections.append((currentHeader, currentEntries))

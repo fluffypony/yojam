@@ -11,6 +11,7 @@ struct PipelineTab: View {
     @Binding var scrollToSection: String?
 
     @State private var testURL = ""
+    @State private var testSourceApp = "" // B-URLTESTER: source app for source-scoped rules
     @State private var testPipeline: [PipelineNode] = []
     @State private var testSummary: String?
     @State private var rewriteRules: [URLRewriteRule] = []
@@ -123,6 +124,8 @@ struct PipelineTab: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 ThemeTextField(placeholder: "Paste a URL here to test...", text: $testURL)
+                ThemeTextField(placeholder: "Source app (optional)", text: $testSourceApp)
+                    .frame(width: 160)
                 ThemeButton("Test", help: "Run this URL through the pipeline to see what happens") { runTest() }
             }
 
@@ -402,7 +405,10 @@ struct PipelineTab: View {
     private func runTest() {
         URLTesterTip.hasTestedURL = true
         var input = testURL
-        if !input.contains("://") { input = "https://" + input }
+        // B-URLTESTER: Don't blindly prepend https:// for mailto/file schemes
+        if !input.contains("://") && !input.hasPrefix("mailto:") && !input.hasPrefix("file:") {
+            input = "https://" + input
+        }
         guard let url = URL(string: input) else {
             testPipeline = [PipelineNode(label: "Invalid URL", isActive: false, isFinal: false)]
             testSummary = nil
@@ -431,7 +437,8 @@ struct PipelineTab: View {
             processedURL = stripped
         }
 
-        if let match = ruleEngine.evaluate(processedURL) {
+        let sourceApp = testSourceApp.isEmpty ? nil : testSourceApp
+        if let match = ruleEngine.evaluate(processedURL, sourceAppBundleId: sourceApp) {
             let host = processedURL.host ?? ""
             nodes.append(PipelineNode(label: "Match: \(host)", icon: "globe", isActive: true))
             nodes.append(.arrow)
@@ -568,6 +575,11 @@ struct AddRuleSheet: View {
                     }
                     fieldRow("Pattern") {
                         ThemeTextField(placeholder: "e.g. github.com/my-company/*", text: $pattern, isMono: true)
+                        if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
+                            Text("Invalid regex pattern")
+                                .font(.system(size: 10))
+                                .foregroundColor(Theme.destructive)
+                        }
                     }
                     fieldRow("Target App") {
                         HStack(spacing: 8) {
@@ -654,8 +666,10 @@ struct AddRuleSheet: View {
                     ruleEngine.addRule(rule)
                     onDismiss()
                 }
-                .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty)
-                .opacity(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty ? 0.5 : 1)
+                .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty
+                          || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern)))
+                .opacity(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty
+                         || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern)) ? 0.5 : 1)
             }
             .padding(16)
         }
@@ -710,6 +724,11 @@ struct AddRewriteSheet: View {
                 }
                 fieldRow("Match Pattern", helpText: HelpText.Pipeline.rewriteMatch) {
                     ThemeTextField(placeholder: "^https://twitter\\.com/(.*)", text: $matchPattern, isMono: true)
+                    if isRegex && !matchPattern.isEmpty && !RegexMatcher.isValid(pattern: matchPattern) {
+                        Text("Invalid regex pattern")
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.destructive)
+                    }
                 }
                 fieldRow("Replacement", helpText: HelpText.Pipeline.rewriteReplacement) {
                     ThemeTextField(placeholder: "https://nitter.net/$1", text: $replacement, isMono: true)
@@ -738,8 +757,10 @@ struct AddRewriteSheet: View {
                     onAdd(rule)
                     onDismiss()
                 }
-                .disabled(name.isEmpty || matchPattern.isEmpty)
-                .opacity(name.isEmpty || matchPattern.isEmpty ? 0.5 : 1)
+                .disabled(name.isEmpty || matchPattern.isEmpty
+                          || (isRegex && !RegexMatcher.isValid(pattern: matchPattern)))
+                .opacity(name.isEmpty || matchPattern.isEmpty
+                         || (isRegex && !RegexMatcher.isValid(pattern: matchPattern)) ? 0.5 : 1)
             }
             .padding(16)
         }

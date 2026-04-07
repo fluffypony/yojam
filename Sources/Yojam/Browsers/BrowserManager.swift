@@ -174,34 +174,39 @@ final class BrowserManager: ObservableObject {
     }
 
     /// Regenerate suggested browser entries for profiles not yet in the active list.
+    /// P5/B-PROFILEDISC: Runs file I/O in Task.detached, publishes results back on main.
     func refreshProfileSuggestions() {
-        let discovery = ProfileDiscovery()
-        // Collect all (bundleId, profileId) pairs already active
         let activeKeys = Set(browsers.map { "\($0.bundleIdentifier)|\($0.profileId ?? "")" })
-
-        // For each unique bundle ID in the active list, discover profiles
         let activeBundleIds = Set(browsers.map(\.bundleIdentifier))
-        var profileSuggestions: [BrowserEntry] = []
-        for bundleId in activeBundleIds {
-            let profiles = discovery.discoverProfiles(for: bundleId)
-            let named = profiles.filter { !$0.name.isEmpty }
-            guard named.count > 1 else { continue }
-            let baseName = browsers.first(where: { $0.bundleIdentifier == bundleId })?.displayName ?? bundleId
-            for profile in named {
-                let key = "\(bundleId)|\(profile.id)"
-                if !activeKeys.contains(key) {
-                    profileSuggestions.append(BrowserEntry(
-                        bundleIdentifier: bundleId,
-                        displayName: baseName,
-                        profileId: profile.id,
-                        profileName: profile.name,
-                        source: .suggested))
+        let baseNames = Dictionary(
+            browsers.map { ($0.bundleIdentifier, $0.displayName) },
+            uniquingKeysWith: { first, _ in first })
+
+        Task.detached { [activeKeys, activeBundleIds, baseNames] in
+            let discovery = ProfileDiscovery()
+            var profileSuggestions: [BrowserEntry] = []
+            for bundleId in activeBundleIds {
+                let profiles = discovery.discoverProfiles(for: bundleId)
+                let named = profiles.filter { !$0.name.isEmpty }
+                guard named.count > 1 else { continue }
+                let baseName = baseNames[bundleId] ?? bundleId
+                for profile in named {
+                    let key = "\(bundleId)|\(profile.id)"
+                    if !activeKeys.contains(key) {
+                        profileSuggestions.append(BrowserEntry(
+                            bundleIdentifier: bundleId,
+                            displayName: baseName,
+                            profileId: profile.id,
+                            profileName: profile.name,
+                            source: .suggested))
+                    }
                 }
             }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.suggestedBrowsers = self.suggestedBrowsers.filter { $0.profileId == nil } + profileSuggestions
+            }
         }
-
-        // Merge: keep non-profile suggestions + add fresh profile suggestions
-        suggestedBrowsers = suggestedBrowsers.filter { $0.profileId == nil } + profileSuggestions
     }
 
     func handleAppInstalled(bundleId: String, appURL: URL) {

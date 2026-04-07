@@ -403,7 +403,13 @@ final class SettingsStore: ObservableObject {
             pickerLayout: pickerLayout,
             pickerInvertOrder: pickerInvertOrder,
             recentURLRetention: recentURLRetention,
-            recentURLRetentionMinutes: recentURLRetentionMinutes
+            recentURLRetentionMinutes: recentURLRetentionMinutes,
+            learnedDomainPreferences: {
+                guard let data = sharedDefaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
+                      let decoded = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
+                else { return [:] }
+                return decoded
+            }()
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -468,6 +474,11 @@ final class SettingsStore: ObservableObject {
         utmStripList = imported.utmStripList
         // Clamp to prevent clipboard-check O(n) blow-up
         suppressedClipboardDomains = Array(imported.suppressedClipboardDomains.prefix(1000))
+        // Restore learned domain preferences
+        if !imported.learnedDomainPreferences.isEmpty,
+           let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
+            sharedDefaults.set(data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
+        }
     }
 
     func resetToDefaults() {
@@ -530,6 +541,7 @@ struct SettingsExport: Codable {
     var pickerInvertOrder: Bool
     var recentURLRetention: RecentURLRetention
     var recentURLRetentionMinutes: Int
+    var learnedDomainPreferences: [String: [String: Int]]
 
     enum CodingKeys: String, CodingKey {
         case version, activationMode, defaultSelection, verticalThreshold
@@ -539,6 +551,7 @@ struct SettingsExport: Codable {
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
         case pickerLayout, pickerInvertOrder
         case recentURLRetention, recentURLRetentionMinutes
+        case learnedDomainPreferences
     }
 
     init(version: Int, activationMode: ActivationMode,
@@ -551,7 +564,8 @@ struct SettingsExport: Codable {
          utmStripList: [String], suppressedClipboardDomains: [String] = [],
          pickerLayout: PickerLayout = .auto, pickerInvertOrder: Bool = false,
          recentURLRetention: RecentURLRetention = .forever,
-         recentURLRetentionMinutes: Int = 30) {
+         recentURLRetentionMinutes: Int = 30,
+         learnedDomainPreferences: [String: [String: Int]] = [:]) {
         self.version = version
         self.activationMode = activationMode
         self.defaultSelection = defaultSelection
@@ -573,6 +587,7 @@ struct SettingsExport: Codable {
         self.pickerInvertOrder = pickerInvertOrder
         self.recentURLRetention = recentURLRetention
         self.recentURLRetentionMinutes = recentURLRetentionMinutes
+        self.learnedDomainPreferences = learnedDomainPreferences
     }
 
     // §52: Use decodeIfPresent for all fields to tolerate version migration
@@ -599,5 +614,6 @@ struct SettingsExport: Codable {
         pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false
         recentURLRetention = try container.decodeIfPresent(RecentURLRetention.self, forKey: .recentURLRetention) ?? .forever
         recentURLRetentionMinutes = try container.decodeIfPresent(Int.self, forKey: .recentURLRetentionMinutes) ?? 30
+        learnedDomainPreferences = try container.decodeIfPresent([String: [String: Int]].self, forKey: .learnedDomainPreferences) ?? [:]
     }
 }

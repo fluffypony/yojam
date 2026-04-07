@@ -297,10 +297,23 @@ struct BrowsersTab: View {
                             if panel.runModal() == .OK, let url = panel.url {
                                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                                 let size = attrs?[.size] as? UInt64 ?? 0
-                                guard size < 5_000_000 else { return }
-                                guard let data = try? Data(contentsOf: url) else { return }
+                                guard size < 5_000_000 else {
+                                    YojamLogger.shared.log("Custom icon rejected: \(size) bytes exceeds 5MB limit")
+                                    return
+                                }
+                                guard let data = try? Data(contentsOf: url),
+                                      let image = NSImage(data: data) else { return }
+                                // Resize to 64x64 PNG before persisting to avoid
+                                // bloating UserDefaults and iCloud KVS.
+                                let resized = NSImage(size: NSSize(width: 64, height: 64))
+                                resized.lockFocus()
+                                image.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+                                resized.unlockFocus()
+                                guard let tiff = resized.tiffRepresentation,
+                                      let rep = NSBitmapImageRep(data: tiff),
+                                      let pngData = rep.representation(using: .png, properties: [:]) else { return }
                                 guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
-                                entry.customIconData = data
+                                entry.customIconData = pngData
                                 browserManager.updateBrowser(entry)
                             }
                         }

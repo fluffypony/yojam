@@ -87,6 +87,19 @@ final class ChangeReconciler {
                 ruleEngine.disableRulesForApp(bundleId)
             }
         }
+        // B-PATHS: Verify path-based entries that don't come from urlsForApplications
+        var pathBrowsersChanged = false
+        for i in browserManager.browsers.indices {
+            let entry = browserManager.browsers[i]
+            guard entry.bundleIdentifier.hasPrefix("/") else { continue }
+            let exists = FileManager.default.isExecutableFile(atPath: entry.bundleIdentifier)
+            if entry.isInstalled != exists {
+                browserManager.browsers[i].isInstalled = exists
+                pathBrowsersChanged = true
+            }
+        }
+        if pathBrowsersChanged { browserManager.save() }
+
         knownBrowserIds = currentIds.intersection(knownBrowserIds.union(
             Set(httpHandlers.compactMap {
                 CFBundleCopyInfoDictionaryForURL($0 as CFURL)
