@@ -404,8 +404,24 @@ final class SettingsStore: ObservableObject {
         pickerInvertOrder = imported.pickerInvertOrder
         recentURLRetention = imported.recentURLRetention
         recentURLRetentionMinutes = max(1, min(imported.recentURLRetentionMinutes, 1440))
-        saveBrowsers(imported.browsers)
-        saveEmailClients(imported.emailClients)
+        // Security: disable imported entries with path-based identifiers or
+        // customLaunchArgs — these are code-execution vectors via social engineering.
+        let sanitizedBrowsers = imported.browsers.map { entry -> BrowserEntry in
+            var e = entry
+            if e.bundleIdentifier.hasPrefix("/") || e.customLaunchArgs != nil {
+                e.enabled = false
+            }
+            return e
+        }
+        let sanitizedEmailClients = imported.emailClients.map { entry -> BrowserEntry in
+            var e = entry
+            if e.bundleIdentifier.hasPrefix("/") || e.customLaunchArgs != nil {
+                e.enabled = false
+            }
+            return e
+        }
+        saveBrowsers(sanitizedBrowsers)
+        saveEmailClients(sanitizedEmailClients)
         // Preserve user's built-in rule enable/disable states during import
         let currentRules = loadRules()
         let currentBuiltInStates = Dictionary(
@@ -416,11 +432,19 @@ final class SettingsStore: ObservableObject {
             if let state = currentBuiltInStates[r.id] { r.enabled = state }
             return r
         }
-        allRules.append(contentsOf: imported.rules)
+        // Validate regex patterns in imported rules
+        let validatedImportedRules = imported.rules.filter { rule in
+            if rule.matchType == .regex {
+                return RegexMatcher.isValid(pattern: rule.pattern)
+            }
+            return true
+        }
+        allRules.append(contentsOf: validatedImportedRules)
         saveRules(allRules)
         saveGlobalRewriteRules(imported.globalRewriteRules)
         utmStripList = imported.utmStripList
-        suppressedClipboardDomains = imported.suppressedClipboardDomains
+        // Clamp to prevent clipboard-check O(n) blow-up
+        suppressedClipboardDomains = Array(imported.suppressedClipboardDomains.prefix(1000))
     }
 
     func resetToDefaults() {

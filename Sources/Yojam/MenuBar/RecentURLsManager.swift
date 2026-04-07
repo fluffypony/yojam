@@ -43,6 +43,10 @@ final class RecentURLsManager {
             for r in removed { timestamps.removeValue(forKey: r) }
             recentURLs = Array(recentURLs.prefix(maxRecents))
         }
+        // Clean up orphaned timestamps (covers .forever mode where
+        // purgeExpired doesn't run but URLs get trimmed on overflow)
+        let live = Set(recentURLs)
+        timestamps = timestamps.filter { live.contains($0.key) }
         saveToDefaults()
     }
 
@@ -81,7 +85,7 @@ final class RecentURLsManager {
     private func loadFromDefaults() {
         if let strings = sharedDefaults.stringArray(
             forKey: SharedRoutingStore.Keys.recentURLs) {
-            recentURLs = strings.compactMap { URL(string: $0) }
+            recentURLs = Array(strings.prefix(maxRecents).compactMap { URL(string: $0) })
         }
         if let tsDict = sharedDefaults.dictionary(
             forKey: SharedRoutingStore.Keys.recentURLTimestamps) as? [String: TimeInterval] {

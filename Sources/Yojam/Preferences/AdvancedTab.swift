@@ -306,6 +306,7 @@ struct AdvancedTab: View {
 
     private func resetAll() {
         settingsStore.resetToDefaults()
+        routingSuggestionEngine.clearAll()
         redetectBrowsers()
         ruleEngine.reloadRules()
     }

@@ -8,27 +8,25 @@ function getSourceSentinel() {
   return "com.yojam.source.chrome-extension";
 }
 
-// Toolbar button click — send current tab URL
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.url && (tab.url.startsWith("http://") || tab.url.startsWith("https://"))) {
-    await sendToYojam(tab.url, getSourceSentinel());
-  }
-});
+// chrome.action.onClicked never fires when default_popup is set (dead code — removed).
 
-// Context menu items
-chrome.runtime.onInstalled.addListener(() => {
+// Context menu items — removeAll first to prevent duplicates on update,
+// register on both onInstalled and onStartup.
+async function ensureContextMenus() {
+  await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({
     id: "open-link-in-yojam",
     title: "Open Link in Yojam",
     contexts: ["link"],
   });
-
   chrome.contextMenus.create({
     id: "open-page-in-yojam",
     title: "Open Page in Yojam",
     contexts: ["page"],
   });
-});
+}
+chrome.runtime.onInstalled.addListener(ensureContextMenus);
+chrome.runtime.onStartup.addListener(ensureContextMenus);
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let url = null;
@@ -56,9 +54,9 @@ chrome.commands.onCommand.addListener(async (command) => {
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "route" && message.url) {
-    sendToYojam(message.url, getSourceSentinel()).then(() => {
-      sendResponse({ ok: true });
-    });
+    sendToYojam(message.url, getSourceSentinel())
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   }
 });

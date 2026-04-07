@@ -10,18 +10,19 @@ struct ApplyURLRulesIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let store = SettingsStore()
-        var processedURL = url
-        processedURL = URLRewriter(settingsStore: store).applyGlobalRewrites(to: processedURL)
-        if store.globalUTMStrippingEnabled {
-            processedURL = UTMStripper(settingsStore: store).strip(processedURL)
+        // Use the unified routing pipeline via RoutingService.decide
+        // instead of calling ruleEngine.evaluate directly.
+        let sharedStore = SharedRoutingStore()
+        guard let config = RoutingSnapshotLoader.loadConfiguration(from: sharedStore) else {
+            return .result(value: "Cannot load routing configuration")
         }
-        let engine = RuleEngine(settingsStore: store)
-        if let rule = engine.evaluate(processedURL) {
-            return .result(
-                value: "\(rule.targetAppName) (\(rule.targetBundleId))")
-        }
-        return .result(value: "No rule matched")
+        let request = IncomingLinkRequest(
+            url: url,
+            origin: .urlScheme
+        )
+        let decision = RoutingService.decide(request: request, configuration: config)
+        let preview = RouteDecisionPreview.from(decision)
+        return .result(value: preview.summary)
     }
 }
 
@@ -32,9 +33,12 @@ struct GetBrowserListIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<[String]> {
-        let browsers = SettingsStore().loadBrowsers().filter(\.enabled)
+        let sharedStore = SharedRoutingStore()
+        guard let config = RoutingSnapshotLoader.loadConfiguration(from: sharedStore) else {
+            return .result(value: [])
+        }
         return .result(
-            value: browsers.map {
+            value: config.browsers.map {
                 "\($0.displayName) (\($0.bundleIdentifier))"
             })
     }
