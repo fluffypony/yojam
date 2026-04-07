@@ -57,10 +57,25 @@ enum ProfileLaunchHelper {
     /// Requires Accessibility permissions. Used for Safari and Orion
     /// which have no CLI flags for private browsing.
     /// Returns true if the script executed successfully, false otherwise.
+    ///
+    /// WARNING: Uses hard-coded English menu item "New Private Window".
+    /// On non-English systems, the click may fail silently.
     @discardableResult
     static func openPrivateWindowViaAppleScript(
         url: URL, appName: String
     ) -> Bool {
+        // Warn once if the system language isn't English
+        let lang = Locale.current.language.languageCode?.identifier ?? ""
+        if lang != "en" {
+            struct Once { nonisolated(unsafe) static var warned = false }
+            if !Once.warned {
+                Once.warned = true
+                YojamLogger.shared.log(
+                    "AppleScript private window: system language is '\(lang)' — "
+                    + "\"New Private Window\" menu item may not be found. "
+                    + "Safari/Orion private mode may fall back to a normal window.")
+            }
+        }
         let escapedURL = escapeForAppleScript(url.absoluteString)
         let escapedAppName = escapeForAppleScript(appName)
         let script = """

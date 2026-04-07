@@ -649,13 +649,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         customLaunchArgs: String? = nil
     ) {
         // AppleScript-based private window for Safari/Orion
+        // Run off-main to avoid beachballing UI (the script has a 0.3s delay)
         if privateWindow, let bundleId,
            ProfileLaunchHelper.appleScriptPrivateWindowApps.contains(bundleId),
            let appName = ProfileLaunchHelper.appName(forBundleId: bundleId) {
-            if ProfileLaunchHelper.openPrivateWindowViaAppleScript(
-                url: url, appName: appName) {
-                return
+            Task.detached {
+                ProfileLaunchHelper.openPrivateWindowViaAppleScript(
+                    url: url, appName: appName)
             }
+            return
         }
 
         // Custom CLI launch: run the app executable with user-defined args
@@ -870,8 +872,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.setActivationPolicy(.regular)
             }
             NSApp.activate()
-            for window in NSApp.windows where !(window is NSPanel) {
-                window.makeKeyAndOrderFront(nil)
+            // Find the Settings window specifically — avoid picking AddRule sheets
+            // or Sparkle update windows. Settings windows are identifiable by their
+            // size (900x600+) and not being panels.
+            let settingsWindow = NSApp.windows.first { window in
+                !(window is NSPanel)
+                    && window.isVisible
+                    && window.frame.width >= 800
+                    && window.frame.height >= 500
+            } ?? NSApp.windows.first { window in
+                !(window is NSPanel) && window.frame.width > 100
+            }
+            if let settingsWindow {
+                settingsWindow.makeKeyAndOrderFront(nil)
                 return
             }
             if attempts > 1 {
@@ -880,7 +893,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private var windowCheckTimer: Timer?
     private var settingsWindowKVO: NSKeyValueObservation?
 
     private func startWindowCloseObserver() {
@@ -888,7 +900,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
+            // Find the settings window (large, non-panel, visible)
             let settingsWindow = NSApp.windows.first { window in
+                !(window is NSPanel)
+                    && window.isVisible
+                    && window.frame.width >= 800
+                    && window.frame.height >= 500
+            } ?? NSApp.windows.first { window in
                 !(window is NSPanel)
                     && window.isVisible
                     && window.frame.width > 100
@@ -905,38 +923,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-
-        windowCheckTimer = Timer.scheduledTimer(
-            withTimeInterval: 2.0, repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in self?.checkWindowServerAndHide() }
-        }
-    }
-
-    private func checkWindowServerAndHide() {
-        let pid = ProcessInfo.processInfo.processIdentifier
-        guard let infoList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[CFString: Any]] else { return }
-
-        let hasOnScreenWindow = infoList.contains { info in
-            guard let ownerPID = info[kCGWindowOwnerPID] as? Int32,
-                  ownerPID == pid,
-                  let layer = info[kCGWindowLayer] as? Int,
-                  layer == 0
-            else { return false }
-            if let bounds = info[kCGWindowBounds] as? [String: CGFloat],
-               let w = bounds["Width"], let h = bounds["Height"],
-               w <= 1 || h <= 1 {
-                return false
-            }
-            return true
-        }
-
-        if !hasOnScreenWindow {
-            hideFromCmdTab()
-        }
+        // Removed CGWindowList polling timer — KVO on isVisible is sufficient
+        // and avoids wasteful 2s CGWindowListCopyWindowInfo calls.
     }
 
     private func hideFromCmdTab() {
@@ -945,8 +933,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopWindowCloseObserver() {
-        windowCheckTimer?.invalidate()
-        windowCheckTimer = nil
         settingsWindowKVO?.invalidate()
         settingsWindowKVO = nil
     }
