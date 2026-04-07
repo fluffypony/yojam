@@ -6,3 +6,5 @@ xcuserdata/
 DerivedData/
 .DS_Store
 ExportOptions.plist
+Extensions/dist/
+Sources/YojamSafariExtension/Resources/
