@@ -11,7 +11,9 @@ final class URLRewriter: ObservableObject {
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
-        self.cancellable = settingsStore.objectWillChange.sink { [weak self] _ in
+        // P3: Subscribe to routing-data changes only, not all objectWillChange
+        // (which fires on unrelated UI fields like pendingScrollToSection).
+        self.cancellable = settingsStore.routingDataDidChange.sink { [weak self] _ in
             self?.cachedGlobalRules = nil
         }
     }

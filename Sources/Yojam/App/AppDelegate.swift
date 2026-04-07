@@ -47,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let deduplicationWindow: TimeInterval = 0.5
     private var pendingRequests: [IncomingLinkRequest] = []
     private var isFinishedLaunching = false
+    // P14: Scheduled cleanup instead of per-click filter+copy
+    private var dedupCleanupTimer: Timer?
 
     override init() {
         let store = settingsStore
@@ -360,7 +362,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let lastRouted = recentlyRoutedURLs[urlKey],
            now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
         recentlyRoutedURLs[urlKey] = now
-        recentlyRoutedURLs = recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
+        // P14: Schedule periodic cleanup instead of filtering on every route
+        if dedupCleanupTimer == nil {
+            dedupCleanupTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let now = Date()
+                    self.recentlyRoutedURLs = self.recentlyRoutedURLs.filter { now.timeIntervalSince($0.value) < 5 }
+                    if self.recentlyRoutedURLs.isEmpty {
+                        self.dedupCleanupTimer?.invalidate()
+                        self.dedupCleanupTimer = nil
+                    }
+                }
+            }
+        }
 
         // Structured decision log
         DecisionTrace.shared.log(inputURL: request.url, decision: decision, request: request)

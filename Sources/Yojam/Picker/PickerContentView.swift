@@ -11,6 +11,20 @@ struct PickerContentView: View {
     let onCopy: () -> Void
     let onDismiss: () -> Void
     @FocusState private var isFocused: Bool
+    // P10: Capture usage count at init to avoid UserDefaults read in body
+    private let showKeyboardLegend: Bool
+
+    init(url: URL, entries: [BrowserEntry], selectedIndex: Int, layout: PickerLayout,
+         matchReason: String? = nil,
+         onSelect: @escaping (BrowserEntry) -> Void,
+         onCopy: @escaping () -> Void,
+         onDismiss: @escaping () -> Void) {
+        self.url = url; self.entries = entries
+        self._selectedIndex = State(initialValue: selectedIndex)
+        self.layout = layout; self.matchReason = matchReason
+        self.onSelect = onSelect; self.onCopy = onCopy; self.onDismiss = onDismiss
+        self.showKeyboardLegend = UserDefaults.standard.integer(forKey: "pickerUsageCount") < 10
+    }
 
     private static let selectionColor = Color.white.opacity(0.15)
     private static let selectionBorder = Color.white.opacity(0.5)
@@ -50,7 +64,7 @@ struct PickerContentView: View {
                 .lineLimit(1).truncationMode(.middle)
 
             // Keyboard shortcut legend (shown for first 10 uses)
-            if UserDefaults.standard.integer(forKey: "pickerUsageCount") < 10 {
+            if showKeyboardLegend {
                 HStack(spacing: 12) {
                     ThemeShortcutChip(key: "1\u{2013}9", action: "choose")
                     ThemeShortcutChip(key: "\u{21B5}", action: "open")
@@ -106,7 +120,7 @@ struct PickerContentView: View {
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { hovering in
-                    if hovering { selectedIndex = index }
+                    if hovering && selectedIndex != index { selectedIndex = index }
                 }
 
                 .accessibilityLabel(entry.fullDisplayName)
@@ -142,7 +156,7 @@ struct PickerContentView: View {
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { hovering in
-                    if hovering { selectedIndex = index }
+                    if hovering && selectedIndex != index { selectedIndex = index }
                 }
 
                 .accessibilityLabel(entry.fullDisplayName)
@@ -179,7 +193,7 @@ struct PickerContentView: View {
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { hovering in
-                        if hovering { selectedIndex = index }
+                        if hovering && selectedIndex != index { selectedIndex = index }
                     }
                     .accessibilityLabel(entry.fullDisplayName)
                     .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
@@ -216,7 +230,7 @@ struct PickerContentView: View {
                     )
                     .onTapGesture { selectedIndex = index; selectCurrent() }
                     .onHover { hovering in
-                        if hovering { selectedIndex = index }
+                        if hovering && selectedIndex != index { selectedIndex = index }
                     }
                     .accessibilityLabel(entry.fullDisplayName)
                     .accessibilityHint(index < 9 ? "Press \(index + 1) or Return to open" : "Press Return to open")
