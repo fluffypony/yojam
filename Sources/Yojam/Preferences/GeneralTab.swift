@@ -78,7 +78,7 @@ struct GeneralTab: View {
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.launchAtLogin)
                 }
-                ThemePanelRow {
+                ThemePanelRow(helpText: HelpText.General.automaticUpdates) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Automatically check for updates")
                             .font(.system(size: 13, weight: .medium))
