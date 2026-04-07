@@ -2,26 +2,28 @@ import Sparkle
 import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Identifiable {
-    case general, browsers, pipeline, advanced, about
+    case general, browsers, pipeline, integrations, advanced, about
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .general:  "General"
-        case .browsers: "Browsers"
-        case .pipeline: "Link Handling"
-        case .advanced: "Advanced"
-        case .about:    "About"
+        case .general:      "General"
+        case .browsers:     "Browsers"
+        case .pipeline:     "Link Handling"
+        case .integrations: "Integrations"
+        case .advanced:     "Advanced"
+        case .about:        "About"
         }
     }
 
     var icon: String {
         switch self {
-        case .general:  "gearshape.fill"
-        case .browsers: "macwindow.on.rectangle"
-        case .pipeline: "globe"
-        case .advanced: "wrench.and.screwdriver.fill"
-        case .about:    "info.circle.fill"
+        case .general:      "gearshape.fill"
+        case .browsers:     "macwindow.on.rectangle"
+        case .pipeline:     "globe"
+        case .integrations: "puzzlepiece.fill"
+        case .advanced:     "wrench.and.screwdriver.fill"
+        case .about:        "info.circle.fill"
         }
     }
 }
@@ -107,6 +109,28 @@ enum SettingsSearchIndex {
                            subtitle: "URL rewrite rules find replace regex transform old reddit nitter redirect"),
         SettingsSearchItem(tab: .pipeline, section: "Pipeline", title: "Import Export Rules",
                            subtitle: "Import or export routing rules as JSON"),
+
+        // Integrations
+        SettingsSearchItem(tab: .integrations, section: "System Registrations", title: "Default Browser",
+                           subtitle: "Check if Yojam is the system default browser"),
+        SettingsSearchItem(tab: .integrations, section: "System Registrations", title: "Webloc Handler",
+                           subtitle: "Handle AirDrop webloc inetloc internet location files"),
+        SettingsSearchItem(tab: .integrations, section: "System Registrations", title: "Yojam Scheme",
+                           subtitle: "yojam:// URL scheme registration for extensions and automation"),
+        SettingsSearchItem(tab: .integrations, section: "System Registrations", title: "Handoff",
+                           subtitle: "Continue browsing from iPhone iPad to Mac via Handoff"),
+        SettingsSearchItem(tab: .integrations, section: "Extensions", title: "Share Extension",
+                           subtitle: "Open in Yojam share menu share sheet"),
+        SettingsSearchItem(tab: .integrations, section: "Extensions", title: "Safari Extension",
+                           subtitle: "Safari web extension toolbar button context menu"),
+        SettingsSearchItem(tab: .integrations, section: "Extensions", title: "Services Menu",
+                           subtitle: "Open in Yojam services menu keyboard shortcut"),
+        SettingsSearchItem(tab: .integrations, section: "Browser Native Messaging", title: "Chrome Native Host",
+                           subtitle: "Chrome Chromium Brave Edge Vivaldi Arc native messaging host manifest"),
+        SettingsSearchItem(tab: .integrations, section: "Browser Native Messaging", title: "Firefox Native Host",
+                           subtitle: "Firefox native messaging host manifest"),
+        SettingsSearchItem(tab: .integrations, section: "App Group Storage", title: "Shared Container",
+                           subtitle: "App Group container access shared routing store"),
 
         // Advanced
         SettingsSearchItem(tab: .advanced, section: "Diagnostics", title: "Debug Logging",
@@ -366,6 +390,10 @@ struct PreferencesView: View {
                 ruleEngine: ruleEngine,
                 rewriteManager: rewriteManager,
                 browserManager: browserManager,
+                scrollToSection: $scrollToSection)
+        case .integrations:
+            IntegrationsTab(
+                settingsStore: settingsStore,
                 scrollToSection: $scrollToSection)
         case .advanced:
             AdvancedTab(
