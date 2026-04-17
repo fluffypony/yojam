@@ -15,8 +15,10 @@ final class ShareViewController: NSViewController {
             finish(); return
         }
         extractFirstURL(from: items) { [weak self] url in
-            guard let self, let url else { self?.finish(); return }
-            self.forwardToYojam(url)
+            Task { @MainActor in
+                guard let self, let url else { self?.finish(); return }
+                self.forwardToYojam(url)
+            }
         }
     }
 
@@ -30,11 +32,11 @@ final class ShareViewController: NSViewController {
             $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
         }) {
             p.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
-                DispatchQueue.main.async {
-                    if let u = item as? URL { completion(u) }
-                    else if let s = item as? String { completion(URL(string: s)) }
-                    else { completion(nil) }
-                }
+                let url: URL?
+                if let u = item as? URL { url = u }
+                else if let s = item as? String { url = URL(string: s) }
+                else { url = nil }
+                DispatchQueue.main.async { completion(url) }
             }
             return
         }
@@ -43,14 +45,17 @@ final class ShareViewController: NSViewController {
             $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
         }) {
             p.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
-                DispatchQueue.main.async {
-                    guard let text = item as? String else { completion(nil); return }
+                let detected: URL?
+                if let text = item as? String {
                     let detector = try? NSDataDetector(
                         types: NSTextCheckingResult.CheckingType.link.rawValue)
                     let match = detector?.firstMatch(
                         in: text, range: NSRange(text.startIndex..., in: text))
-                    completion(match?.url)
+                    detected = match?.url
+                } else {
+                    detected = nil
                 }
+                DispatchQueue.main.async { completion(detected) }
             }
             return
         }
@@ -63,7 +68,9 @@ final class ShareViewController: NSViewController {
             source: SourceAppSentinel.shareExtension
         ) else { finish(); return }
         // extensionContext.open(_:) is the supported path from an extension sandbox.
-        extensionContext?.open(yojamURL) { [weak self] _ in self?.finish() }
+        extensionContext?.open(yojamURL) { [weak self] _ in
+            Task { @MainActor in self?.finish() }
+        }
     }
 
     private func finish() {

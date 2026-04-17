@@ -32,6 +32,10 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         PRODUCT_NAME: YojamCore
         SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: YojamCore
+        CURRENT_PROJECT_VERSION: "$(CURRENT_PROJECT_VERSION)"
+        MARKETING_VERSION: "$(MARKETING_VERSION)"
 
   Yojam:
     type: application

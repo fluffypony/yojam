@@ -10,7 +10,9 @@ func readMessage() -> HostRequest? {
     var lengthBytes = [UInt8](repeating: 0, count: 4)
     var totalRead = 0
     while totalRead < 4 {
-        let n = fread(&lengthBytes + totalRead, 1, 4 - totalRead, stdin)
+        let n = lengthBytes.withUnsafeMutableBufferPointer { buf -> Int in
+            fread(buf.baseAddress! + totalRead, 1, 4 - totalRead, stdin)
+        }
         if n == 0 { return nil } // clean EOF or error
         totalRead += n
     }
@@ -23,7 +25,9 @@ func readMessage() -> HostRequest? {
     var buffer = [UInt8](repeating: 0, count: Int(length))
     var bodyRead = 0
     while bodyRead < Int(length) {
-        let n = fread(&buffer + bodyRead, 1, Int(length) - bodyRead, stdin)
+        let n = buffer.withUnsafeMutableBufferPointer { buf -> Int in
+            fread(buf.baseAddress! + bodyRead, 1, Int(length) - bodyRead, stdin)
+        }
         if n == 0 { return nil }
         bodyRead += n
     }
