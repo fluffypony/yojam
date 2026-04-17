@@ -48,7 +48,7 @@ func writeMessage(_ response: HostResponse) {
     var length = UInt32(data.count)
     let lengthBytes = withUnsafeBytes(of: &length) { Array($0) }
     fwrite(lengthBytes, 1, 4, stdout)
-    data.withUnsafeBytes { ptr in
+    _ = data.withUnsafeBytes { ptr in
         fwrite(ptr.baseAddress, 1, data.count, stdout)
     }
     fflush(stdout)

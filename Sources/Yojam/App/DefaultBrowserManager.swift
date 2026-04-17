@@ -89,10 +89,11 @@ enum DefaultBrowserManager {
 
     /// Check if the yojam:// scheme is registered.
     static var isYojamSchemeRegistered: Bool {
-        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
-        guard let handler = LSCopyDefaultHandlerForURLScheme(
-            "yojam" as CFString
-        )?.takeRetainedValue() as String? else { return false }
-        return handler == bundleId
+        guard let bundleId = Bundle.main.bundleIdentifier,
+              let probe = URL(string: "yojam://"),
+              let handlerURL = NSWorkspace.shared.urlForApplication(toOpen: probe),
+              let handlerBundleId = Bundle(url: handlerURL)?.bundleIdentifier
+        else { return false }
+        return handlerBundleId == bundleId
     }
 }

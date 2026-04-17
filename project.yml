@@ -194,6 +194,7 @@ targets:
           - "@executable_path/../../../../Frameworks"
     preBuildScripts:
       - name: Copy Safari Extension Resources
+        basedOnDependencyAnalysis: false
         script: |
           rsync -av --delete "${SRCROOT}/Extensions/shared/" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"
           cp "${SRCROOT}/Extensions/safari/manifest.json" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"

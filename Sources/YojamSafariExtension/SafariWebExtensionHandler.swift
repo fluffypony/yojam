@@ -42,6 +42,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
 
         // Use context.open instead of NSWorkspace — sandboxed extension.
+        // NSExtensionContext isn't Sendable but open's completion is @Sendable in
+        // macOS 26 SDK; this completion is dispatched on the main thread at runtime.
+        nonisolated(unsafe) let ctx = context
         context.open(yojamURL) { success in
             let response = NSExtensionItem()
             if success {
@@ -49,7 +52,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             } else {
                 response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to open URL"]]
             }
-            context.completeRequest(returningItems: [response])
+            ctx.completeRequest(returningItems: [response])
         }
     }
 
