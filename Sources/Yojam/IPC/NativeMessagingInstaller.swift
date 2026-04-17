@@ -142,7 +142,7 @@ enum NativeMessagingInstaller {
             "path": hostPath,
             "type": "stdio",
             "allowed_extensions": [
-                "yojam@yojam.org"
+                "yojam@yoj.am"
             ]
         ]
         writeManifest(manifest, to: directory, browserName: "Firefox")

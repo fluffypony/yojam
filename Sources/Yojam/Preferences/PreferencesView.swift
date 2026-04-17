@@ -152,7 +152,7 @@ enum SettingsSearchIndex {
         SettingsSearchItem(tab: .about, section: "About", title: "About Yojam",
                            subtitle: "Version copyright credits author riccardo spagni"),
         SettingsSearchItem(tab: .about, section: "Links", title: "Website",
-                           subtitle: "yojam.org homepage link"),
+                           subtitle: "yoj.am homepage link"),
         SettingsSearchItem(tab: .about, section: "Links", title: "Source Code",
                            subtitle: "github fluffypony yojam open source repository"),
         SettingsSearchItem(tab: .about, section: "License", title: "License",

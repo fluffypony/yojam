@@ -66,13 +66,13 @@ struct AboutTab: View {
                         Text("Website")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("yojam.org")
+                        Text("yoj.am")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
                     ThemeButton("Visit") {
-                        openURL("https://yojam.org")
+                        openURL("https://yoj.am")
                     }
                 }
                 ThemePanelRow(isLast: true) {

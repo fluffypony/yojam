@@ -117,7 +117,7 @@
 		</dict>
 	</array>
 	<key>SUFeedURL</key>
-	<string>https://yojam.org/appcast.xml</string>
+	<string>https://yoj.am/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>UoXaVVJyS2+xwKUsL4UM25gXmhUAJMwce9wLfXM86zU=</string>
 	<key>SUEnableAutomaticChecks</key>

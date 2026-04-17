@@ -39,7 +39,7 @@ Every one of these goes through the same rule engine, tracker scrubber, and rewr
 
 ## Installing
 
-Download the latest release from [yojam.org](https://yojam.org). Open the DMG and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
+Download the latest release from [yoj.am](https://yoj.am). Open the DMG and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
 
 Yojam checks for updates automatically. You can also check manually from the menu bar icon > "Check for Updates..."
 
@@ -207,7 +207,7 @@ The first time certain features are used, macOS will show:
 
 Everything happens locally on your Mac. Yojam doesn't phone home, track your clicks, or send your data anywhere. The Share Extension and browser extensions only hand a URL to the local Yojam process. The native messaging host only forwards URLs you explicitly trigger — it never reads page contents. Nothing hits the network.
 
-The only network activity is iCloud sync (uses your own Apple ID, off by default) and checking for updates via yojam.org (can be disabled in Preferences).
+The only network activity is iCloud sync (uses your own Apple ID, off by default) and checking for updates via yoj.am (can be disabled in Preferences).
 
 ## Troubleshooting
 

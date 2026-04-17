@@ -68,7 +68,7 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        SUFeedURL: https://yojam.org/appcast.xml
+        SUFeedURL: https://yoj.am/appcast.xml
         SUPublicEDKey: UoXaVVJyS2+xwKUsL4UM25gXmhUAJMwce9wLfXM86zU=
         SUEnableAutomaticChecks: true
         CFBundleURLTypes:
