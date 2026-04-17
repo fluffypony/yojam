@@ -1,9 +1,55 @@
-import { sendToYojam } from "./yojam-bridge.js";
+import { sendToYojam, buildYojamURL } from "./yojam-bridge.js";
 
 // Detect browser type for sentinel selection
 function getSourceSentinel() {
-  // Safari extension always uses the Safari sentinel
-  return "com.yojam.source.safari-extension";
+  if (typeof browser !== "undefined" && browser.runtime?.getBrowserInfo) {
+    return "com.yojam.source.firefox-extension";
+  }
+  return "com.yojam.source.chrome-extension";
+}
+
+// Feature-detect Safari (no webNavigation interception support)
+const isSafari =
+  typeof chrome !== "undefined" &&
+  chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
+
+// ---- Always-Route Interception ----
+
+let alwaysRoute = false;
+const routedTabs = new Map(); // tabId -> expiry timestamp
+
+// Load setting on startup
+chrome.storage.local.get("alwaysRoute", (r) => {
+  alwaysRoute = !!r.alwaysRoute;
+});
+chrome.runtime.onStartup.addListener(async () => {
+  const r = await chrome.storage.local.get("alwaysRoute");
+  alwaysRoute = !!r.alwaysRoute;
+});
+
+function isRoutedRecently(tabId) {
+  const exp = routedTabs.get(tabId);
+  if (!exp) return false;
+  if (exp < Date.now()) {
+    routedTabs.delete(tabId);
+    return false;
+  }
+  return true;
+}
+
+// webNavigation interception (Chrome/Firefox only, not Safari)
+if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
+  chrome.webNavigation.onBeforeNavigate.addListener((d) => {
+    if (!alwaysRoute) return;
+    if (d.frameId !== 0) return; // top-frame only
+    if (!/^https?:\/\//i.test(d.url)) return; // http(s) only
+    if (d.url.startsWith("yojam://")) return;
+    if (isRoutedRecently(d.tabId)) return; // loop guard
+
+    routedTabs.set(d.tabId, Date.now() + 3000);
+    const yojamURL = buildYojamURL(d.url, getSourceSentinel());
+    chrome.tabs.update(d.tabId, { url: yojamURL });
+  });
 }
 
 // ---- Context Menus ----
@@ -48,7 +94,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// ---- Popup Messages ----
+// ---- Popup / Options Messages ----
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "route" && message.url) {
@@ -56,5 +102,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
+  }
+  if (message.action === "updateAlwaysRoute") {
+    alwaysRoute = !!message.enabled;
   }
 });

@@ -1,7 +1,10 @@
 import { previewInYojam } from "./yojam-bridge.js";
 
 function getSourceSentinel() {
-  return "com.yojam.source.safari-extension";
+  if (typeof browser !== "undefined" && browser.runtime?.getBrowserInfo) {
+    return "com.yojam.source.firefox-extension";
+  }
+  return "com.yojam.source.chrome-extension";
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
