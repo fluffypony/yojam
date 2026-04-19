@@ -1,3 +1,4 @@
+import SafariServices
 import SwiftUI
 import YojamCore
 
@@ -40,6 +41,49 @@ struct IntegrationsTab: View {
         }
         .background(Theme.bgApp)
         .onAppear { refreshStatus() }
+        // Registration is async (system confirmation dialog + Launch Services
+        // propagation). Re-check each time Yojam comes back to the front so
+        // the status flips to green as soon as the change lands.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshStatus()
+        }
+    }
+
+    /// Poll the registration state for a few seconds after invoking
+    /// `promptSetDefault`. Launch Services can take a noticeable moment to
+    /// propagate, so a single delayed refresh regularly missed the update.
+    private func scheduleRegistrationPolling() {
+        for delay in [0.5, 1.5, 3.0, 5.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { refreshStatus() }
+        }
+    }
+
+    /// Deep link to System Settings > Privacy & Security > Extensions > Sharing.
+    /// The `?Sharing` anchor works on macOS 14+; if it doesn't resolve the
+    /// general Extensions pane is a safe fallback.
+    private func openSharingExtensionsSettings() {
+        let primary = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences?Sharing")!
+        let fallback = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!
+        if !NSWorkspace.shared.open(primary) {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
+    /// Open the Safari Settings > Extensions pane focused on the Yojam
+    /// extension. Uses SFSafariApplication, which is the only sanctioned way
+    /// to deep-link into Safari's extension preferences.
+    private func openSafariExtensionSettings() {
+        SFSafariApplication.showPreferencesForExtension(
+            withIdentifier: "com.yojam.app.SafariExtension"
+        ) { error in
+            if let error {
+                Task { @MainActor in
+                    YojamLogger.shared.log(
+                        "showPreferencesForExtension failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private func refreshStatus() {
@@ -76,37 +120,35 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: ".webloc handler",
                     icon: "doc.text",
-                    status: isWeblocHandler ? .ok : .info,
+                    status: isWeblocHandler ? .ok : .notInstalled,
                     detail: isWeblocHandler
                         ? "Yojam handles internet-location files"
                         : "Not registered for .webloc files",
                     helpText: HelpText.Integrations.weblocHandler,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
-                        // Delay refresh — promptSetDefault uses async NSWorkspace APIs
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { refreshStatus() }
+                        scheduleRegistrationPolling()
                     }),
                     isLast: false
                 )
                 IntegrationRow(
                     name: "yojam:// scheme",
                     icon: "link",
-                    status: isYojamSchemeRegistered ? .ok : .warning,
+                    status: isYojamSchemeRegistered ? .ok : .notInstalled,
                     detail: isYojamSchemeRegistered
                         ? "Registered"
                         : "Not registered",
                     helpText: HelpText.Integrations.yojamScheme,
                     action: ("Register", {
                         DefaultBrowserManager.promptSetDefault()
-                        // Delay refresh — promptSetDefault uses async NSWorkspace APIs
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { refreshStatus() }
+                        scheduleRegistrationPolling()
                     }),
                     isLast: false
                 )
                 IntegrationRow(
                     name: "Handoff",
                     icon: "hand.raised",
-                    status: .info,
+                    status: .unknown,
                     detail: "Check System Settings > General > AirDrop & Handoff",
                     helpText: HelpText.Integrations.handoff,
                     isLast: true
@@ -126,17 +168,19 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Share Extension",
                     icon: "square.and.arrow.up",
-                    status: .info,
+                    status: .unknown,
                     detail: "Enable in System Settings > Privacy & Security > Extensions > Sharing",
                     helpText: HelpText.Integrations.shareExtension,
+                    action: ("Open Settings", { openSharingExtensionsSettings() }),
                     isLast: false
                 )
                 IntegrationRow(
                     name: "Safari extension",
                     icon: "safari",
-                    status: .info,
+                    status: .unknown,
                     detail: "Enable in Safari > Settings > Extensions",
                     helpText: HelpText.Integrations.safariExtension,
+                    action: ("Open Safari", { openSafariExtensionSettings() }),
                     isLast: false
                 )
                 IntegrationRow(
@@ -232,15 +276,18 @@ struct IntegrationsTab: View {
 // MARK: - Integration Row
 
 private enum IntegrationStatus {
-    case ok, warning, error, info, notInstalled
+    case ok, warning, error, notInstalled, unknown
 
-    var icon: String {
+    /// Nil when the row is purely informational and shouldn't render a status
+    /// indicator — avoids colliding with the adjacent ThemeHelpIcon, which is
+    /// itself an info-circle.
+    var icon: String? {
         switch self {
         case .ok: "checkmark.circle.fill"
         case .warning: "exclamationmark.triangle.fill"
         case .error: "xmark.octagon.fill"
-        case .info: "info.circle.fill"
-        case .notInstalled: "minus.circle.fill"
+        case .notInstalled: "xmark.circle.fill"
+        case .unknown: nil
         }
     }
 
@@ -249,8 +296,8 @@ private enum IntegrationStatus {
         case .ok: Theme.success
         case .warning: Color.orange
         case .error: Theme.danger
-        case .info: Theme.textSecondary
-        case .notInstalled: Theme.textSecondary
+        case .notInstalled: Theme.danger
+        case .unknown: Theme.textSecondary
         }
     }
 }
@@ -282,9 +329,11 @@ private struct IntegrationRow: View {
 
             Spacer()
 
-            Image(systemName: status.icon)
-                .font(.system(size: 14))
-                .foregroundColor(status.color)
+            if let statusIcon = status.icon {
+                Image(systemName: statusIcon)
+                    .font(.system(size: 14))
+                    .foregroundColor(status.color)
+            }
 
             if let (label, handler) = action {
                 ThemeButton(label) {
