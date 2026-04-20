@@ -19,6 +19,7 @@ struct PipelineTab: View {
     @State private var showingAddRewrite = false
     @State private var showingTrackerList = false
     @State private var errorMessage: String?
+    @State private var editingRule: Rule?
     @State private var pipelineOverviewDismissed = UserDefaults.standard.bool(forKey: "helpDismissed_pipelineOverview")
 
     private let urlTesterTip = URLTesterTip()
@@ -62,6 +63,12 @@ struct PipelineTab: View {
         }
         .sheet(isPresented: $showingAddRule) {
             AddRuleSheet(ruleEngine: ruleEngine, onDismiss: { showingAddRule = false })
+        }
+        .sheet(item: $editingRule) { rule in
+            AddRuleSheet(
+                ruleEngine: ruleEngine,
+                onDismiss: { editingRule = nil },
+                editing: rule)
         }
         .sheet(isPresented: $showingAddRewrite) {
             AddRewriteSheet(
@@ -297,6 +304,9 @@ struct PipelineTab: View {
 
             // Import/Export
             HStack(spacing: 8) {
+                ThemeButton("Restore Default Rules") {
+                    ruleEngine.restoreAllBuiltIns()
+                }
                 Spacer()
                 ThemeButton("Import Rules...") { importRules() }
                 ThemeButton("Export Rules...") { exportRules() }
@@ -373,7 +383,7 @@ struct PipelineTab: View {
             .help("Enable or disable this rule")
             .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
-            ThemeBadge(text: "Rule", isRewrite: false)
+            ThemeBadge(text: rule.isBuiltIn ? "Built-in" : "Rule", isRewrite: false)
                 .frame(width: 80, alignment: .leading)
 
             Text(rule.pattern)
@@ -391,17 +401,30 @@ struct PipelineTab: View {
                 .frame(width: 150, alignment: .leading)
 
             HStack(spacing: 4) {
-                if !rule.isBuiltIn {
-                    ThemeIconButton(systemName: "trash", isDanger: true) {
-                        ruleEngine.deleteRule(rule.id)
+                ThemeIconButton(systemName: "pencil", help: "Edit rule") {
+                    editingRule = rule
+                }
+                ThemeIconButton(systemName: "doc.on.doc", help: "Duplicate as editable rule") {
+                    ruleEngine.duplicateRule(rule.id)
+                }
+                if rule.isBuiltIn {
+                    ThemeIconButton(systemName: "arrow.counterclockwise", help: "Reset to default") {
+                        ruleEngine.resetBuiltInRule(rule.id)
                     }
                 }
+                ThemeIconButton(systemName: "trash", isDanger: true) {
+                    ruleEngine.deleteRule(rule.id)
+                }
             }
-            .frame(width: 60)
+            .frame(width: 120)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .opacity(rule.enabled ? 1 : 0.5)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            editingRule = rule
+        }
     }
 
     // MARK: - Test Logic
@@ -444,11 +467,13 @@ struct PipelineTab: View {
         let sourceApp = testSourceApp.isEmpty ? nil : testSourceApp
         if let match = ruleEngine.evaluate(processedURL, sourceAppBundleId: sourceApp) {
             let host = processedURL.host ?? ""
+            let result = RuleMatcher.evaluate(url: processedURL, against: match, sourceApp: sourceApp)
             nodes.append(PipelineNode(label: "Match: \(host)", icon: "globe", isActive: true))
             nodes.append(.arrow)
             nodes.append(PipelineNode(label: "Open in: \(match.targetAppName)", isFinal: true))
             let strippedNote = didStrip ? " after tracker stripping" : ""
-            testSummary = "This link would open in \(match.targetAppName)\(strippedNote)."
+            let ruleInfo = "\(match.name) via \(match.matchType.displayName)"
+            testSummary = "This link would open in \(match.targetAppName)\(strippedNote). Matched rule: \(ruleInfo). \(result.explanation)"
         } else {
             nodes.append(PipelineNode(label: "No match", icon: "questionmark.circle"))
             nodes.append(.arrow)

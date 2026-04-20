@@ -2,8 +2,8 @@ import Foundation
 import YojamCore
 
 @MainActor
-final class RoutingSuggestionEngine {
-    private var domainPreferences: [String: [String: Int]] = [:]
+final class RoutingSuggestionEngine: ObservableObject {
+    @Published private var domainPreferences: [String: [String: Int]] = [:]
     private let minimumConfidence = 3
     private let sharedDefaults: UserDefaults
     // P4: Debounce UserDefaults writes to avoid per-click I/O
@@ -56,6 +56,38 @@ final class RoutingSuggestionEngine {
             }
         }
         return result
+    }
+
+    // MARK: - Management accessors
+
+    /// All domains and their per-entry hit counts, sorted by domain for stable UI.
+    func allDomainPreferences() -> [(domain: String, entries: [(entryId: String, count: Int)])] {
+        domainPreferences
+            .map { (domain, prefs) in
+                let sorted = prefs.map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
+                return (domain: domain,
+                        entries: sorted.map { (entryId: $0.0, count: $0.1) })
+            }
+            .sorted { $0.domain < $1.domain }
+    }
+
+    func removePreference(for domain: String) {
+        domainPreferences.removeValue(forKey: domain)
+        save()
+    }
+
+    /// Promote a learned preference to an explicit Rule. Caller is responsible
+    /// for resolving the entryId → display name and inserting via RuleEngine.
+    func makeRuleTemplate(domain: String, entryId: String, targetBundleId: String, targetAppName: String) -> Rule {
+        Rule(
+            name: "Learned: \(domain)",
+            matchType: .domain,
+            pattern: domain,
+            targetBundleId: targetBundleId,
+            targetAppName: targetAppName,
+            isBuiltIn: false,
+            priority: 50,
+            metadata: ["source": "learnedPreference"])
     }
 
     func clearAll() { domainPreferences = [:]; save() }

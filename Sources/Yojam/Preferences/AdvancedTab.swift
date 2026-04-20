@@ -10,6 +10,10 @@ struct AdvancedTab: View {
 
     @State private var showingResetAlert = false
     @State private var showingResetBrowsersAlert = false
+    @State private var showingUninstallConfirmation = false
+    @State private var uninstallRemovePrefs = false
+    @State private var showingLearnedPreferences = false
+    @State private var showingImportFromOtherApps = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -57,6 +61,27 @@ struct AdvancedTab: View {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .alert("Uninstall Yojam?", isPresented: $showingUninstallConfirmation) {
+            Button("Uninstall", role: .destructive) {
+                UninstallManager.uninstall(removePreferences: uninstallRemovePrefs)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes native messaging manifests, login item, and logs. If the 'Also remove settings' toggle is on, all your rules and preferences will be erased. Yojam will quit after uninstall.")
+        }
+        .sheet(isPresented: $showingLearnedPreferences) {
+            LearnedPreferencesSheet(
+                routingSuggestionEngine: routingSuggestionEngine,
+                browserManager: browserManager,
+                ruleEngine: ruleEngine,
+                onDismiss: { showingLearnedPreferences = false })
+        }
+        .sheet(isPresented: $showingImportFromOtherApps) {
+            ImportFromOtherAppsSheet(
+                settingsStore: settingsStore,
+                ruleEngine: ruleEngine,
+                onDismiss: { showingImportFromOtherApps = false })
         }
     }
 
@@ -196,13 +221,14 @@ struct AdvancedTab: View {
                         Text("Learned Preferences")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Yojam remembers which browser you pick for each domain. Clear to start over.")
+                        Text("Yojam remembers which browser you pick for each domain. View, delete specific entries, or promote them to explicit rules.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
-                    ThemeButton("Clear") {
-                        routingSuggestionEngine.clearAll()
+                    HStack(spacing: 8) {
+                        ThemeButton("View & Manage\u{2026}") { showingLearnedPreferences = true }
+                        ThemeButton("Clear All") { routingSuggestionEngine.clearAll() }
                     }
                 }
             }
@@ -227,7 +253,7 @@ struct AdvancedTab: View {
                     Spacer()
                     ThemeButton("Export...") { exportSettings() }
                 }
-                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.importSettings) {
+                ThemePanelRow(helpText: HelpText.Advanced.importSettings) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Import Settings")
                             .font(.system(size: 13, weight: .medium))
@@ -238,6 +264,18 @@ struct AdvancedTab: View {
                     }
                     Spacer()
                     ThemeButton("Import...") { importSettings() }
+                }
+                ThemePanelRow(isLast: true) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Import from Other Apps")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Detects and imports routing rules from Bumpr, Choosy, or Finicky if they're installed on this Mac.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    ThemeButton("Import\u{2026}") { showingImportFromOtherApps = true }
                 }
             }
         }
@@ -263,7 +301,7 @@ struct AdvancedTab: View {
                         showingResetBrowsersAlert = true
                     }
                 }
-                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.resetAll) {
+                ThemePanelRow(helpText: HelpText.Advanced.resetAll) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Reset All Settings")
                             .font(.system(size: 13, weight: .medium))
@@ -275,6 +313,24 @@ struct AdvancedTab: View {
                     Spacer()
                     ThemeDangerButton(label: "Reset All") {
                         showingResetAlert = true
+                    }
+                }
+                ThemePanelRow(isLast: true) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Uninstall Yojam")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Removes native messaging manifests, logs, and login item. Optionally also removes your rules and preferences.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                        Toggle("Also remove my rules and preferences", isOn: $uninstallRemovePrefs)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11))
+                            .padding(.top, 4)
+                    }
+                    Spacer()
+                    ThemeDangerButton(label: "Uninstall\u{2026}") {
+                        showingUninstallConfirmation = true
                     }
                 }
             }

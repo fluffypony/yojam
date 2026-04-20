@@ -84,7 +84,58 @@ final class RuleEngine: ObservableObject {
     }
 
     func deleteRule(_ id: UUID) {
-        rules.removeAll { $0.id == id && !$0.isBuiltIn }; save()
+        // Allow deleting built-in rules too — they get tombstoned in
+        // SettingsStore.deletedBuiltInRuleIds so they don't reappear on next load.
+        if let rule = rules.first(where: { $0.id == id }), rule.isBuiltIn {
+            settingsStore.addDeletedBuiltInRuleId(id)
+        }
+        rules.removeAll { $0.id == id }
+        save()
+    }
+
+    /// Clone a rule (built-in or user) into a new editable user rule.
+    func duplicateRule(_ id: UUID) {
+        guard let original = rules.first(where: { $0.id == id }) else { return }
+        var copy = Rule(
+            name: original.name + " (Copy)",
+            enabled: true,
+            matchType: original.matchType,
+            pattern: original.pattern,
+            targetBundleId: original.targetBundleId,
+            targetAppName: original.targetAppName,
+            isBuiltIn: false,
+            priority: original.priority,
+            stripUTMParams: original.stripUTMParams,
+            rewriteRules: original.rewriteRules,
+            sourceAppBundleId: original.sourceAppBundleId,
+            sourceAppName: original.sourceAppName,
+            firefoxContainer: original.firefoxContainer,
+            targetDisplayUUID: original.targetDisplayUUID,
+            targetDisplayIndex: original.targetDisplayIndex,
+            metadata: original.metadata)
+        copy.lastModifiedAt = Date()
+        rules.append(copy)
+        save()
+    }
+
+    /// Reset a built-in rule back to its factory definition, preserving enabled state.
+    func resetBuiltInRule(_ id: UUID) {
+        guard let original = BuiltInRules.all.first(where: { $0.id == id }),
+              let idx = rules.firstIndex(where: { $0.id == id }) else { return }
+        var reset = original
+        reset.enabled = rules[idx].enabled
+        rules[idx] = reset
+        save()
+    }
+
+    /// Re-insert any built-ins the user previously deleted.
+    func restoreAllBuiltIns() {
+        settingsStore.clearDeletedBuiltInRuleIds()
+        let existingIds = Set(rules.map(\.id))
+        for builtIn in BuiltInRules.all where !existingIds.contains(builtIn.id) {
+            rules.append(builtIn)
+        }
+        save()
     }
 
     func toggleRule(_ id: UUID) {
