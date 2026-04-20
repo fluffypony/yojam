@@ -126,11 +126,34 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         menu.addItem(updateItem)
         menu.addItem(.separator())
 
+        let uninstallItem = NSMenuItem(
+            title: "Uninstall Yojam\u{2026}",
+            action: #selector(uninstallClicked),
+            keyEquivalent: "")
+        uninstallItem.target = self
+        menu.addItem(uninstallItem)
+
         let quitItem = NSMenuItem(
             title: "Quit Yojam",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
         menu.addItem(quitItem)
+    }
+
+    @objc private func uninstallClicked() {
+        let alert = NSAlert()
+        alert.messageText = "Uninstall Yojam?"
+        alert.informativeText = "Removes native messaging manifests, login item, and logs. Enable the checkbox below to also wipe your rules, browsers, and preferences."
+        alert.alertStyle = .warning
+        let accessory = NSButton(checkboxWithTitle: "Also remove my rules and preferences",
+                                 target: nil, action: nil)
+        accessory.state = .off
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: "Uninstall")
+        alert.addButton(withTitle: "Cancel")
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        UninstallManager.uninstall(removePreferences: accessory.state == .on)
     }
 
     @objc private func toggleClicked() {
