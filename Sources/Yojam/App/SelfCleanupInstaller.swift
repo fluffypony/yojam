@@ -121,14 +121,27 @@ if command -v mdfind >/dev/null 2>&1; then
   fi
 fi
 
-# Launch Services lookup via osascript — resolves renamed bundles even when
-# Spotlight is disabled for the volume. Silent failure is expected if
-# Automation permission for osascript→System Events is not granted, which
-# is why this is a secondary check after mdfind.
-if command -v osascript >/dev/null 2>&1; then
-  LS_HIT=$(osascript -e 'try' \
-    -e "POSIX path of (application file id \"$BUNDLE_ID\" as alias)" \
-    -e 'end try' 2>/dev/null)
+# Launch Services lookup via lsregister's dump. Unlike `path to application
+# id` in AppleScript, this doesn't send an AppleEvent to the target app
+# (which can wake/launch it). Blocks in the dump are separated by lines of
+# dashes; within each block we track the last `path:` value and emit it
+# when `identifier:` matches the Yojam bundle ID.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+  LS_HIT=$("$LSREGISTER" -dump 2>/dev/null \
+    | awk -v id="$BUNDLE_ID" '
+        /^-+$/ { p=""; next }
+        /^path:[[:space:]]+/ {
+          p=$0
+          sub(/^path:[[:space:]]+/, "", p)
+          sub(/[[:space:]]+\(0x[0-9a-f]+\)[[:space:]]*$/, "", p)
+        }
+        /^identifier:[[:space:]]+/ {
+          i=$0
+          sub(/^identifier:[[:space:]]+/, "", i)
+          sub(/[[:space:]]+\(0x[0-9a-f]+\)[[:space:]]*$/, "", i)
+          if (i == id && p != "") { print p; exit }
+        }')
   if [ -n "$LS_HIT" ] && [ -d "$LS_HIT" ]; then
     reset_strikes
     exit 0
