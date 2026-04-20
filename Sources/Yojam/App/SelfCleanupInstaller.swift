@@ -38,14 +38,12 @@ enum SelfCleanupInstaller {
     static func installOrRefresh() {
         let bundleURL = Bundle.main.bundleURL
         guard shouldInstall(forBundle: bundleURL) else {
-            // Non-whitelisted launch (dev build, mounted DMG, etc.). If an
-            // agent was installed by a previous Applications-located launch,
-            // disarm it: leaving it in place with a stale path would let it
-            // wipe user state even though Yojam is still present here.
-            if FileManager.default.fileExists(atPath: agentPlistURL.path) {
-                YojamLogger.shared.log("SelfCleanupInstaller: removing stale agent from prior install (\(bundleURL.path))")
-                uninstallAgent()
-            }
+            // Non-whitelisted launch (dev build, mounted DMG, double-clicked
+            // copy in Downloads, etc.). Do NOT touch any pre-existing agent:
+            // the real Applications install may still be present, and the
+            // helper's own Launch Services probe handles stale stored paths.
+            // Touching the agent here would leave that real install armless
+            // until it launches again.
             return
         }
 
@@ -85,9 +83,10 @@ enum SelfCleanupInstaller {
 #!/bin/bash
 # Yojam self-cleanup helper (managed by Yojam.app).
 # Runs periodically via ~/Library/LaunchAgents/org.yojam.cleanup.plist.
-# If no Yojam bundle is registered on this Mac, wipes user state and removes
-# itself. The stored path is only a fast-path hint — a rename or move of the
-# app must not cause false-positive destruction.
+# If no Yojam bundle can be found on this Mac for several consecutive
+# check-ins, wipes user state and removes itself. The stored path is only a
+# fast-path hint; a rename, move, or unindexed volume must not cause
+# false-positive destruction on a single fire.
 
 set -u
 
@@ -95,9 +94,19 @@ BUNDLE_PATH="${1:-}"
 BUNDLE_ID="com.yojam.app"
 AGENT_PLIST="$HOME/Library/LaunchAgents/org.yojam.cleanup.plist"
 SELF_PATH="$0"
+STATE_DIR="$HOME/Library/Application Support/Yojam"
+STRIKE_FILE="$STATE_DIR/.cleanup-strikes"
+# Require this many consecutive "bundle not found" fires before wiping.
+# With StartInterval=86400 this is effectively ~3 days of confirmed absence.
+STRIKE_THRESHOLD=3
+
+reset_strikes() {
+  rm -f "$STRIKE_FILE" 2>/dev/null || true
+}
 
 # Fast path: last-known install location is still there.
 if [ -n "$BUNDLE_PATH" ] && [ -d "$BUNDLE_PATH" ]; then
+  reset_strikes
   exit 0
 fi
 
@@ -107,6 +116,21 @@ fi
 if command -v mdfind >/dev/null 2>&1; then
   HIT=$(mdfind "kMDItemCFBundleIdentifier == '$BUNDLE_ID'" 2>/dev/null | head -n 1)
   if [ -n "$HIT" ] && [ -d "$HIT" ]; then
+    reset_strikes
+    exit 0
+  fi
+fi
+
+# Launch Services lookup via osascript — resolves renamed bundles even when
+# Spotlight is disabled for the volume. Silent failure is expected if
+# Automation permission for osascript→System Events is not granted, which
+# is why this is a secondary check after mdfind.
+if command -v osascript >/dev/null 2>&1; then
+  LS_HIT=$(osascript -e 'try' \
+    -e "POSIX path of (application file id \"$BUNDLE_ID\" as alias)" \
+    -e 'end try' 2>/dev/null)
+  if [ -n "$LS_HIT" ] && [ -d "$LS_HIT" ]; then
+    reset_strikes
     exit 0
   fi
 fi
@@ -116,9 +140,22 @@ for alt in \
   "/Applications/Yojam.app" \
   "$HOME/Applications/Yojam.app"; do
   if [ -d "$alt" ]; then
+    reset_strikes
     exit 0
   fi
 done
+
+# Nothing found this round — record a strike. Only wipe after repeated
+# confirmations so a transient lookup failure cannot destroy user state.
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+strikes=$(cat "$STRIKE_FILE" 2>/dev/null || echo 0)
+# Guard against non-numeric garbage in the strike file.
+case "$strikes" in ''|*[!0-9]*) strikes=0;; esac
+strikes=$((strikes + 1))
+echo "$strikes" > "$STRIKE_FILE"
+if [ "$strikes" -lt "$STRIKE_THRESHOLD" ]; then
+  exit 0
+fi
 
 # Bundle is genuinely missing — wipe user state.
 find "$HOME/Library/Application Support" -name "org.yojam.host.json" -type f -delete 2>/dev/null
