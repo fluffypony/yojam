@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import YojamCore
 
@@ -30,27 +31,41 @@ enum ConfigImporter {
 
     // MARK: - Detection
 
+    /// Detect which of the supported sources are installed on this Mac
+    /// *without* reading their config files.
+    ///
+    /// Why LaunchServices instead of `FileManager.fileExists`: touching paths
+    /// under `~/Library/Containers/<other-app>/` (Bumpr's sandbox) triggers
+    /// the macOS `TCC_SERVICE_SYSTEM_POLICY_APP_DATA` prompt — the
+    /// "would like to access data from other apps" dialog — on every launch
+    /// with a changed code signature (Debug builds, ad-hoc signed). The
+    /// actual plist reads happen in `importFrom(_:)`, which is only invoked
+    /// when the user explicitly opens the Import sheet; the prompt there is
+    /// in-context and one-shot.
     static func detectAvailable() -> [Source] {
         var available: [Source] = []
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let ws = NSWorkspace.shared
 
-        let bumprPaths = [
-            "Library/Containers/com.nickvdh.Bumpr/Data/Library/Preferences/com.nickvdh.Bumpr.plist",
-            "Library/Containers/com.tenseventeen.Bumpr/Data/Library/Preferences/com.tenseventeen.Bumpr.plist",
-            "Library/Containers/com.nicholaspsmith.Bumpr/Data/Library/Preferences/com.nicholaspsmith.Bumpr.plist",
-            "Library/Preferences/com.nickvdh.Bumpr.plist",
+        let bumprBundleIds = [
+            "com.nickvdh.Bumpr",
+            "com.tenseventeen.Bumpr",
+            "com.nicholaspsmith.Bumpr",
         ]
-        if bumprPaths.contains(where: { FileManager.default.fileExists(atPath: home.appendingPathComponent($0).path) }) {
+        if bumprBundleIds.contains(where: { ws.urlForApplication(withBundleIdentifier: $0) != nil }) {
             available.append(.bumpr)
         }
 
-        let choosyPref = home.appendingPathComponent("Library/Preferences/com.choosyosx.Choosy.plist")
-        if FileManager.default.fileExists(atPath: choosyPref.path) {
+        if ws.urlForApplication(withBundleIdentifier: "com.choosyosx.Choosy") != nil {
             available.append(.choosy)
         }
 
-        let finickyJS = home.appendingPathComponent(".finicky.js")
-        if FileManager.default.fileExists(atPath: finickyJS.path) {
+        // Finicky ships as both a plain JS dotfile in the user's home dir
+        // (accessible without TCC) and, historically, a menu-bar app.
+        // Either signal is enough to offer the import.
+        let finickyJS = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".finicky.js")
+        if FileManager.default.fileExists(atPath: finickyJS.path)
+            || ws.urlForApplication(withBundleIdentifier: "net.kassett.Finicky") != nil {
             available.append(.finicky)
         }
 
