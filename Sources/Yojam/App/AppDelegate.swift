@@ -82,6 +82,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Every NSWindow gets inspected as it appears so the preferences
+        // Window scene's NSWindow picks up our minSize floor even when it
+        // was created by SwiftUI before showPreferences() ran. Relying on
+        // identifySettingsWindow() inside showPreferences() misses the
+        // scene-autoopened window entirely.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let window = note.object as? NSWindow else { return }
+            self?.applyPreferencesWindowConstraintsIfMatching(window)
+        }
+
         // TipKit
         try? Tips.configure([
             .displayFrequency(.daily),
@@ -1017,6 +1031,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let settingsWindowIdentifier = NSUserInterfaceItemIdentifier("YojamPreferences")
     private weak var settingsWindow: NSWindow?
 
+    /// Pin the preferences window to our known-good minimum size. The
+    /// Window scene's `.windowResizability(.contentMinSize)` reads the
+    /// view hierarchy's natural minimum, which undercuts the explicit
+    /// `.frame(minWidth:)` floor we specify — so we set minSize directly
+    /// on the NSWindow whenever we find it.
+    private func applyPreferencesWindowConstraintsIfMatching(_ window: NSWindow) {
+        let isPreferences = window.identifier == Self.settingsWindowIdentifier
+            || window.title.lowercased().contains("yojam settings")
+            || window.title.lowercased().contains("settings")
+            || window.title.lowercased().contains("preferences")
+        guard isPreferences, !(window is NSPanel) else { return }
+        window.identifier = Self.settingsWindowIdentifier
+        window.setFrameAutosaveName("YojamPreferences")
+        window.minSize = NSSize(width: 900, height: 500)
+        settingsWindow = window
+    }
+
     /// Close the preferences window if SwiftUI's Window scene auto-opened
     /// it at launch. Called from applicationDidFinishLaunching on launches
     /// that aren't first-run or URL-driven.
@@ -1047,7 +1078,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }) {
             tagged.identifier = Self.settingsWindowIdentifier
             tagged.setFrameAutosaveName("YojamPreferences")
-            tagged.minSize = NSSize(width: 750, height: 500)
+            tagged.minSize = NSSize(width: 900, height: 500)
             settingsWindow = tagged
             return tagged
         }

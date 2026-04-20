@@ -216,8 +216,13 @@ struct PreferencesView: View {
                     .transition(.opacity)
             }
         }
+        // Min width 900 not 750: the Link Handling tab's header
+        // (+Add Rule / +Add Rewrite) and URL Tester row need at least
+        // ~660pt inside the content column, and with the 240pt sidebar
+        // that's 900. Going narrower clips either the sidebar or the
+        // content buttons.
         .frame(
-            minWidth: 750, idealWidth: 900, maxWidth: .infinity,
+            minWidth: 900, idealWidth: 900, maxWidth: .infinity,
             minHeight: 500, idealHeight: 600, maxHeight: .infinity)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
@@ -326,13 +331,10 @@ struct PreferencesView: View {
             .padding(.bottom, 12)
         }
         .frame(width: 240)
-        // Without fixedSize, SwiftUI's HStack layout algorithm compresses
-        // the sidebar to absorb wider content in tabs with large headers
-        // (the Link Handling tab's +Add Rule / +Add Rewrite row, notably),
-        // even though the sidebar has a fixed 240pt frame. Locking the
-        // horizontal axis keeps the sidebar width constant — the content
-        // tab compresses first instead.
-        .fixedSize(horizontal: true, vertical: false)
+        // layoutPriority wins HStack compression contests without making
+        // the sidebar push content out of the window (which fixedSize
+        // would do — that overflowed both edges when content was wide).
+        .layoutPriority(1)
         .background(Theme.bgSidebar)
         .overlay(alignment: .trailing) {
             Rectangle()
