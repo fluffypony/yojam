@@ -38,14 +38,23 @@ enum SelfCleanupInstaller {
     static func installOrRefresh() {
         let bundleURL = Bundle.main.bundleURL
         guard shouldInstall(forBundle: bundleURL) else {
-            YojamLogger.shared.log("SelfCleanupInstaller: skipping — bundle not in Applications (\(bundleURL.path))")
+            // Non-whitelisted launch (dev build, mounted DMG, etc.). If an
+            // agent was installed by a previous Applications-located launch,
+            // disarm it: leaving it in place with a stale path would let it
+            // wipe user state even though Yojam is still present here.
+            if FileManager.default.fileExists(atPath: agentPlistURL.path) {
+                YojamLogger.shared.log("SelfCleanupInstaller: removing stale agent from prior install (\(bundleURL.path))")
+                uninstallAgent()
+            }
             return
         }
 
         do {
             try writeHelperScript()
-            try writeLaunchAgentPlist(bundlePath: bundleURL.path)
-            reloadAgent()
+            let wroteNewPlist = try writeLaunchAgentPlist(bundlePath: bundleURL.path)
+            if wroteNewPlist {
+                reloadAgent()
+            }
         } catch {
             YojamLogger.shared.log("SelfCleanupInstaller: install failed: \(error.localizedDescription)")
         }
@@ -76,26 +85,49 @@ enum SelfCleanupInstaller {
 #!/bin/bash
 # Yojam self-cleanup helper (managed by Yojam.app).
 # Runs periodically via ~/Library/LaunchAgents/org.yojam.cleanup.plist.
-# If the installed app bundle is gone, wipes user state and removes itself.
+# If no Yojam bundle is registered on this Mac, wipes user state and removes
+# itself. The stored path is only a fast-path hint — a rename or move of the
+# app must not cause false-positive destruction.
 
 set -u
 
 BUNDLE_PATH="${1:-}"
+BUNDLE_ID="com.yojam.app"
 AGENT_PLIST="$HOME/Library/LaunchAgents/org.yojam.cleanup.plist"
 SELF_PATH="$0"
 
-if [ -z "$BUNDLE_PATH" ] || [ -d "$BUNDLE_PATH" ]; then
-  # No bundle path given, or the app is still installed. Nothing to do.
+# Fast path: last-known install location is still there.
+if [ -n "$BUNDLE_PATH" ] && [ -d "$BUNDLE_PATH" ]; then
   exit 0
 fi
 
-# Bundle is missing — wipe user state.
+# Spotlight lookup covers renamed/moved installs (including other volumes).
+# Silently ignored if indexing is disabled — the explicit fallback below
+# catches the common locations.
+if command -v mdfind >/dev/null 2>&1; then
+  HIT=$(mdfind "kMDItemCFBundleIdentifier == '$BUNDLE_ID'" 2>/dev/null | head -n 1)
+  if [ -n "$HIT" ] && [ -d "$HIT" ]; then
+    exit 0
+  fi
+fi
+
+# Explicit fallback: conventional install locations.
+for alt in \
+  "/Applications/Yojam.app" \
+  "$HOME/Applications/Yojam.app"; do
+  if [ -d "$alt" ]; then
+    exit 0
+  fi
+done
+
+# Bundle is genuinely missing — wipe user state.
 find "$HOME/Library/Application Support" -name "org.yojam.host.json" -type f -delete 2>/dev/null
 rm -rf "$HOME/Library/Logs/Yojam" 2>/dev/null
 rm -rf "$HOME/Library/Group Containers/group.org.yojam.shared" 2>/dev/null
 rm -rf "$HOME/Library/Application Support/Yojam" 2>/dev/null
 rm -f  "$HOME/Library/Preferences/com.yojam.app.plist" 2>/dev/null
 defaults delete com.yojam.app >/dev/null 2>&1 || true
+defaults delete group.org.yojam.shared >/dev/null 2>&1 || true
 rm -rf "$HOME/.config/yojam" 2>/dev/null
 
 # Unload and remove self.
@@ -110,7 +142,10 @@ exit 0
             [.posixPermissions: 0o755], ofItemAtPath: helperScriptURL.path)
     }
 
-    private static func writeLaunchAgentPlist(bundlePath: String) throws {
+    /// Write the LaunchAgent plist. Returns true when the on-disk plist was
+    /// changed (or newly created). Callers use this to decide whether to
+    /// cycle `launchctl unload`/`launchctl load`.
+    private static func writeLaunchAgentPlist(bundlePath: String) throws -> Bool {
         let dir = agentPlistURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -129,11 +164,11 @@ exit 0
         let data = try PropertyListSerialization.data(
             fromPropertyList: plist, format: .xml, options: 0)
 
-        // Skip rewrite if identical — avoids redundant unload/load cycles.
         if let existing = try? Data(contentsOf: agentPlistURL), existing == data {
-            return
+            return false
         }
         try data.write(to: agentPlistURL, options: .atomic)
+        return true
     }
 
     private static func reloadAgent() {
