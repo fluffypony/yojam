@@ -123,12 +123,19 @@ fi
 
 # Launch Services lookup via lsregister's dump. Unlike `path to application
 # id` in AppleScript, this doesn't send an AppleEvent to the target app
-# (which can wake/launch it). Blocks in the dump are separated by lines of
-# dashes; within each block we track the last `path:` value and emit it
-# when `identifier:` matches the Yojam bundle ID.
+# (which can wake/launch it). Launch Services often retains stale records
+# for uninstalled copies, so we emit ALL paths with a matching bundle ID
+# and treat the app as present if any one of them still exists on disk.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [ -x "$LSREGISTER" ]; then
-  LS_HIT=$("$LSREGISTER" -dump 2>/dev/null \
+  FOUND_LIVE=0
+  while IFS= read -r cand; do
+    [ -z "$cand" ] && continue
+    if [ -d "$cand" ]; then
+      FOUND_LIVE=1
+      break
+    fi
+  done < <("$LSREGISTER" -dump 2>/dev/null \
     | awk -v id="$BUNDLE_ID" '
         /^-+$/ { p=""; next }
         /^path:[[:space:]]+/ {
@@ -140,9 +147,9 @@ if [ -x "$LSREGISTER" ]; then
           i=$0
           sub(/^identifier:[[:space:]]+/, "", i)
           sub(/[[:space:]]+\(0x[0-9a-f]+\)[[:space:]]*$/, "", i)
-          if (i == id && p != "") { print p; exit }
+          if (i == id && p != "") { print p }
         }')
-  if [ -n "$LS_HIT" ] && [ -d "$LS_HIT" ]; then
+  if [ "$FOUND_LIVE" -eq 1 ]; then
     reset_strikes
     exit 0
   fi
