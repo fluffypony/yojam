@@ -246,19 +246,23 @@ struct PipelineTab: View {
 
             if hasContent {
                 ThemePanel {
-                    // Table header
+                    // Table header. Widths kept tight so the Link Handling
+                    // tab's intrinsic minimum fits inside the 660pt content
+                    // column at the 900pt window min — otherwise the whole
+                    // HStack overflows and the sidebar visibly shifts.
                     HStack(spacing: 0) {
-                        Text("").frame(width: 30)
-                        Text("STATUS").frame(width: 50, alignment: .leading)
+                        Text("").frame(width: 24)
+                        Text("STATUS").frame(width: 44, alignment: .leading)
                             .help("Whether this rule is active")
-                        Text("TYPE").frame(width: 80, alignment: .leading)
+                        Text("TYPE").frame(width: 64, alignment: .leading)
                             .help("Rewrite transforms URLs; Rule routes to a browser")
-                        Text("PATTERN MATCH").frame(minWidth: 150, alignment: .leading)
+                        Text("PATTERN MATCH").frame(minWidth: 110, alignment: .leading)
                             .help("The URL pattern this entry matches against")
                         Spacer()
-                        Text("ACTION / TARGET").frame(width: 150, alignment: .leading)
+                        Text("ACTION / TARGET")
+                            .frame(minWidth: 100, idealWidth: 150, alignment: .leading)
                             .help("What happens when the pattern matches")
-                        Text("").frame(width: 60)
+                        Text("").frame(width: 110)
                     }
                     .font(.system(size: 11, weight: .medium))
                     .tracking(0.5)
@@ -320,7 +324,7 @@ struct PipelineTab: View {
             Text("\u{22EE}\u{22EE}")
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
-                .frame(width: 30)
+                .frame(width: 24)
                 .help("Drag to reorder priority")
 
             Toggle("", isOn: Binding(
@@ -331,18 +335,19 @@ struct PipelineTab: View {
             .tint(Theme.accent)
             .labelsHidden()
             .scaleEffect(0.7)
-            .frame(width: 50, alignment: .leading)
+            .frame(width: 44, alignment: .leading)
             .help("Enable or disable this rule")
             .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
             ThemeBadge(text: "Rewrite", isRewrite: true)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 64, alignment: .leading)
 
             Text(rule.matchPattern)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(Theme.textSecondary)
                 .lineLimit(1)
-                .frame(minWidth: 150, alignment: .leading)
+                .truncationMode(.middle)
+                .frame(minWidth: 110, alignment: .leading)
 
             Spacer()
 
@@ -350,14 +355,15 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textPrimary)
                 .lineLimit(1)
-                .frame(width: 150, alignment: .leading)
+                .truncationMode(.tail)
+                .frame(minWidth: 100, idealWidth: 150, alignment: .leading)
 
             HStack(spacing: 4) {
                 ThemeIconButton(systemName: "trash", isDanger: true) {
                     deleteRewrite(rule.id)
                 }
             }
-            .frame(width: 60)
+            .frame(width: 110)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -369,7 +375,7 @@ struct PipelineTab: View {
             Text("\u{22EE}\u{22EE}")
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
-                .frame(width: 30)
+                .frame(width: 24)
                 .help("Drag to reorder priority")
 
             Toggle("", isOn: Binding(
@@ -380,18 +386,19 @@ struct PipelineTab: View {
             .tint(Theme.accent)
             .labelsHidden()
             .scaleEffect(0.7)
-            .frame(width: 50, alignment: .leading)
+            .frame(width: 44, alignment: .leading)
             .help("Enable or disable this rule")
             .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
             ThemeBadge(text: rule.isBuiltIn ? "Built-in" : "Rule", isRewrite: false)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 64, alignment: .leading)
 
             Text(rule.pattern)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(Theme.textSecondary)
                 .lineLimit(1)
-                .frame(minWidth: 150, alignment: .leading)
+                .truncationMode(.middle)
+                .frame(minWidth: 110, alignment: .leading)
 
             Spacer()
 
@@ -399,7 +406,8 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textPrimary)
                 .lineLimit(1)
-                .frame(width: 150, alignment: .leading)
+                .truncationMode(.tail)
+                .frame(minWidth: 100, idealWidth: 150, alignment: .leading)
 
             HStack(spacing: 4) {
                 ThemeIconButton(systemName: "pencil", help: "Edit rule") {
@@ -417,7 +425,7 @@ struct PipelineTab: View {
                     ruleEngine.deleteRule(rule.id)
                 }
             }
-            .frame(width: 120)
+            .frame(width: 110)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
