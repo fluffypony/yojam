@@ -16,11 +16,11 @@ final class SettingsStoreTests: XCTestCase {
     @MainActor
     func testResetToDefaultsUpdatesInMemory() {
         let store = SettingsStore()
-        store.soundEffectsEnabled = false
+        store.soundEffectsEnabled = true
         store.verticalThreshold = 15
         store.globalUTMStrippingEnabled = true
         store.resetToDefaults()
-        XCTAssertTrue(store.soundEffectsEnabled)
+        XCTAssertFalse(store.soundEffectsEnabled)
         XCTAssertEqual(store.verticalThreshold, 8)
         XCTAssertFalse(store.globalUTMStrippingEnabled)
     }
