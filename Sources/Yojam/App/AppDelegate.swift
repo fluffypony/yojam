@@ -1101,6 +1101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowKVO = nil
     }
 
+    /// Yojam is a menu-bar utility. With the preferences scene migrated
+    /// from `Settings` (which doesn't count as a window) to `Window`
+    /// (which does), SwiftUI's default "terminate on last window closed"
+    /// would quit the app whenever the user closes preferences. Override
+    /// so the app keeps running in the menu bar.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
