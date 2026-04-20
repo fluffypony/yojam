@@ -410,20 +410,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let targetDisplayUUID = matchedRule?.targetDisplayUUID
                 ?? matchedRule?.targetDisplayIndex.flatMap { indexToUUID($0) }
 
-            // Firefox container routing: open via the Yojam extension in Firefox
-            // rather than going through NSWorkspace directly. Containers require
-            // the contextualIdentities API which only exists inside Firefox.
-            if let container, !container.isEmpty,
-               ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
-                "org.mozilla.nightly"].contains(entry.bundleIdentifier) {
-                YojamLogger.shared.log(
-                    "Firefox container rule matched (\(container)); "
-                    + "delegating to extension native messaging is not yet wired — "
-                    + "using standard open (container ignored). See Integrations help.")
+            // Firefox container routing: open via a bridge URL that the Yojam
+            // Firefox extension intercepts in webNavigation.onBeforeNavigate
+            // and re-opens in the requested contextualIdentity. If the
+            // extension is absent the bridge URL fails to resolve (invalid TLD),
+            // so there is no silent misroute.
+            let isFirefox = ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+                             "org.mozilla.nightly"].contains(entry.bundleIdentifier)
+            let effectiveURL: URL
+            if let container, !container.isEmpty, isFirefox,
+               let bridge = Self.firefoxContainerBridgeURL(container: container, target: finalURL) {
+                effectiveURL = bridge
+            } else {
+                effectiveURL = finalURL
             }
 
             guard let resolvedAppURL = appURL(for: entry.bundleIdentifier) else { return }
-            openURL(finalURL, withAppAt: resolvedAppURL,
+            openURL(effectiveURL, withAppAt: resolvedAppURL,
                     profile: entry.profileId,
                     bundleId: entry.bundleIdentifier,
                     privateWindow: privateWindow,
@@ -738,6 +741,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let zeroBased = index - 1
         guard displays.indices.contains(zeroBased) else { return nil }
         return displays[zeroBased].id
+    }
+
+    /// Build the bridge URL used to route a link into a Firefox contextualIdentity.
+    /// The Yojam Firefox extension intercepts this URL in webNavigation.onBeforeNavigate
+    /// and re-opens the target in the named container. See Extensions/shared/background.js.
+    static func firefoxContainerBridgeURL(container: String, target: URL) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "yojam-container.invalid"
+        components.path = "/open"
+        components.queryItems = [
+            URLQueryItem(name: "c", value: container),
+            URLQueryItem(name: "u", value: target.absoluteString),
+        ]
+        return components.url
     }
 
     func openURL(

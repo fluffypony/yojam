@@ -18,6 +18,13 @@ const isSafari =
 let alwaysRoute = false;
 const routedTabs = new Map(); // tabId -> expiry timestamp
 
+// Bridge URL the main app uses when a rule specifies a Firefox container.
+// The app launches Firefox with this URL; the extension intercepts it in
+// webNavigation.onBeforeNavigate (before DNS) and re-opens the target in
+// the requested container. The host intentionally uses the .invalid TLD
+// (RFC 6761) so it never resolves if the extension is absent.
+const CONTAINER_BRIDGE_PREFIX = "https://yojam-container.invalid/open";
+
 // Load setting on startup
 chrome.storage.local.get("alwaysRoute", (r) => {
   alwaysRoute = !!r.alwaysRoute;
@@ -39,9 +46,31 @@ function isRoutedRecently(tabId) {
 
 // webNavigation interception (Chrome/Firefox only, not Safari)
 if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
-  chrome.webNavigation.onBeforeNavigate.addListener((d) => {
-    if (!alwaysRoute) return;
+  chrome.webNavigation.onBeforeNavigate.addListener(async (d) => {
     if (d.frameId !== 0) return; // top-frame only
+
+    // Container bridge: app-initiated Firefox container open request.
+    if (d.url.startsWith(CONTAINER_BRIDGE_PREFIX)) {
+      try {
+        const parsed = new URL(d.url);
+        const container = parsed.searchParams.get("c");
+        const target = parsed.searchParams.get("u");
+        if (container && target) {
+          const ok = await openInContainer(target, container);
+          // Close the bridge tab regardless (on failure we'll surface target).
+          if (ok) {
+            chrome.tabs.remove(d.tabId);
+          } else {
+            chrome.tabs.update(d.tabId, { url: target });
+          }
+        }
+      } catch (_) {
+        /* ignore malformed bridge URLs */
+      }
+      return;
+    }
+
+    if (!alwaysRoute) return;
     if (!/^https?:\/\//i.test(d.url)) return; // http(s) only
     if (d.url.startsWith("yojam://")) return;
     if (isRoutedRecently(d.tabId)) return; // loop guard

@@ -74,7 +74,7 @@ enum HelpText {
     // MARK: - Rules Tab extras
     enum Rules {
         static let builtInEditing = "Built-in rules can now be edited, duplicated, or reset to defaults like user-defined rules. Deleted built-ins won't reappear on next launch; use Restore Default Rules to bring them back."
-        static let firefoxContainer = "Opens matching links in a specific Firefox container. Requires the Yojam Firefox extension. Leave blank to use the default context."
+        static let firefoxContainer = "Opens matching links in a specific Firefox container (contextualIdentity). Requires the Yojam Firefox extension to be installed and enabled — it intercepts a bridge URL and reopens the link in the named container. Leave blank to use the default context."
         static let displayTargeting = "Optional: move the browser window to a specific display after it opens. Requires Accessibility permission (System Settings > Privacy & Security > Accessibility)."
     }
 

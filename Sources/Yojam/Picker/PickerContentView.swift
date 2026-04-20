@@ -36,7 +36,7 @@ struct PickerContentView: View {
             case .bigHorizontal:    bigHorizontalLayout
             case .smallVertical:    smallVerticalLayout
             case .bigVertical:      bigVerticalLayout
-            case .auto:             smallHorizontalLayout
+            case .auto:             bigHorizontalLayout
             }
 
             // Match reason badge
@@ -117,6 +117,12 @@ struct PickerContentView: View {
                     PickerIconView(
                         entry: entry, isSelected: index == selectedIndex, size: 36
                     )
+                    Text(entry.displayName)
+                        .font(.system(size: 9))
+                        .foregroundStyle(index == selectedIndex ? .primary : .secondary)
+                        .lineLimit(1)
+                        .frame(width: 42)
+                        .truncationMode(.tail)
                 }
                 .onTapGesture { selectedIndex = index; selectCurrent() }
                 .onHover { hovering in
