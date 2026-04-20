@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Optional subsystems
     private var clipboardMonitor: ClipboardMonitor?
     private var iCloudSyncManager: ICloudSyncManager?
+    private var configFileManager: ConfigFileManager?
+    private var configSyncSubscription: AnyCancellable?
 
     // MARK: - State
     private var cancellables = Set<AnyCancellable>()
@@ -207,6 +209,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Install native messaging host manifests on every launch to
         // repair them after the app bundle is moved.
         NativeMessagingInstaller.reconcileInstalled()
+
+        // Flat-file config sync. Sync on every routing-data change.
+        configFileManager = ConfigFileManager(settingsStore: settingsStore)
+        configFileManager?.start()
+        configSyncSubscription = settingsStore.routingDataDidChange.sink { [weak self] in
+            // Debounce writes via a small delay so burst updates coalesce.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.configFileManager?.writeConfig()
+            }
+        }
 
         // Profile discovery - async to avoid blocking launch.
         // Auto-assign the default profile to each base browser entry.

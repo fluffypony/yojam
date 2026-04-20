@@ -20,6 +20,8 @@ case "preview":
     handlePreview(Array(args.dropFirst(2)))
 case "settings":
     handleSettings()
+case "validate":
+    handleValidate(Array(args.dropFirst(2)))
 case "--version", "-v":
     print("yojam 1.0.0")
 case "--help", "-h", "help":
@@ -28,6 +30,41 @@ default:
     fputs("Unknown command: \(args[1])\n", stderr)
     printUsage()
     exit(1)
+}
+
+func handleValidate(_ args: [String]) {
+    // Optional positional argument = path to config file.
+    let path: URL
+    if let first = args.first, !first.isEmpty {
+        path = URL(fileURLWithPath: first)
+    } else {
+        path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Yojam/config.json")
+    }
+    guard let data = try? Data(contentsOf: path) else {
+        fputs("No config file found at \(path.path)\n", stderr)
+        exit(1)
+    }
+    // Validate as JSON; report top-level keys + version.
+    do {
+        let obj = try JSONSerialization.jsonObject(with: data, options: [])
+        guard let dict = obj as? [String: Any] else {
+            fputs("Config root is not a JSON object\n", stderr)
+            exit(1)
+        }
+        let version = (dict["version"] as? Int) ?? -1
+        let ruleCount = (dict["rules"] as? [[String: Any]])?.count ?? 0
+        let rewriteCount = (dict["globalRewriteRules"] as? [[String: Any]])?.count ?? 0
+        let browserCount = (dict["browsers"] as? [[String: Any]])?.count ?? 0
+        print("Config valid.")
+        print("  Version: \(version)")
+        print("  Browsers: \(browserCount)")
+        print("  Rules: \(ruleCount)")
+        print("  Rewrite rules: \(rewriteCount)")
+    } catch {
+        fputs("Invalid JSON: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
 }
 
 // MARK: - Commands
@@ -213,6 +250,9 @@ func printUsage() {
         --json          Output as JSON
 
       settings        Open Yojam preferences
+
+      validate [path] Validate a Yojam config.json file
+                      (defaults to ~/Library/Application Support/Yojam/config.json)
 
       --version       Show version
     """)
