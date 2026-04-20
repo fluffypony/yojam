@@ -910,7 +910,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
             }
-            NSApp.activate()
+            // Use the deprecated form so we reliably pull to front from a
+            // status-bar menu click — plain `activate()` on macOS 14+ is a
+            // polite request that's ignored unless the activation was
+            // user-initiated in the strict sense (dock / app-icon click).
+            NSApp.activate(ignoringOtherApps: true)
             // Find the Settings window specifically — avoid picking AddRule sheets
             // or Sparkle update windows. Settings windows are identifiable by their
             // size (900x600+) and not being panels.
