@@ -264,26 +264,35 @@ struct GeneralTab: View {
                         }
                     }
                 }
-                ThemePanelRow(helpText: HelpText.General.invertOrder) {
+                ThemePanelRow(isLast: true, helpText: HelpText.General.invertOrder) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Reverse Order")
+                        Text("Layout Direction")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text(settingsStore.pickerLayout.isVertical || settingsStore.pickerLayout == .auto
-                             ? "Show browsers from bottom to top."
-                             : "Show browsers from right to left.")
+                        Text("Override the direction the picker lays out browsers.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }
                     Spacer()
-                    ThemeToggle(isOn: $settingsStore.pickerInvertOrder)
+                    Picker("", selection: $settingsStore.pickerDirectionOverride) {
+                        ForEach(PickerDirectionOverride.allCases) { dir in
+                            Text(dir.displayName).tag(dir)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220)
                 }
+            }
+
+            // Accessibility
+            ThemeSectionTitle(text: "Accessibility")
+            ThemePanel {
                 ThemePanelRow(isLast: true, helpText: HelpText.General.soundEffects) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Sound Effects")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Plays a short sound when you pick a browser.")
+                        Text("Plays a short confirmation sound when you pick a browser. Useful as an auditory confirmation for VoiceOver users.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }

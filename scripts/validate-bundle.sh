@@ -31,9 +31,9 @@ echo "Checking Sparkle framework..."
   exit 1
 }
 
-echo "Checking for placeholder extension ID..."
-if grep -rq "placeholder_extension_id" "$APP/Contents/MacOS/" 2>/dev/null; then
-  echo "WARNING: placeholder_extension_id found in binary — Chrome native messaging will not work"
+echo "Checking Chrome extension ID configuration..."
+if [ ! -f "$APP/Contents/Resources/chrome-extension-ids.json" ]; then
+  echo "WARNING: chrome-extension-ids.json not bundled — Chrome native messaging will not install manifests"
 fi
 
 echo "=== All checks passed ==="

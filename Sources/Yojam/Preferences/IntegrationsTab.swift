@@ -91,7 +91,7 @@ struct IntegrationsTab: View {
         isWeblocHandler = DefaultBrowserManager.isWeblocHandler
         isYojamSchemeRegistered = DefaultBrowserManager.isYojamSchemeRegistered
         isChromeHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Chrome")
-        isChromeHostMisconfigured = NativeMessagingInstaller.chromeExtensionId == "placeholder_extension_id"
+        isChromeHostMisconfigured = NativeMessagingInstaller.resolveChromeExtensionIds().isEmpty
         isFirefoxHostInstalled = NativeMessagingInstaller.isManifestInstalled(for: "Firefox")
         isAppGroupAccessible = UserDefaults(suiteName: SharedRoutingStore.suiteName) != nil
     }

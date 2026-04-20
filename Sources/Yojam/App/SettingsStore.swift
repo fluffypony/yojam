@@ -47,6 +47,27 @@ enum RecentURLRetention: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum PickerDirectionOverride: String, Codable, CaseIterable, Identifiable, Sendable {
+    case system, ltr, rtl, topToBottom, bottomToTop
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .system: "Automatic (follow system)"
+        case .ltr: "Left to Right"
+        case .rtl: "Right to Left"
+        case .topToBottom: "Top to Bottom"
+        case .bottomToTop: "Bottom to Top"
+        }
+    }
+}
+
+/// Typed navigation route used by Quick Start deep-linking.
+struct PreferencesRoute: Equatable {
+    let tab: String        // PreferencesTab rawValue
+    let sectionId: String
+    let controlId: String?
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
     /// App-only settings (launch at login, Quick Start, clipboard, Sparkle, etc.)
@@ -77,13 +98,15 @@ final class SettingsStore: ObservableObject {
         static let utmStripList = "utmStripList"
         static let suppressedClipboardDomains = "suppressedClipboardDomains"
         static let pickerLayout = "pickerLayout"
-        static let pickerInvertOrder = "pickerInvertOrder"
+        static let pickerDirectionOverride = "pickerDirectionOverride"
         static let recentURLRetention = "recentURLRetention"
         static let recentURLRetentionMinutes = "recentURLRetentionMinutes"
         static let hasDismissedQuickStart = "hasDismissedQuickStart"
         static let quickStartVisitedActivation = "quickStartVisitedActivation"
         static let quickStartVisitedBrowsers = "quickStartVisitedBrowsers"
         static let quickStartVisitedTester = "quickStartVisitedTester"
+        // User-deleted built-in rule UUIDs (distinct from BuiltInRules.removedIds).
+        static let deletedBuiltInRuleIds = "deletedBuiltInRuleIds"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -146,8 +169,8 @@ final class SettingsStore: ObservableObject {
     @Published var pickerLayout: PickerLayout {
         didSet { sharedDefaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout) }
     }
-    @Published var pickerInvertOrder: Bool {
-        didSet { sharedDefaults.set(pickerInvertOrder, forKey: Keys.pickerInvertOrder) }
+    @Published var pickerDirectionOverride: PickerDirectionOverride {
+        didSet { sharedDefaults.set(pickerDirectionOverride.rawValue, forKey: Keys.pickerDirectionOverride) }
     }
     @Published var recentURLRetention: RecentURLRetention {
         didSet { sharedDefaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention) }
@@ -173,6 +196,10 @@ final class SettingsStore: ObservableObject {
 
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
+    /// Typed deep-link route pushed by Quick Start steps.
+    @Published var pendingRoute: PreferencesRoute?
+    /// Transient control ID that the UI should highlight briefly.
+    @Published var highlightedControlId: String?
 
     // B-ICLOUD-BROAD: Dedicated publisher for routing-data changes only,
     // so iCloud sync doesn't re-encode on unrelated UI field changes.
@@ -197,7 +224,9 @@ final class SettingsStore: ObservableObject {
             Keys.activationMode: ActivationMode.always.rawValue,
             Keys.defaultSelection: DefaultSelectionBehavior.alwaysFirst.rawValue,
             Keys.verticalThreshold: 8,
-            Keys.soundEffects: true,
+            Keys.soundEffects: false,
+            Keys.pickerLayout: PickerLayout.bigHorizontal.rawValue,
+            Keys.pickerDirectionOverride: PickerDirectionOverride.system.rawValue,
         ])
 
         // App-only settings from .standard
@@ -221,17 +250,35 @@ final class SettingsStore: ObservableObject {
         self.defaultSelectionBehavior = DefaultSelectionBehavior(
             rawValue: s.string(forKey: Keys.defaultSelection) ?? "") ?? .alwaysFirst
         self.verticalThreshold = s.object(forKey: Keys.verticalThreshold) as? Int ?? 8
-        self.soundEffectsEnabled = s.object(forKey: Keys.soundEffects) as? Bool ?? true
+        self.soundEffectsEnabled = s.object(forKey: Keys.soundEffects) as? Bool ?? false
         self.globalUTMStrippingEnabled = s.bool(forKey: Keys.globalUTMStripping)
         self.utmStripList = s.stringArray(forKey: Keys.utmStripList)
             ?? UTMStripper.defaultParameters
         self.pickerLayout = PickerLayout(
             rawValue: s.string(forKey: Keys.pickerLayout) ?? "") ?? .auto
-        self.pickerInvertOrder = s.bool(forKey: Keys.pickerInvertOrder)
+        self.pickerDirectionOverride = PickerDirectionOverride(
+            rawValue: s.string(forKey: Keys.pickerDirectionOverride) ?? "") ?? .system
         self.recentURLRetention = RecentURLRetention(
             rawValue: s.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = s.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
         self.shortlinkResolutionEnabled = s.bool(forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled)
+    }
+
+    // MARK: - User-deleted built-in rules tracking
+
+    func deletedBuiltInRuleIds() -> Set<UUID> {
+        guard let arr = sharedDefaults.stringArray(forKey: Keys.deletedBuiltInRuleIds) else { return [] }
+        return Set(arr.compactMap { UUID(uuidString: $0) })
+    }
+
+    func addDeletedBuiltInRuleId(_ id: UUID) {
+        var ids = deletedBuiltInRuleIds()
+        ids.insert(id)
+        sharedDefaults.set(ids.map(\.uuidString), forKey: Keys.deletedBuiltInRuleIds)
+    }
+
+    func clearDeletedBuiltInRuleIds() {
+        sharedDefaults.removeObject(forKey: Keys.deletedBuiltInRuleIds)
     }
 
     // MARK: - Complex Data Persistence
@@ -290,43 +337,38 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Loads rules. Preserves user edits to built-in rules; inserts any
+    /// built-in rules that are missing from saved data (unless the user
+    /// has explicitly deleted them).
     func loadRules() -> [Rule] {
         if let cached = cachedRules { return cached }
-        guard let data = sharedDefaults.data(forKey: Keys.rules) else { return BuiltInRules.all }
+        let deletedIds = deletedBuiltInRuleIds()
+        guard let data = sharedDefaults.data(forKey: Keys.rules) else {
+            let initial = BuiltInRules.all.filter { !deletedIds.contains($0.id) }
+            cachedRules = initial
+            return initial
+        }
         let savedRules: [Rule]
         do {
             savedRules = try JSONDecoder().decode([Rule].self, from: data)
         } catch {
             YojamLogger.shared.log("Failed to decode rules: \(error.localizedDescription)")
-            return BuiltInRules.all
+            cachedRules = BuiltInRules.all.filter { !deletedIds.contains($0.id) }
+            return cachedRules!
         }
 
-        // Merge saved rules with current built-in definitions:
-        // - Update built-in rule definitions (patterns, bundle IDs) while preserving user's enabled state
-        // - Drop removed built-in rules
-        // - Drop orphaned built-in rules (isBuiltIn but ID no longer in BuiltInRules.all)
-        // - Append brand-new built-in rules
-        let builtInById = Dictionary(BuiltInRules.all.map { ($0.id, $0) },
-                                     uniquingKeysWith: { first, _ in first })
+        // Drop built-ins that are tombstoned (either baked-in removedIds or user-deleted).
         var merged: [Rule] = []
-        var seenBuiltInIds = Set<UUID>()
-
-        for var rule in savedRules {
-            // Drop removed built-ins
+        var seenIds = Set<UUID>()
+        for rule in savedRules {
             if rule.isBuiltIn && BuiltInRules.removedIds.contains(rule.id) { continue }
-            // Drop orphaned built-ins whose UUID is no longer in BuiltInRules.all
-            if rule.isBuiltIn && builtInById[rule.id] == nil { continue }
-            // Update existing built-in definitions, preserve user's enabled state
-            if rule.isBuiltIn, let updated = builtInById[rule.id] {
-                let wasEnabled = rule.enabled
-                rule = updated
-                rule.enabled = wasEnabled
-                seenBuiltInIds.insert(rule.id)
-            }
+            if rule.isBuiltIn && deletedIds.contains(rule.id) { continue }
             merged.append(rule)
+            seenIds.insert(rule.id)
         }
-        // Append brand-new built-in rules
-        for rule in BuiltInRules.all where !seenBuiltInIds.contains(rule.id) {
+        // Append brand-new built-in rules the user hasn't seen yet and hasn't deleted.
+        for rule in BuiltInRules.all
+            where !seenIds.contains(rule.id) && !deletedIds.contains(rule.id) {
             merged.append(rule)
         }
         cachedRules = merged
@@ -383,7 +425,7 @@ final class SettingsStore: ObservableObject {
 
     func exportJSON() throws -> Data {
         let export = SettingsExport(
-            version: 4,
+            version: 5,
             activationMode: activationMode,
             defaultSelection: defaultSelectionBehavior,
             verticalThreshold: verticalThreshold,
@@ -396,14 +438,16 @@ final class SettingsStore: ObservableObject {
             periodicRescanInterval: periodicRescanInterval,
             browsers: loadBrowsers(),
             emailClients: loadEmailClients(),
-            rules: loadRules().filter { !$0.isBuiltIn },
+            // Include built-in overrides so round-trip preserves user edits.
+            rules: loadRules(),
             globalRewriteRules: loadGlobalRewriteRules(),
             utmStripList: utmStripList,
             suppressedClipboardDomains: suppressedClipboardDomains,
             pickerLayout: pickerLayout,
-            pickerInvertOrder: pickerInvertOrder,
+            pickerDirectionOverride: pickerDirectionOverride,
             recentURLRetention: recentURLRetention,
             recentURLRetentionMinutes: recentURLRetentionMinutes,
+            deletedBuiltInRuleIds: Array(deletedBuiltInRuleIds()).map(\.uuidString),
             learnedDomainPreferences: {
                 guard let data = sharedDefaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
                       let decoded = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
@@ -430,9 +474,16 @@ final class SettingsStore: ObservableObject {
         debugLoggingEnabled = imported.debugLoggingEnabled
         periodicRescanInterval = max(60, min(imported.periodicRescanInterval, 86400))
         pickerLayout = imported.pickerLayout
-        pickerInvertOrder = imported.pickerInvertOrder
+        pickerDirectionOverride = imported.pickerDirectionOverride
         recentURLRetention = imported.recentURLRetention
         recentURLRetentionMinutes = max(1, min(imported.recentURLRetentionMinutes, 1440))
+        // Restore user-deleted built-in tombstones from the export payload.
+        let importedDeletedIds = Set(imported.deletedBuiltInRuleIds.compactMap { UUID(uuidString: $0) })
+        if importedDeletedIds.isEmpty {
+            clearDeletedBuiltInRuleIds()
+        } else {
+            sharedDefaults.set(importedDeletedIds.map(\.uuidString), forKey: Keys.deletedBuiltInRuleIds)
+        }
         // Security: disable imported entries with path-based identifiers or
         // customLaunchArgs — these are code-execution vectors via social engineering.
         let sanitizedBrowsers = imported.browsers.map { entry -> BrowserEntry in
@@ -451,16 +502,6 @@ final class SettingsStore: ObservableObject {
         }
         saveBrowsers(sanitizedBrowsers)
         saveEmailClients(sanitizedEmailClients)
-        // Preserve user's built-in rule enable/disable states during import
-        let currentRules = loadRules()
-        let currentBuiltInStates = Dictionary(
-            currentRules.filter(\.isBuiltIn).map { ($0.id, $0.enabled) },
-            uniquingKeysWith: { first, _ in first })
-        var allRules = BuiltInRules.all.map { rule -> Rule in
-            var r = rule
-            if let state = currentBuiltInStates[r.id] { r.enabled = state }
-            return r
-        }
         // Validate regex patterns in imported rules
         let validatedImportedRules = imported.rules.filter { rule in
             if rule.matchType == .regex {
@@ -468,8 +509,9 @@ final class SettingsStore: ObservableObject {
             }
             return true
         }
-        allRules.append(contentsOf: validatedImportedRules)
-        saveRules(allRules)
+        // Save imported rules verbatim; loadRules() will insert fresh built-ins
+        // for any UUIDs that are missing and not tombstoned.
+        saveRules(validatedImportedRules)
         saveGlobalRewriteRules(imported.globalRewriteRules)
         utmStripList = imported.utmStripList
         // Clamp to prevent clipboard-check O(n) blow-up
@@ -492,7 +534,7 @@ final class SettingsStore: ObservableObject {
         self.activationMode = .always
         self.defaultSelectionBehavior = .alwaysFirst
         self.globalUTMStrippingEnabled = false
-        self.soundEffectsEnabled = true
+        self.soundEffectsEnabled = false
         self.clipboardMonitoringEnabled = false
         self.iCloudSyncEnabled = false
         self.launchAtLogin = false
@@ -503,7 +545,7 @@ final class SettingsStore: ObservableObject {
         self.utmStripList = UTMStripper.defaultParameters
         self.suppressedClipboardDomains = []
         self.pickerLayout = .auto
-        self.pickerInvertOrder = false
+        self.pickerDirectionOverride = .system
         self.recentURLRetention = .forever
         self.recentURLRetentionMinutes = 30
         self.shortlinkResolutionEnabled = false
@@ -515,6 +557,7 @@ final class SettingsStore: ObservableObject {
         saveEmailClients([])
         saveRules(BuiltInRules.all)
         saveGlobalRewriteRules(BuiltInRewriteRules.all)
+        clearDeletedBuiltInRuleIds()
         objectWillChange.send()
     }
 }
@@ -538,9 +581,10 @@ struct SettingsExport: Codable {
     var utmStripList: [String]
     var suppressedClipboardDomains: [String]
     var pickerLayout: PickerLayout
-    var pickerInvertOrder: Bool
+    var pickerDirectionOverride: PickerDirectionOverride
     var recentURLRetention: RecentURLRetention
     var recentURLRetentionMinutes: Int
+    var deletedBuiltInRuleIds: [String]
     var learnedDomainPreferences: [String: [String: Int]]
 
     enum CodingKeys: String, CodingKey {
@@ -549,9 +593,39 @@ struct SettingsExport: Codable {
         case iCloudSync, debugLoggingEnabled
         case periodicRescanInterval, browsers, emailClients, rules
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
-        case pickerLayout, pickerInvertOrder
+        case pickerLayout, pickerDirectionOverride
+        // Legacy key accepted on decode for migration from v4 exports.
+        case pickerInvertOrder
         case recentURLRetention, recentURLRetentionMinutes
+        case deletedBuiltInRuleIds
         case learnedDomainPreferences
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(activationMode, forKey: .activationMode)
+        try c.encode(defaultSelection, forKey: .defaultSelection)
+        try c.encode(verticalThreshold, forKey: .verticalThreshold)
+        try c.encode(soundEffects, forKey: .soundEffects)
+        try c.encode(launchAtLogin, forKey: .launchAtLogin)
+        try c.encode(globalUTMStripping, forKey: .globalUTMStripping)
+        try c.encode(clipboardMonitoring, forKey: .clipboardMonitoring)
+        try c.encode(iCloudSync, forKey: .iCloudSync)
+        try c.encode(debugLoggingEnabled, forKey: .debugLoggingEnabled)
+        try c.encode(periodicRescanInterval, forKey: .periodicRescanInterval)
+        try c.encode(browsers, forKey: .browsers)
+        try c.encode(emailClients, forKey: .emailClients)
+        try c.encode(rules, forKey: .rules)
+        try c.encode(globalRewriteRules, forKey: .globalRewriteRules)
+        try c.encode(utmStripList, forKey: .utmStripList)
+        try c.encode(suppressedClipboardDomains, forKey: .suppressedClipboardDomains)
+        try c.encode(pickerLayout, forKey: .pickerLayout)
+        try c.encode(pickerDirectionOverride, forKey: .pickerDirectionOverride)
+        try c.encode(recentURLRetention, forKey: .recentURLRetention)
+        try c.encode(recentURLRetentionMinutes, forKey: .recentURLRetentionMinutes)
+        try c.encode(deletedBuiltInRuleIds, forKey: .deletedBuiltInRuleIds)
+        try c.encode(learnedDomainPreferences, forKey: .learnedDomainPreferences)
     }
 
     init(version: Int, activationMode: ActivationMode,
@@ -562,9 +636,11 @@ struct SettingsExport: Codable {
          browsers: [BrowserEntry], emailClients: [BrowserEntry],
          rules: [Rule], globalRewriteRules: [URLRewriteRule],
          utmStripList: [String], suppressedClipboardDomains: [String] = [],
-         pickerLayout: PickerLayout = .auto, pickerInvertOrder: Bool = false,
+         pickerLayout: PickerLayout = .auto,
+         pickerDirectionOverride: PickerDirectionOverride = .system,
          recentURLRetention: RecentURLRetention = .forever,
          recentURLRetentionMinutes: Int = 30,
+         deletedBuiltInRuleIds: [String] = [],
          learnedDomainPreferences: [String: [String: Int]] = [:]) {
         self.version = version
         self.activationMode = activationMode
@@ -584,20 +660,21 @@ struct SettingsExport: Codable {
         self.utmStripList = utmStripList
         self.suppressedClipboardDomains = suppressedClipboardDomains
         self.pickerLayout = pickerLayout
-        self.pickerInvertOrder = pickerInvertOrder
+        self.pickerDirectionOverride = pickerDirectionOverride
         self.recentURLRetention = recentURLRetention
         self.recentURLRetentionMinutes = recentURLRetentionMinutes
+        self.deletedBuiltInRuleIds = deletedBuiltInRuleIds
         self.learnedDomainPreferences = learnedDomainPreferences
     }
 
     // §52: Use decodeIfPresent for all fields to tolerate version migration
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 4
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 5
         activationMode = try container.decodeIfPresent(ActivationMode.self, forKey: .activationMode) ?? .always
         defaultSelection = try container.decodeIfPresent(DefaultSelectionBehavior.self, forKey: .defaultSelection) ?? .alwaysFirst
         verticalThreshold = try container.decodeIfPresent(Int.self, forKey: .verticalThreshold) ?? 8
-        soundEffects = try container.decodeIfPresent(Bool.self, forKey: .soundEffects) ?? true
+        soundEffects = try container.decodeIfPresent(Bool.self, forKey: .soundEffects) ?? false
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         globalUTMStripping = try container.decodeIfPresent(Bool.self, forKey: .globalUTMStripping) ?? false
         clipboardMonitoring = try container.decodeIfPresent(Bool.self, forKey: .clipboardMonitoring) ?? false
@@ -611,9 +688,17 @@ struct SettingsExport: Codable {
         utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? UTMStripper.defaultParameters
         suppressedClipboardDomains = try container.decodeIfPresent([String].self, forKey: .suppressedClipboardDomains) ?? []
         pickerLayout = try container.decodeIfPresent(PickerLayout.self, forKey: .pickerLayout) ?? .auto
-        pickerInvertOrder = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) ?? false
+        // Migrate legacy pickerInvertOrder → pickerDirectionOverride (.rtl if was true).
+        if let direction = try container.decodeIfPresent(PickerDirectionOverride.self, forKey: .pickerDirectionOverride) {
+            pickerDirectionOverride = direction
+        } else if let legacy = try container.decodeIfPresent(Bool.self, forKey: .pickerInvertOrder) {
+            pickerDirectionOverride = legacy ? .rtl : .system
+        } else {
+            pickerDirectionOverride = .system
+        }
         recentURLRetention = try container.decodeIfPresent(RecentURLRetention.self, forKey: .recentURLRetention) ?? .forever
         recentURLRetentionMinutes = try container.decodeIfPresent(Int.self, forKey: .recentURLRetentionMinutes) ?? 30
+        deletedBuiltInRuleIds = try container.decodeIfPresent([String].self, forKey: .deletedBuiltInRuleIds) ?? []
         learnedDomainPreferences = try container.decodeIfPresent([String: [String: Int]].self, forKey: .learnedDomainPreferences) ?? [:]
     }
 }

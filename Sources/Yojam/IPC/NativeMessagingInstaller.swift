@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Installs native messaging host manifests for Chrome, Firefox, and
 /// Chromium-based browsers so the Yojam browser extension can communicate
@@ -9,22 +10,31 @@ import Foundation
 enum NativeMessagingInstaller {
     static let hostName = "org.yojam.host"
 
-    /// All Chromium-based browser manifest directories.
-    private static let chromiumPaths: [(name: String, relativePath: String)] = [
-        ("Chrome",   "Google/Chrome/NativeMessagingHosts"),
-        ("Brave",    "BraveSoftware/Brave-Browser/NativeMessagingHosts"),
-        ("Edge",     "Microsoft Edge/NativeMessagingHosts"),
-        ("Vivaldi",  "Vivaldi/NativeMessagingHosts"),
-        ("Chromium", "Chromium/NativeMessagingHosts"),
-        ("Arc",      "Arc/User Data/NativeMessagingHosts"),
+    /// All Chromium-based browser manifest directories + bundle IDs so we can
+    /// reconcile manifests with actual installs (no stale files for uninstalled browsers).
+    private static let chromiumPaths: [(name: String, relativePath: String, bundleId: String)] = [
+        ("Chrome",   "Google/Chrome/NativeMessagingHosts",                  "com.google.Chrome"),
+        ("Brave",    "BraveSoftware/Brave-Browser/NativeMessagingHosts",    "com.brave.Browser"),
+        ("Edge",     "Microsoft Edge/NativeMessagingHosts",                 "com.microsoft.edgemac"),
+        ("Vivaldi",  "Vivaldi/NativeMessagingHosts",                        "com.vivaldi.Vivaldi"),
+        ("Chromium", "Chromium/NativeMessagingHosts",                       "org.chromium.Chromium"),
+        ("Arc",      "Arc/User Data/NativeMessagingHosts",                  "company.thebrowser.Browser"),
     ]
 
     private static let firefoxPath = "Mozilla/NativeMessagingHosts"
+    private static let firefoxBundleIds = [
+        "org.mozilla.firefox",
+        "org.mozilla.firefoxdeveloperedition",
+        "org.mozilla.nightly",
+    ]
 
-    /// Install manifests for all supported browsers.
-    /// Call from the main thread (accesses Bundle.main).
+    // MARK: - Public API
+
+    /// Reconcile manifests against actually-installed browsers. Installs
+    /// manifests for browsers that are present, removes stale manifests for
+    /// browsers that are not.
     @MainActor
-    static func installAll() {
+    static func reconcileInstalled() {
         guard let hostPath = resolveHostPath() else {
             YojamLogger.shared.log("Cannot locate YojamNativeHost binary in app bundle")
             return
@@ -33,25 +43,53 @@ enum NativeMessagingInstaller {
         let appSupport = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support")
 
-        // Chrome / Chromium-based
-        for (name, relPath) in chromiumPaths {
-            let dir = appSupport.appendingPathComponent(relPath)
-            installChromiumManifest(at: dir, hostPath: hostPath, browserName: name)
+        // Chromium-based
+        for entry in chromiumPaths {
+            let dir = appSupport.appendingPathComponent(entry.relativePath)
+            let installed = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: entry.bundleId) != nil
+            if installed {
+                installChromiumManifest(at: dir, hostPath: hostPath, browserName: entry.name)
+                YojamLogger.shared.log("Installed native host manifest for \(entry.name)")
+            } else {
+                removeManifest(at: dir)
+            }
         }
 
         // Firefox
+        let firefoxInstalled = firefoxBundleIds.contains { bundleId in
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
+        }
         let firefoxDir = appSupport.appendingPathComponent(firefoxPath)
-        installFirefoxManifest(at: firefoxDir, hostPath: hostPath)
+        if firefoxInstalled {
+            installFirefoxManifest(at: firefoxDir, hostPath: hostPath)
+        } else {
+            removeManifest(at: firefoxDir)
+        }
     }
+
+    /// Remove all manifests managed by Yojam (used by Uninstall flow).
+    static func removeAll() {
+        let appSupport = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support")
+        for entry in chromiumPaths {
+            removeManifest(at: appSupport.appendingPathComponent(entry.relativePath))
+        }
+        removeManifest(at: appSupport.appendingPathComponent(firefoxPath))
+    }
+
+    /// Backwards-compatible alias used by older call sites. Prefer reconcileInstalled().
+    @MainActor
+    static func installAll() { reconcileInstalled() }
 
     /// Check if at least one native messaging manifest is installed.
     static func isAnyManifestInstalled() -> Bool {
         let appSupport = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support")
 
-        for (_, relPath) in chromiumPaths {
+        for entry in chromiumPaths {
             let manifest = appSupport
-                .appendingPathComponent(relPath)
+                .appendingPathComponent(entry.relativePath)
                 .appendingPathComponent("\(hostName).json")
             if FileManager.default.fileExists(atPath: manifest.path) {
                 return true
@@ -86,6 +124,31 @@ enum NativeMessagingInstaller {
         return false
     }
 
+    /// Bundle ID for a well-known browser display name (used by reconciler + rule targeting).
+    static func bundleIdForBrowserName(_ name: String) -> String {
+        chromiumPaths.first(where: { $0.name == name })?.bundleId ?? ""
+    }
+
+    // MARK: - Extension ID resolution
+
+    /// Resolves the list of Chrome extension IDs Yojam should allow for native
+    /// messaging. Priority:
+    /// 1. `YOJAM_CHROME_EXTENSION_IDS` environment variable (comma-separated)
+    /// 2. `Contents/Resources/chrome-extension-ids.json` bundle resource (array of strings)
+    /// 3. Empty (manifest installation will be skipped with a clear log)
+    static func resolveChromeExtensionIds() -> [String] {
+        if let env = ProcessInfo.processInfo.environment["YOJAM_CHROME_EXTENSION_IDS"], !env.isEmpty {
+            return env.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
+        if let url = Bundle.main.url(forResource: "chrome-extension-ids", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let ids = try? JSONDecoder().decode([String].self, from: data) {
+            return ids.filter { !$0.isEmpty }
+        }
+        return []
+    }
+
     // MARK: - Private
 
     private static func resolveHostPath() -> String? {
@@ -107,28 +170,23 @@ enum NativeMessagingInstaller {
         return nil
     }
 
-    /// Stable extension ID derived from the "key" field in chrome/manifest.json.
-    /// Set this to the real ID once the extension is published to the Chrome Web Store,
-    /// or use the unpacked extension ID during development. The extension's native
-    /// messaging will fail silently until this is a real Chrome extension ID.
-    static let chromeExtensionId = "placeholder_extension_id"
-
     private static func installChromiumManifest(
         at directory: URL, hostPath: String, browserName: String
     ) {
-        if chromeExtensionId == "placeholder_extension_id" {
+        let extensionIds = resolveChromeExtensionIds()
+        guard !extensionIds.isEmpty else {
             YojamLogger.shared.log(
-                "WARNING: Chrome native messaging uses placeholder extension ID — "
-                + "sendNativeMessage will be rejected by Chrome. Update NativeMessagingInstaller.chromeExtensionId.")
+                "Skipping \(browserName) native host manifest install: no Chrome extension IDs configured "
+                + "(set YOJAM_CHROME_EXTENSION_IDS or bundle chrome-extension-ids.json).")
+            removeManifest(at: directory)
+            return
         }
         let manifest: [String: Any] = [
             "name": hostName,
             "description": "Yojam browser picker - routes links to the right browser",
             "path": hostPath,
             "type": "stdio",
-            "allowed_origins": [
-                "chrome-extension://\(chromeExtensionId)/"
-            ]
+            "allowed_origins": extensionIds.map { "chrome-extension://\($0)/" }
         ]
         writeManifest(manifest, to: directory, browserName: browserName)
     }
@@ -146,6 +204,13 @@ enum NativeMessagingInstaller {
             ]
         ]
         writeManifest(manifest, to: directory, browserName: "Firefox")
+    }
+
+    private static func removeManifest(at directory: URL) {
+        let filePath = directory.appendingPathComponent("\(hostName).json")
+        if FileManager.default.fileExists(atPath: filePath.path) {
+            try? FileManager.default.removeItem(at: filePath)
+        }
     }
 
     private static func writeManifest(

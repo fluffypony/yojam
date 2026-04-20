@@ -241,26 +241,9 @@ public enum RoutingService {
     private static func evaluateRules(
         _ rules: [Rule], url: URL, sourceAppBundleId: String?
     ) -> Rule? {
-        let urlString = url.absoluteString
-        let host = url.host?.lowercased() ?? ""
         for rule in rules {
-            if let requiredSource = rule.sourceAppBundleId,
-               sourceAppBundleId != requiredSource { continue }
-            let pattern = rule.pattern.lowercased()
-            let matched: Bool
-            switch rule.matchType {
-            case .domain:
-                matched = host == pattern
-            case .domainSuffix:
-                matched = host == pattern || host.hasSuffix(".\(pattern)")
-            case .urlPrefix:
-                matched = urlString.lowercased().hasPrefix(pattern)
-            case .urlContains:
-                matched = urlString.lowercased().contains(pattern)
-            case .regex:
-                matched = RegexMatcher.matches(urlString, pattern: rule.pattern)
-            }
-            if matched { return rule }
+            let result = RuleMatcher.evaluate(url: url, against: rule, sourceApp: sourceAppBundleId)
+            if result.matched { return rule }
         }
         return nil
     }

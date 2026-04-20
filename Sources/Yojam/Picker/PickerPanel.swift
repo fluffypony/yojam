@@ -36,15 +36,26 @@ final class PickerPanel: NSPanel {
                     }
                 }
             }
-            resolvedLayout = useVertical ? .bigVertical : .smallHorizontal
+            resolvedLayout = useVertical ? .bigVertical : .bigHorizontal
         } else {
             resolvedLayout = layout
         }
 
-        // Apply order inversion
+        // Resolve direction override. SwiftUI's LayoutDirection only handles
+        // LTR/RTL horizontal mirroring, so vertical top/bottom is implemented
+        // via manual array reversal.
+        let shouldInvert: Bool
+        switch settingsStore.pickerDirectionOverride {
+        case .system:
+            shouldInvert = NSApp.userInterfaceLayoutDirection == .rightToLeft
+        case .ltr, .topToBottom:
+            shouldInvert = false
+        case .rtl, .bottomToTop:
+            shouldInvert = true
+        }
         let displayEntries: [BrowserEntry]
         let adjustedPreselection: Int
-        if settingsStore.pickerInvertOrder {
+        if shouldInvert {
             displayEntries = Array(entries.reversed())
             adjustedPreselection = entries.count - 1 - preselectedIndex
         } else {
@@ -122,9 +133,9 @@ final class PickerPanel: NSPanel {
 
     private var cursorTarget: NSPoint = .zero
 
-    // Footer: hint line(14) + name(16) + url(14) + shortcut legend(16) + spacing/padding
-    // Top padding: 12. Total non-content = 90.
-    private static let footerAllowance: CGFloat = 90
+    // Footer: match reason badge + hint line + name + url + shortcut legend.
+    // Bumped to 120 to accommodate all lines without clipping.
+    private static let footerAllowance: CGFloat = 120
 
     // MARK: - Layout Metrics
 
@@ -133,10 +144,10 @@ final class PickerPanel: NSPanel {
         let footer = footerAllowance
         switch layout {
         case .smallHorizontal:
-            // number(14) + gap(2) + icon(36) = 52
+            // number(14) + gap(2) + icon(36) + gap(4) + label(14) = 70
             return NSSize(
-                width: count * 42 - 6 + 24,
-                height: 52 + footer)
+                width: max(count * 48 - 6 + 24, 280),
+                height: 70 + footer)
         case .bigHorizontal:
             // number(14) + gap(2) + icon(56) + gap(4) + label(14) = 90
             return NSSize(
@@ -145,7 +156,7 @@ final class PickerPanel: NSPanel {
         case .smallVertical:
             // 30px row height + 1px spacing
             return NSSize(
-                width: 200,
+                width: 260,
                 height: min(count * 31 + footer, 440))
         case .bigVertical:
             // 48px row height + 2px spacing
@@ -153,7 +164,7 @@ final class PickerPanel: NSPanel {
                 width: 240,
                 height: min(count * 50 + footer, 540))
         case .auto:
-            return NSSize(width: 200, height: 100)
+            return NSSize(width: 260, height: 100)
         }
     }
 

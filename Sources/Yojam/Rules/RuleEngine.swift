@@ -46,21 +46,11 @@ final class RuleEngine: ObservableObject {
     }
 
     func matches(url: URL, rule: Rule) -> Bool {
-        let urlString = url.absoluteString
-        let host = url.host?.lowercased() ?? ""
-        let pattern = rule.pattern.lowercased()
-        switch rule.matchType {
-        case .domain:
-            return host == pattern
-        case .domainSuffix:
-            return host == pattern || host.hasSuffix(".\(pattern)")
-        case .urlPrefix:
-            return urlString.lowercased().hasPrefix(pattern)
-        case .urlContains:
-            return urlString.lowercased().contains(pattern)
-        case .regex:
-            return RegexMatcher.matches(urlString, pattern: rule.pattern)
-        }
+        RuleMatcher.evaluate(url: url, against: rule, sourceApp: nil).matched
+    }
+
+    func evaluateDetailed(_ url: URL, rule: Rule, sourceApp: String? = nil) -> RuleMatchResult {
+        RuleMatcher.evaluate(url: url, against: rule, sourceApp: sourceApp)
     }
 
     func enableRulesForApp(_ bundleId: String) {
