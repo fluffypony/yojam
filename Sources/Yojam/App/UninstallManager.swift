@@ -14,6 +14,10 @@ enum UninstallManager {
         // 1. Remove native messaging manifests.
         NativeMessagingInstaller.removeAll()
 
+        // 1b. Unload and remove the self-cleanup LaunchAgent so it does not
+        // fire after we intentionally remove everything.
+        SelfCleanupInstaller.uninstallAgent()
+
         // 2. Unregister login item.
         try? SMAppService.mainApp.unregister()
 

@@ -210,6 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // repair them after the app bundle is moved.
         NativeMessagingInstaller.reconcileInstalled()
 
+        // Belt-and-suspenders: if the user later trashes Yojam.app without
+        // using the in-app Uninstall flow, a periodic LaunchAgent sweeps
+        // remaining user state. Re-installing on every launch keeps the
+        // stored bundle path accurate when the app is moved.
+        SelfCleanupInstaller.installOrRefresh()
+
         // Flat-file config sync. Sync on every routing-data change.
         configFileManager = ConfigFileManager(settingsStore: settingsStore)
         configFileManager?.start()

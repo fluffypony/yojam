@@ -873,32 +873,41 @@ struct AddRewriteSheet: View {
 
             Divider().background(Theme.borderSubtle)
 
-            VStack(alignment: .leading, spacing: 16) {
-                fieldRow("Name") {
-                    ThemeTextField(placeholder: "e.g. Twitter to Nitter", text: $name)
-                }
-                fieldRow("Match Pattern", helpText: HelpText.Pipeline.rewriteMatch) {
-                    ThemeTextField(placeholder: "^https://twitter\\.com/(.*)", text: $matchPattern, isMono: true)
-                    if isRegex && !matchPattern.isEmpty && !RegexMatcher.isValid(pattern: matchPattern) {
-                        Text("Invalid regex pattern")
-                            .font(.system(size: 10))
-                            .foregroundColor(Theme.danger)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    fieldRow("Name") {
+                        ThemeTextField(placeholder: "e.g. Twitter to Nitter", text: $name)
+                    }
+                    fieldRow("Match Pattern", helpText: HelpText.Pipeline.rewriteMatch) {
+                        ThemeTextField(placeholder: "^https://twitter\\.com/(.*)", text: $matchPattern, isMono: true)
+                        if isRegex && !matchPattern.isEmpty && !RegexMatcher.isValid(pattern: matchPattern) {
+                            Text("Invalid regex pattern")
+                                .font(.system(size: 10))
+                                .foregroundColor(Theme.danger)
+                        }
+                    }
+                    fieldRow("Replacement", helpText: HelpText.Pipeline.rewriteReplacement) {
+                        ThemeTextField(placeholder: "https://nitter.net/$1", text: $replacement, isMono: true)
+                    }
+                    HStack {
+                        Text("Is Regex")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        ThemeToggle(isOn: $isRegex)
                     }
                 }
-                fieldRow("Replacement", helpText: HelpText.Pipeline.rewriteReplacement) {
-                    ThemeTextField(placeholder: "https://nitter.net/$1", text: $replacement, isMono: true)
-                }
-                HStack {
-                    Text("Is Regex")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Theme.textPrimary)
-                    Spacer()
-                    ThemeToggle(isOn: $isRegex)
-                }
+                .padding(24)
             }
-            .padding(24)
-
-            Spacer()
+            .scrollBounceBehavior(.basedOnSize)
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [Theme.bgApp.opacity(0), Theme.bgApp],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 20)
+                .allowsHitTesting(false)
+            }
 
             Divider().background(Theme.borderSubtle)
             HStack {
@@ -919,7 +928,7 @@ struct AddRewriteSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 480, height: 400)
+        .frame(minWidth: 480, idealWidth: 480, minHeight: 400, idealHeight: 500, maxHeight: 700)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
     }
