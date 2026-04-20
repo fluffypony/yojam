@@ -149,6 +149,10 @@ targets:
       path: Sources/YojamShareExtension/Info.plist
     entitlements:
       path: Sources/YojamShareExtension/YojamShareExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - group.org.yojam.shared
     settings:
       base:
         INFOPLIST_FILE: Sources/YojamShareExtension/Info.plist
@@ -179,6 +183,11 @@ targets:
       path: Sources/YojamSafariExtension/Info.plist
     entitlements:
       path: Sources/YojamSafariExtension/YojamSafariExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - group.org.yojam.shared
     settings:
       base:
         INFOPLIST_FILE: Sources/YojamSafariExtension/Info.plist
@@ -211,6 +220,9 @@ targets:
         embed: false
     entitlements:
       path: Sources/YojamNativeHost/YojamNativeHost.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.org.yojam.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.NativeHost
