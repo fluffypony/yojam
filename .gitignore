@@ -9,3 +9,6 @@ ExportOptions.plist
 Extensions/dist/
 Sources/YojamSafariExtension/Resources/
 AGENTS.md
+
+# LLVM coverage counter dumps written when running instrumented builds.
+*.profraw
