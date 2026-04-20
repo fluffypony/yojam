@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -34,6 +35,7 @@ struct AdvancedTab: View {
                     .padding(.horizontal, 32)
                     .padding(.vertical, 24)
                 }
+                .scrollIndicators(.visible)
                 .onChange(of: scrollToSection) { _, section in
                     guard let section else { return }
                     withAnimation { proxy.scrollTo(section, anchor: .top) }
@@ -113,7 +115,7 @@ struct AdvancedTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Network")
             ThemePanel {
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.shortlinkResolution) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Shortlink Resolution")
                             .font(.system(size: 13, weight: .medium))
@@ -265,7 +267,7 @@ struct AdvancedTab: View {
                     Spacer()
                     ThemeButton("Import...") { importSettings() }
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(helpText: HelpText.Advanced.importFromOtherApps) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Import from Other Apps")
                             .font(.system(size: 13, weight: .medium))
@@ -277,8 +279,123 @@ struct AdvancedTab: View {
                     Spacer()
                     ThemeButton("Import\u{2026}") { showingImportFromOtherApps = true }
                 }
+                configFileRow
             }
         }
+    }
+
+    // MARK: - Config File
+
+    private var configFileRow: some View {
+        ThemePanelRow(isLast: true, helpText: HelpText.Advanced.flatFileConfig) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Configuration File")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Theme.textPrimary)
+                Text("Live mirror of your settings. Edits made here are picked up without restarting Yojam.")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+                HStack(spacing: 4) {
+                    Text(abbreviatedConfigPath)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(Theme.textSecondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    ThemeIconButton(
+                        systemName: "doc.on.doc",
+                        help: HelpText.Advanced.configFileCopyPath
+                    ) {
+                        copyConfigPathToClipboard()
+                    }
+                    .accessibilityLabel("Copy path")
+                }
+                .padding(.top, 2)
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                ThemeButton("Open", help: HelpText.Advanced.configFileOpen) {
+                    openConfigWithDefaultApp()
+                }
+                if let bundleId = settingsStore.configFileEditorBundleId,
+                   let editorName = appDisplayName(forBundleId: bundleId) {
+                    ThemeButton("Edit in \(editorName)") {
+                        openConfig(withBundleId: bundleId)
+                    }
+                }
+                ThemeButton("Edit With\u{2026}", help: HelpText.Advanced.configFileEditWith) {
+                    pickEditorAndOpen()
+                }
+                ThemeButton("Reveal", help: HelpText.Advanced.configFileReveal) {
+                    revealConfigInFinder()
+                }
+            }
+        }
+    }
+
+    private var configPath: URL { ConfigFileManager.configPath }
+
+    private var abbreviatedConfigPath: String {
+        (configPath.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    private func copyConfigPathToClipboard() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(configPath.path, forType: .string)
+    }
+
+    private func openConfigWithDefaultApp() {
+        NSWorkspace.shared.open(configPath)
+    }
+
+    private func openConfig(withBundleId bundleId: String) {
+        guard let appURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: bundleId) else {
+            // The app is gone — forget the stale preference and fall back.
+            settingsStore.configFileEditorBundleId = nil
+            openConfigWithDefaultApp()
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open(
+            [configPath], withApplicationAt: appURL, configuration: config
+        ) { _, error in
+            if let error {
+                Task { @MainActor in
+                    errorMessage = "Could not open editor: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func pickEditorAndOpen() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an editor"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK, let appURL = panel.url else { return }
+        guard let bundle = Bundle(url: appURL), let id = bundle.bundleIdentifier else {
+            errorMessage = "That doesn't look like a valid application."
+            return
+        }
+        settingsStore.configFileEditorBundleId = id
+        openConfig(withBundleId: id)
+    }
+
+    private func revealConfigInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([configPath])
+    }
+
+    private func appDisplayName(forBundleId bundleId: String) -> String? {
+        guard let appURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: bundleId) else { return nil }
+        return FileManager.default.displayName(atPath: appURL.path)
+            .replacingOccurrences(of: ".app", with: "")
     }
 
     // MARK: - Danger Zone
@@ -315,7 +432,7 @@ struct AdvancedTab: View {
                         showingResetAlert = true
                     }
                 }
-                ThemePanelRow(isLast: true) {
+                ThemePanelRow(isLast: true, helpText: HelpText.Advanced.uninstall) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Uninstall Yojam")
                             .font(.system(size: 13, weight: .medium))

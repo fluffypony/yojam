@@ -10,9 +10,11 @@ import Foundation
 /// cleanup path described in the plan.
 ///
 /// Layout:
-/// - `~/Library/Application Support/Yojam/cleanup-helper.sh`
-///     Standalone bash script. Checks whether the stored bundle path still
-///     exists; if not, wipes state and removes itself + the LaunchAgent.
+/// - `~/Library/Application Support/Yojam/yojam-uninstall-monitor`
+///     Standalone bash script (shebanged, executable). Checks whether the
+///     stored bundle path still exists; if not, wipes state and removes
+///     itself + the LaunchAgent. Named so macOS's Background Items UI
+///     shows `yojam-uninstall-monitor` rather than `bash`.
 /// - `~/Library/LaunchAgents/org.yojam.cleanup.plist`
 ///     Periodic agent that runs the helper every 24h and at load.
 ///
@@ -29,6 +31,14 @@ enum SelfCleanupInstaller {
     }
 
     private static var helperScriptURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Yojam/yojam-uninstall-monitor")
+    }
+
+    /// Earlier builds wrote the helper at this path and launched it via
+    /// `/bin/bash <path>`, which made macOS's Background Items prompt label
+    /// the helper "bash". Kept so upgrades can remove the stale file.
+    private static var legacyHelperScriptURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Yojam/cleanup-helper.sh")
     }
@@ -49,6 +59,7 @@ enum SelfCleanupInstaller {
 
         do {
             try writeHelperScript()
+            try? FileManager.default.removeItem(at: legacyHelperScriptURL)
             let wroteNewPlist = try writeLaunchAgentPlist(bundlePath: bundleURL.path)
             if wroteNewPlist {
                 reloadAgent()
@@ -65,6 +76,7 @@ enum SelfCleanupInstaller {
         unloadAgent()
         try? FileManager.default.removeItem(at: agentPlistURL)
         try? FileManager.default.removeItem(at: helperScriptURL)
+        try? FileManager.default.removeItem(at: legacyHelperScriptURL)
     }
 
     // MARK: - Private
@@ -206,10 +218,13 @@ exit 0
         let dir = agentPlistURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
+        // Invoke the helper directly (via its `#!/bin/bash` shebang) rather
+        // than as an argument to `/bin/bash`. macOS's Background Items prompt
+        // labels the agent using ProgramArguments[0]'s basename, so this
+        // surfaces as `yojam-uninstall-monitor` instead of `bash`.
         let plist: [String: Any] = [
             "Label": agentLabel,
             "ProgramArguments": [
-                "/bin/bash",
                 helperScriptURL.path,
                 bundlePath,
             ],

@@ -49,6 +49,7 @@ struct PipelineTab: View {
                     .padding(.horizontal, 32)
                     .padding(.vertical, 24)
                 }
+                .scrollIndicators(.visible)
                 .onChange(of: scrollToSection) { _, section in
                     guard let section else { return }
                     withAnimation { proxy.scrollTo(section, anchor: .top) }

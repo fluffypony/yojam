@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Optional subsystems
     private var clipboardMonitor: ClipboardMonitor?
     private var iCloudSyncManager: ICloudSyncManager?
-    private var configFileManager: ConfigFileManager?
+    var configFileManager: ConfigFileManager?
     private var configSyncSubscription: AnyCancellable?
 
     // MARK: - State
@@ -1029,6 +1029,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tagged.identifier = Self.settingsWindowIdentifier
             tagged.setFrameAutosaveName("YojamPreferences")
             tagged.minSize = NSSize(width: 750, height: 500)
+            // SwiftUI's Settings scene ships without `.resizable` in the
+            // style mask on macOS 14, so `.windowResizability(.contentMinSize)`
+            // alone produces a fixed-size window (no resize cursor at edges).
+            // Force the bit on here.
+            tagged.styleMask.insert(.resizable)
             settingsWindow = tagged
             return tagged
         }

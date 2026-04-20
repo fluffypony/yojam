@@ -199,6 +199,7 @@ struct PreferencesView: View {
             if !settingsStore.hasDismissedQuickStart {
                 QuickStartCard(
                     settingsStore: settingsStore,
+                    ruleEngine: ruleEngine,
                     onSwitchTab: { tab in selectedTab = tab },
                     onScrollToSection: { section, controlId in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -215,7 +216,9 @@ struct PreferencesView: View {
                     .transition(.opacity)
             }
         }
-        .frame(minWidth: 750, idealWidth: 900, minHeight: 500, idealHeight: 600)
+        .frame(
+            minWidth: 750, idealWidth: 900, maxWidth: .infinity,
+            minHeight: 500, idealHeight: 600, maxHeight: .infinity)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
         // When Quick Start is re-shown (e.g. from menu bar), switch to General tab

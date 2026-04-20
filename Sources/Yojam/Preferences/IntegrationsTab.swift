@@ -30,6 +30,7 @@ struct IntegrationsTab: View {
                     }
                     .padding(32)
                 }
+                .scrollIndicators(.visible)
                 .onChange(of: scrollToSection) { _, section in
                     guard let section else { return }
                     withAnimation { proxy.scrollTo(section, anchor: .top) }
@@ -65,6 +66,17 @@ struct IntegrationsTab: View {
     private func openSharingExtensionsSettings() {
         let primary = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences?Sharing")!
         let fallback = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!
+        if !NSWorkspace.shared.open(primary) {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
+    /// Deep link to System Settings > General > AirDrop & Handoff.
+    /// `AirDrop-Handoff-Settings.extension` is the current pane ID on macOS
+    /// 14+; the older `com.apple.Handoff` key is kept as a fallback.
+    private func openHandoffSettings() {
+        let primary = URL(string: "x-apple.systempreferences:com.apple.AirDrop-Handoff-Settings.extension")!
+        let fallback = URL(string: "x-apple.systempreferences:com.apple.Handoff")!
         if !NSWorkspace.shared.open(primary) {
             NSWorkspace.shared.open(fallback)
         }
@@ -149,8 +161,9 @@ struct IntegrationsTab: View {
                     name: "Handoff",
                     icon: "hand.raised",
                     status: .unknown,
-                    detail: "Check System Settings > General > AirDrop & Handoff",
+                    detail: "Toggled in System Settings > General > AirDrop & Handoff. Yojam can't see whether it's on.",
                     helpText: HelpText.Integrations.handoff,
+                    action: ("Open Settings", { openHandoffSettings() }),
                     isLast: true
                 )
             }

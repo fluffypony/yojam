@@ -13,16 +13,25 @@ import Foundation
 /// with a small debounce to ignore our own writes.
 @MainActor
 final class ConfigFileManager {
-    private let configPath: URL
+    /// On-disk location of the flat-file mirror. Exposed so the
+    /// Advanced tab can surface the path and hand it to NSWorkspace/Finder.
+    let configPath: URL
     private var fsSource: DispatchSourceFileSystemObject?
     private let settingsStore: SettingsStore
     private var lastSelfWriteAt: Date = .distantPast
     private let selfWriteEpsilon: TimeInterval = 1.0
 
+    /// Canonical on-disk path. Exposed as a static helper so UI code that
+    /// doesn't hold a ConfigFileManager (e.g. AdvancedTab) can display and
+    /// act on the same location without duplicating the constant.
+    static var configPath: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Yojam/config.json")
+    }
+
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
-        self.configPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Yojam/config.json")
+        self.configPath = Self.configPath
     }
 
     deinit {

@@ -1,12 +1,16 @@
 import SwiftUI
 import TipKit
+import YojamCore
 
 struct QuickStartCard: View {
     @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject var ruleEngine: RuleEngine
     var onSwitchTab: ((PreferencesTab) -> Void)?
     /// Scroll + optional highlight. Caller controls the delay / highlight-nil timing.
     var onScrollToSection: ((String, String?) -> Void)?
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
+    @State private var detectedImportSources: [ConfigImporter.Source] = []
+    @State private var showingImportSheet = false
 
     // State-based completion: auto-ticked from live state rather than
     // just "the user clicked the button".
@@ -21,8 +25,20 @@ struct QuickStartCard: View {
             || !settingsStore.loadBrowsers().filter(\.enabled).isEmpty
     }
     private var step4Done: Bool { settingsStore.quickStartVisitedTester }
+    private var importStepDone: Bool { settingsStore.quickStartVisitedImport }
 
-    private var allDone: Bool { step1Done && step2Done && step3Done && step4Done }
+    /// Only surface the import step when at least one of Bumpr / Choosy /
+    /// Finicky is on disk now, or when the user has already acted on it once
+    /// (so it stays visibly checked even if they later uninstall the source).
+    private var importStepVisible: Bool {
+        !detectedImportSources.isEmpty || settingsStore.quickStartVisitedImport
+    }
+    private var numberShift: Int { importStepVisible ? 1 : 0 }
+
+    private var allDone: Bool {
+        let coreDone = step1Done && step2Done && step3Done && step4Done
+        return importStepVisible ? (coreDone && importStepDone) : coreDone
+    }
 
     var body: some View {
         ThemeCalloutCard {
@@ -36,8 +52,20 @@ struct QuickStartCard: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
+                if importStepVisible {
+                    quickStartItem(
+                        number: 1,
+                        text: importStepLabel,
+                        isDone: importStepDone
+                    ) {
+                        settingsStore.quickStartVisitedImport = true
+                        showingImportSheet = true
+                        checkAllDone()
+                    }
+                }
+
                 quickStartItem(
-                    number: 1,
+                    number: 1 + numberShift,
                     text: "Set Yojam as your default browser",
                     isDone: step1Done
                 ) {
@@ -56,7 +84,7 @@ struct QuickStartCard: View {
                 }
 
                 quickStartItem(
-                    number: 2,
+                    number: 2 + numberShift,
                     text: "Choose when the picker appears",
                     isDone: step2Done
                 ) {
@@ -67,7 +95,7 @@ struct QuickStartCard: View {
                 }
 
                 quickStartItem(
-                    number: 3,
+                    number: 3 + numberShift,
                     text: "Review your browsers",
                     isDone: step3Done
                 ) {
@@ -78,7 +106,7 @@ struct QuickStartCard: View {
                 }
 
                 quickStartItem(
-                    number: 4,
+                    number: 4 + numberShift,
                     text: "Try the URL tester",
                     isDone: step4Done
                 ) {
@@ -93,7 +121,28 @@ struct QuickStartCard: View {
                 settingsStore.hasDismissedQuickStart = true
             }
         }
-        .onAppear { isDefault = DefaultBrowserManager.isDefaultBrowser }
+        .onAppear {
+            isDefault = DefaultBrowserManager.isDefaultBrowser
+            detectedImportSources = ConfigImporter.detectAvailable()
+        }
+        .sheet(isPresented: $showingImportSheet) {
+            ImportFromOtherAppsSheet(
+                settingsStore: settingsStore,
+                ruleEngine: ruleEngine,
+                onDismiss: { showingImportSheet = false })
+        }
+    }
+
+    private var importStepLabel: String {
+        let names = detectedImportSources.map(\.displayName)
+        switch names.count {
+        case 0: return "Import rules from Bumpr, Choosy, or Finicky"
+        case 1: return "Import rules from \(names[0])"
+        case 2: return "Import rules from \(names[0]) or \(names[1])"
+        default:
+            let head = names.dropLast().joined(separator: ", ")
+            return "Import rules from \(head), or \(names.last!)"
+        }
     }
 
     private func checkAllDone() {

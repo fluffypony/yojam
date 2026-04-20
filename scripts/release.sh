@@ -109,7 +109,9 @@ ok "project.yml -> Yojam.xcodeproj"
 if [ "$SKIP_ARCHIVE" = false ]; then
   info "Archiving"
   rm -rf "$ARCHIVE_PATH"
-  xcodebuild archive \
+  # `clean` first so a rotated provisioning profile can't leave a stale
+  # build manifest pinning a now-missing .provisionprofile path.
+  xcodebuild clean archive \
     -project Yojam.xcodeproj \
     -scheme Yojam \
     -archivePath "$ARCHIVE_PATH" \

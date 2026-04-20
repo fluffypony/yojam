@@ -105,8 +105,11 @@ final class SettingsStore: ObservableObject {
         static let quickStartVisitedActivation = "quickStartVisitedActivation"
         static let quickStartVisitedBrowsers = "quickStartVisitedBrowsers"
         static let quickStartVisitedTester = "quickStartVisitedTester"
+        static let quickStartVisitedImport = "quickStartVisitedImport"
         // User-deleted built-in rule UUIDs (distinct from BuiltInRules.removedIds).
         static let deletedBuiltInRuleIds = "deletedBuiltInRuleIds"
+        // Last-used editor app for the flat-file config (bundle identifier).
+        static let configFileEditorBundleId = "configFileEditorBundleId"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -193,6 +196,24 @@ final class SettingsStore: ObservableObject {
     @Published var quickStartVisitedTester: Bool {
         didSet { defaults.set(quickStartVisitedTester, forKey: Keys.quickStartVisitedTester) }
     }
+    /// Whether the user has tapped the Quick Start step that imports rules
+    /// from Bumpr / Choosy / Finicky. The step only appears when one of
+    /// those apps is detected and not yet visited.
+    @Published var quickStartVisitedImport: Bool {
+        didSet { defaults.set(quickStartVisitedImport, forKey: Keys.quickStartVisitedImport) }
+    }
+    /// Bundle identifier of the editor the user last picked via
+    /// "Edit With..." in Advanced > Settings Data. `nil` means no custom
+    /// editor has been chosen yet.
+    @Published var configFileEditorBundleId: String? {
+        didSet {
+            if let id = configFileEditorBundleId, !id.isEmpty {
+                defaults.set(id, forKey: Keys.configFileEditorBundleId)
+            } else {
+                defaults.removeObject(forKey: Keys.configFileEditorBundleId)
+            }
+        }
+    }
 
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
@@ -242,6 +263,8 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedActivation = d.bool(forKey: Keys.quickStartVisitedActivation)
         self.quickStartVisitedBrowsers = d.bool(forKey: Keys.quickStartVisitedBrowsers)
         self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
+        self.quickStartVisitedImport = d.bool(forKey: Keys.quickStartVisitedImport)
+        self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
 
         // Routing settings from App Group suite
         self.isEnabled = s.object(forKey: Keys.isEnabled) as? Bool ?? true
