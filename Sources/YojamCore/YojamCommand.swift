@@ -49,11 +49,16 @@ public enum YojamCommand: Sendable {
             let browser = queryItems.first(where: { $0.name == "browser" })?.value
             let pick = queryItems.first(where: { $0.name == "pick" })?.value == "1"
             let priv = queryItems.first(where: { $0.name == "private" })?.value == "1"
+            let container = queryItems.first(where: { $0.name == "container" })?.value
+
+            var metadata: [String: String] = [:]
+            if let container, !container.isEmpty { metadata["container"] = container }
 
             let request = IncomingLinkRequest(
                 url: targetURL,
                 sourceAppBundleId: source,
                 origin: .urlScheme,
+                metadata: metadata,
                 forcedBrowserBundleId: browser,
                 forcePicker: pick,
                 forcePrivateWindow: priv
@@ -72,7 +77,8 @@ public enum YojamCommand: Sendable {
         source: String? = nil,
         browser: String? = nil,
         pick: Bool = false,
-        privateWindow: Bool = false
+        privateWindow: Bool = false,
+        container: String? = nil
     ) -> URL? {
         var components = URLComponents()
         components.scheme = "yojam"
@@ -87,6 +93,9 @@ public enum YojamCommand: Sendable {
         if let browser { items.append(URLQueryItem(name: "browser", value: browser)) }
         if pick { items.append(URLQueryItem(name: "pick", value: "1")) }
         if privateWindow { items.append(URLQueryItem(name: "private", value: "1")) }
+        if let container, !container.isEmpty {
+            items.append(URLQueryItem(name: "container", value: container))
+        }
         components.queryItems = items
         return components.url
     }

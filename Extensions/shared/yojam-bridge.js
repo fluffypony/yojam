@@ -7,13 +7,15 @@
  * Build a yojam:// URL for routing a link to the main app.
  * @param {string} targetURL - The URL to route.
  * @param {string} sourceSentinel - The source app sentinel identifier.
+ * @param {string} [container] - Optional Firefox container name to target.
  * @returns {string} The yojam:// URL.
  */
-export function buildYojamURL(targetURL, sourceSentinel) {
+export function buildYojamURL(targetURL, sourceSentinel, container) {
   const params = new URLSearchParams({
     url: targetURL,
     source: sourceSentinel,
   });
+  if (container) params.set("container", container);
   return `yojam://route?${params.toString()}`;
 }
 
@@ -26,7 +28,7 @@ export function buildYojamURL(targetURL, sourceSentinel) {
  * @param {string} targetURL - The URL to route.
  * @param {string} sourceSentinel - The source app sentinel identifier.
  */
-export async function sendToYojam(targetURL, sourceSentinel) {
+export async function sendToYojam(targetURL, sourceSentinel, container) {
   // Try native messaging first (Chrome/Firefox only)
   if (typeof chrome !== "undefined" && chrome.runtime?.sendNativeMessage) {
     try {
@@ -34,6 +36,7 @@ export async function sendToYojam(targetURL, sourceSentinel) {
         action: "route",
         url: targetURL,
         source: sourceSentinel,
+        container: container || undefined,
       });
       return;
     } catch (_e) {
@@ -53,7 +56,7 @@ export async function sendToYojam(targetURL, sourceSentinel) {
     : sourceSentinel;
 
   // Fall back to opening a yojam:// URL in a throwaway tab.
-  const url = buildYojamURL(targetURL, effectiveSentinel);
+  const url = buildYojamURL(targetURL, effectiveSentinel, container);
   const tab = await chrome.tabs.create({ url, active: false });
   setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 600);
 }

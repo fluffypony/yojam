@@ -216,7 +216,7 @@ struct IntegrationsTab: View {
                             : "Not installed",
                     helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
-                        NativeMessagingInstaller.installAll()
+                        NativeMessagingInstaller.reconcileInstalled()
                         refreshStatus()
                     }),
                     isLast: false
@@ -230,7 +230,7 @@ struct IntegrationsTab: View {
                         : "Not installed",
                     helpText: HelpText.Integrations.nativeMessaging,
                     action: ("Install", {
-                        NativeMessagingInstaller.installAll()
+                        NativeMessagingInstaller.reconcileInstalled()
                         refreshStatus()
                     }),
                     isLast: false
@@ -239,7 +239,7 @@ struct IntegrationsTab: View {
                 ThemePanelRow(isLast: true) {
                     Spacer()
                     ThemeButton("Reinstall All Browser Helpers", isPrimary: true) {
-                        NativeMessagingInstaller.installAll()
+                        NativeMessagingInstaller.reconcileInstalled()
                         refreshStatus()
                     }
                     Spacer()

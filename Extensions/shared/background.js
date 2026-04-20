@@ -94,14 +94,55 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// ---- Firefox Container Support (Firefox only) ----
+
+// Open a URL in a specific contextualIdentity container. No-op outside Firefox.
+async function openInContainer(url, containerName) {
+  if (typeof browser === "undefined" || !browser.contextualIdentities) {
+    return false;
+  }
+  try {
+    const matches = await browser.contextualIdentities.query({ name: containerName });
+    if (!matches || matches.length === 0) return false;
+    await browser.tabs.create({ url, cookieStoreId: matches[0].cookieStoreId });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function listContainers() {
+  if (typeof browser === "undefined" || !browser.contextualIdentities) {
+    return [];
+  }
+  try {
+    const all = await browser.contextualIdentities.query({});
+    return all.map((c) => ({ name: c.name, cookieStoreId: c.cookieStoreId, color: c.color }));
+  } catch (e) {
+    return [];
+  }
+}
+
 // ---- Popup / Options Messages ----
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "route" && message.url) {
-    sendToYojam(message.url, getSourceSentinel())
+    sendToYojam(message.url, getSourceSentinel(), message.container)
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
+  }
+  if (message.action === "open_in_container" && message.url && message.container) {
+    openInContainer(message.url, message.container)
+      .then((ok) => sendResponse({ ok }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  if (message.action === "list_containers") {
+    listContainers()
+      .then((containers) => sendResponse({ ok: true, containers }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
   }
   if (message.action === "updateAlwaysRoute") {
     alwaysRoute = !!message.enabled;

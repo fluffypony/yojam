@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Install native messaging host manifests on every launch to
         // repair them after the app bundle is moved.
-        NativeMessagingInstaller.installAll()
+        NativeMessagingInstaller.reconcileInstalled()
 
         // Profile discovery - async to avoid blocking launch.
         // Auto-assign the default profile to each base browser entry.
@@ -388,12 +388,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 routingSuggestionEngine.recordChoice(domain: domain, entryId: entry.id.uuidString)
             }
 
+            // Look up the rule that matched (for firefoxContainer / display targeting).
+            // The decision has already been made by RoutingService; this is a cheap
+            // secondary lookup against the same rule set.
+            let matchedRule = ruleEngine.evaluate(finalURL,
+                                                  sourceAppBundleId: request.sourceAppBundleId)
+            let container = matchedRule?.firefoxContainer
+                ?? request.metadata["container"]
+            let targetDisplayUUID = matchedRule?.targetDisplayUUID
+
+            // Firefox container routing: open via the Yojam extension in Firefox
+            // rather than going through NSWorkspace directly. Containers require
+            // the contextualIdentities API which only exists inside Firefox.
+            if let container, !container.isEmpty,
+               ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+                "org.mozilla.nightly"].contains(entry.bundleIdentifier) {
+                YojamLogger.shared.log(
+                    "Firefox container rule matched (\(container)); "
+                    + "delegating to extension native messaging is not yet wired — "
+                    + "using standard open (container ignored). See Integrations help.")
+            }
+
             guard let resolvedAppURL = appURL(for: entry.bundleIdentifier) else { return }
             openURL(finalURL, withAppAt: resolvedAppURL,
                     profile: entry.profileId,
                     bundleId: entry.bundleIdentifier,
                     privateWindow: privateWindow,
                     customLaunchArgs: entry.customLaunchArgs)
+
+            // Per-display targeting (best-effort, requires AX permission).
+            if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if !DisplayManager.moveFrontWindow(
+                        ofBundleId: entry.bundleIdentifier, toDisplayUUID: targetDisplayUUID) {
+                        YojamLogger.shared.log(
+                            "Display targeting failed (\(entry.bundleIdentifier) -> \(targetDisplayUUID)); "
+                            + "check Accessibility permission in System Settings.")
+                    }
+                }
+            }
 
         case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)

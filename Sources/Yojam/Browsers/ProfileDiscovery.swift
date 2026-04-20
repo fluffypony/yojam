@@ -1,4 +1,5 @@
 import Foundation
+import YojamCore
 
 struct BrowserProfile: Identifiable, Codable, Sendable {
     let id: String
@@ -34,9 +35,34 @@ final class ProfileDiscovery: Sendable {
                 appSupportPath: "Chromium", bundleId: bundleId)
         case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
             return firefoxReader.readProfiles(bundleId: bundleId)
-        // Arc and Orion profile discovery disabled: launch args not supported
+        case "com.apple.Safari":
+            return readSafariProfiles(bundleId: bundleId)
+        case "com.kagi.kagimacOS":
+            // Orion profile discovery: Kagi does not currently publish a
+            // stable per-profile launch surface. Users who want per-profile
+            // routing should add Orion as a custom app with custom launch
+            // args pointing at the profile-specific launch command.
+            return []
+        // Arc profile discovery remains disabled: launch args not supported.
         default:
             return []
         }
+    }
+
+    /// Read Safari profiles registered by the Yojam Safari extension.
+    /// Each profile where the extension runs self-registers its profile UUID
+    /// into shared App Group defaults under "safariProfileRegistry".
+    private func readSafariProfiles(bundleId: String) -> [BrowserProfile] {
+        guard let defaults = UserDefaults(suiteName: SharedRoutingStore.suiteName) else { return [] }
+        guard let registry = defaults.dictionary(forKey: "safariProfileRegistry") as? [String: String],
+              !registry.isEmpty else { return [] }
+        return registry.map { (uuid, name) in
+            BrowserProfile(
+                id: uuid,
+                name: name,
+                email: nil,
+                browserBundleId: bundleId,
+                isDefault: false)
+        }.sorted { $0.name < $1.name }
     }
 }

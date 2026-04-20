@@ -72,6 +72,7 @@ struct HostRequest: Decodable {
     let forceBrowser: String?
     let forcePicker: Bool?
     let forcePrivate: Bool?
+    let container: String?
 }
 
 struct HostResponse: Encodable {
@@ -99,7 +100,8 @@ while let req = readMessage() {
             target: targetURL, source: source,
             browser: req.forceBrowser,
             pick: req.forcePicker ?? false,
-            privateWindow: req.forcePrivate ?? false
+            privateWindow: req.forcePrivate ?? false,
+            container: req.container
         ) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")

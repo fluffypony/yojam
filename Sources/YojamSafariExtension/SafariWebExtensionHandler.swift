@@ -8,6 +8,14 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
+        // Register this Safari profile with Yojam so the main app can list
+        // detected Safari profiles in the Browsers tab. SFExtensionProfileKey
+        // is a stable UUID per Safari profile in Safari 17+.
+        if let userInfo = request?.userInfo,
+           let profileUUID = userInfo[SFExtensionProfileKey] as? UUID {
+            registerSafariProfile(uuid: profileUUID)
+        }
+
         guard let message = request?.userInfo?[SFExtensionMessageKey] as? [String: Any],
               let action = message["action"] as? String
         else {
@@ -20,8 +28,25 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             handleRoute(message: message, context: context)
         case "preview":
             handlePreview(message: message, context: context)
+        case "registerProfile":
+            // Explicit handshake so the extension can force registration.
+            let response = NSExtensionItem()
+            response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
+            context.completeRequest(returningItems: [response])
         default:
             sendError(context, message: "Unknown action: \(action)")
+        }
+    }
+
+    /// Record this Safari profile's UUID in shared App Group defaults so
+    /// the main app's ProfileDiscovery can list it alongside other browser
+    /// profiles.
+    private func registerSafariProfile(uuid: UUID) {
+        guard let defaults = UserDefaults(suiteName: SharedRoutingStore.suiteName) else { return }
+        var registry = (defaults.dictionary(forKey: "safariProfileRegistry") as? [String: String]) ?? [:]
+        if registry[uuid.uuidString] == nil {
+            registry[uuid.uuidString] = "Safari Profile \(registry.count + 1)"
+            defaults.set(registry, forKey: "safariProfileRegistry")
         }
     }
 
