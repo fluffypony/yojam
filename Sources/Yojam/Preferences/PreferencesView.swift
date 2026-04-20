@@ -59,8 +59,8 @@ enum SettingsSearchIndex {
                            subtitle: "Choose the picker appearance auto small big horizontal vertical"),
         SettingsSearchItem(tab: .general, section: "Picker", title: "Vertical Threshold",
                            subtitle: "Switch to vertical layout when this many browsers are shown"),
-        SettingsSearchItem(tab: .general, section: "Picker", title: "Reverse Order",
-                           subtitle: "Show browsers from right to left bottom to top invert flip"),
+        SettingsSearchItem(tab: .general, section: "Picker", title: "Layout Direction",
+                           subtitle: "Override direction browsers appear in picker right-to-left RTL top-to-bottom automatic system"),
         SettingsSearchItem(tab: .general, section: "Picker", title: "Sound Effects",
                            subtitle: "Play a sound when you pick a browser select"),
         SettingsSearchItem(tab: .general, section: "Picker", title: "Picker Shortcuts",
@@ -147,6 +147,10 @@ enum SettingsSearchIndex {
                            subtitle: "Clear all browser data and detect installed browsers from scratch"),
         SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Reset All Settings",
                            subtitle: "Restore all settings to their factory defaults"),
+        SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Uninstall Yojam",
+                           subtitle: "Remove native messaging manifests login item logs preferences"),
+        SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Import from Other Apps",
+                           subtitle: "Bumpr Choosy Finicky migration rules"),
 
         // About
         SettingsSearchItem(tab: .about, section: "About", title: "About Yojam",
