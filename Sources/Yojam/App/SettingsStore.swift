@@ -256,8 +256,20 @@ final class SettingsStore: ObservableObject {
             ?? UTMStripper.defaultParameters
         self.pickerLayout = PickerLayout(
             rawValue: s.string(forKey: Keys.pickerLayout) ?? "") ?? .auto
-        self.pickerDirectionOverride = PickerDirectionOverride(
-            rawValue: s.string(forKey: Keys.pickerDirectionOverride) ?? "") ?? .system
+        // Migrate legacy pickerInvertOrder bool defaults to the new direction
+        // override enum on first launch after upgrade.
+        let legacyInvertKey = "pickerInvertOrder"
+        let resolvedDirection: PickerDirectionOverride
+        if s.object(forKey: Keys.pickerDirectionOverride) == nil,
+           let legacyInvert = s.object(forKey: legacyInvertKey) as? Bool {
+            resolvedDirection = legacyInvert ? .rtl : .system
+            s.set(resolvedDirection.rawValue, forKey: Keys.pickerDirectionOverride)
+            s.removeObject(forKey: legacyInvertKey)
+        } else {
+            resolvedDirection = PickerDirectionOverride(
+                rawValue: s.string(forKey: Keys.pickerDirectionOverride) ?? "") ?? .system
+        }
+        self.pickerDirectionOverride = resolvedDirection
         self.recentURLRetention = RecentURLRetention(
             rawValue: s.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = s.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
@@ -502,12 +514,20 @@ final class SettingsStore: ObservableObject {
         }
         saveBrowsers(sanitizedBrowsers)
         saveEmailClients(sanitizedEmailClients)
-        // Validate regex patterns in imported rules
-        let validatedImportedRules = imported.rules.filter { rule in
-            if rule.matchType == .regex {
-                return RegexMatcher.isValid(pattern: rule.pattern)
+        // Validate regex patterns and disable path-based targets in imported rules.
+        // Rules with absolute-path `targetBundleId` are a code-execution vector
+        // (RuleEngine supports bare paths), so imported rules with that shape
+        // are force-disabled. Users can re-enable them manually after review.
+        let validatedImportedRules: [Rule] = imported.rules.compactMap { rule in
+            if rule.matchType == .regex,
+               !RegexMatcher.isValid(pattern: rule.pattern) {
+                return nil
             }
-            return true
+            var sanitized = rule
+            if sanitized.targetBundleId.hasPrefix("/") {
+                sanitized.enabled = false
+            }
+            return sanitized
         }
         // Save imported rules verbatim; loadRules() will insert fresh built-ins
         // for any UUIDs that are missing and not tombstoned.
@@ -516,9 +536,9 @@ final class SettingsStore: ObservableObject {
         utmStripList = imported.utmStripList
         // Clamp to prevent clipboard-check O(n) blow-up
         suppressedClipboardDomains = Array(imported.suppressedClipboardDomains.prefix(1000))
-        // Restore learned domain preferences
-        if !imported.learnedDomainPreferences.isEmpty,
-           let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
+        // Always restore learned domain preferences, even when empty, so
+        // importing a config with `{}` clears stale state.
+        if let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
             sharedDefaults.set(data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
         }
     }

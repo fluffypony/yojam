@@ -401,13 +401,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Look up the rule that matched (for firefoxContainer / display targeting).
-            // The decision has already been made by RoutingService; this is a cheap
-            // secondary lookup against the same rule set.
-            let matchedRule = ruleEngine.evaluate(finalURL,
+            // Match against the ORIGINAL request.url (not finalURL) so rewrites
+            // applied by the matching rule don't cause a different rule to match here.
+            let matchedRule = ruleEngine.evaluate(request.url,
                                                   sourceAppBundleId: request.sourceAppBundleId)
             let container = matchedRule?.firefoxContainer
                 ?? request.metadata["container"]
             let targetDisplayUUID = matchedRule?.targetDisplayUUID
+                ?? matchedRule?.targetDisplayIndex.flatMap { indexToUUID($0) }
 
             // Firefox container routing: open via the Yojam extension in Firefox
             // rather than going through NSWorkspace directly. Containers require
@@ -706,12 +707,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 domain: domain, entryId: entry.id.uuidString)
         }
 
+        // Apply rule-attached display/container metadata when the user picks
+        // the target browser the rule was aimed at. We look up against the
+        // original URL so rule rewrites don't swap the match.
+        let matchedRule = ruleEngine.evaluate(url, sourceAppBundleId: nil)
+        let ruleTargetsThisEntry = matchedRule?.targetBundleId == entry.bundleIdentifier
+        let targetDisplayUUID = ruleTargetsThisEntry
+            ? (matchedRule?.targetDisplayUUID
+               ?? matchedRule?.targetDisplayIndex.flatMap { indexToUUID($0) })
+            : nil
+
         openURL(
             finalURL, withAppAt: appURL,
             profile: entry.profileId,
             bundleId: entry.bundleIdentifier,
             privateWindow: entry.openInPrivateWindow,
             customLaunchArgs: entry.customLaunchArgs)
+
+        if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                _ = DisplayManager.moveFrontWindow(
+                    ofBundleId: entry.bundleIdentifier, toDisplayUUID: targetDisplayUUID)
+            }
+        }
+    }
+
+    /// Resolve a `targetDisplayIndex` (1-based) fallback to a persistent display UUID.
+    private func indexToUUID(_ index: Int) -> String? {
+        let displays = DisplayManager.availableDisplays()
+        let zeroBased = index - 1
+        guard displays.indices.contains(zeroBased) else { return nil }
+        return displays[zeroBased].id
     }
 
     func openURL(

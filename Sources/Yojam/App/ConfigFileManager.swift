@@ -82,11 +82,20 @@ final class ConfigFileManager {
     }
 
     private func handleExternalChange() {
+        // Always re-arm the watcher regardless of success/failure: the old fd
+        // no longer points at the current inode after any write/rename/delete.
+        // defer ensures we re-arm even if the file was deleted (recreating the
+        // watcher will re-seed on the next writeConfig call).
+        defer {
+            // If the file exists, re-arm on the fresh inode. If it was deleted,
+            // seed it again so downstream edits still get picked up.
+            if !FileManager.default.fileExists(atPath: configPath.path) {
+                writeConfig()
+            }
+            startWatching()
+        }
         // Ignore events we triggered ourselves (write path does atomic rename).
         if Date().timeIntervalSince(lastSelfWriteAt) < selfWriteEpsilon {
-            // Re-arm watcher if the file was replaced by an atomic rename —
-            // the old fd no longer points at the live inode.
-            startWatching()
             return
         }
         guard let data = try? Data(contentsOf: configPath) else { return }
@@ -96,7 +105,5 @@ final class ConfigFileManager {
         } catch {
             YojamLogger.shared.log("ConfigFileManager: external edit invalid (\(error.localizedDescription))")
         }
-        // Re-arm on the replaced inode.
-        startWatching()
     }
 }

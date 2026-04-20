@@ -45,10 +45,12 @@ public enum RuleMatcher {
                                    normalizedURL: normalizedURL, explanation: explanation)
 
         case .urlPrefix:
+            // Case-insensitive prefix match: lowercase both URL and pattern.
             let normalizedPattern = stripScheme(patternLower)
             let trimmedPattern = normalizedPattern.hasSuffix("/")
                 ? String(normalizedPattern.dropLast()) : normalizedPattern
-            let matched = normalizedURL.hasPrefix(trimmedPattern)
+            let compareURL = normalizedURL.lowercased()
+            let matched = compareURL.hasPrefix(trimmedPattern)
             let explanation = matched
                 ? "Normalized URL starts with \"\(trimmedPattern)\"."
                 : "Normalized URL \"\(normalizedURL)\" does not start with \"\(trimmedPattern)\"."
