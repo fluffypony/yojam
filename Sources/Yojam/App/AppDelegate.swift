@@ -1045,11 +1045,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyPreferencesWindowConstraintsIfMatching(window)
     }
 
-    /// Pin the preferences window to our known-good minimum size. The
-    /// Window scene's `.windowResizability(.contentMinSize)` reads the
-    /// view hierarchy's natural minimum, which undercuts the explicit
-    /// `.frame(minWidth:)` floor we specify — so we set minSize directly
-    /// on the NSWindow whenever we find it.
+    private static let preferencesMinSize = NSSize(width: 900, height: 500)
+
+    /// Pin the preferences window to our known-good minimum size. With
+    /// the Window scene using the default `.automatic` resizability,
+    /// NSWindow.minSize is the sole authority — SwiftUI isn't fighting
+    /// us here. We also snap the frame up when the autosaved frame (or
+    /// SwiftUI's initial layout) placed the window below the floor.
     private func applyPreferencesWindowConstraintsIfMatching(_ window: NSWindow) {
         let isPreferences = window.identifier == Self.settingsWindowIdentifier
             || window.title.lowercased().contains("yojam settings")
@@ -1058,7 +1060,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard isPreferences, !(window is NSPanel) else { return }
         window.identifier = Self.settingsWindowIdentifier
         window.setFrameAutosaveName("YojamPreferences")
-        window.minSize = NSSize(width: 900, height: 500)
+        window.minSize = Self.preferencesMinSize
+        // If autosave (or SwiftUI's initial sizing) gave us a frame
+        // smaller than the floor, push the frame up now — minSize alone
+        // doesn't retroactively enlarge an already-too-small window.
+        var frame = window.frame
+        var needsResize = false
+        if frame.size.width < Self.preferencesMinSize.width {
+            frame.size.width = Self.preferencesMinSize.width
+            needsResize = true
+        }
+        if frame.size.height < Self.preferencesMinSize.height {
+            frame.size.height = Self.preferencesMinSize.height
+            needsResize = true
+        }
+        if needsResize {
+            window.setFrame(frame, display: true, animate: false)
+        }
         settingsWindow = window
     }
 
@@ -1090,10 +1108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     || window.title.lowercased().contains("settings")
                     || window.title.lowercased().contains("preferences"))
         }) {
-            tagged.identifier = Self.settingsWindowIdentifier
-            tagged.setFrameAutosaveName("YojamPreferences")
-            tagged.minSize = NSSize(width: 900, height: 500)
-            settingsWindow = tagged
+            applyPreferencesWindowConstraintsIfMatching(tagged)
             return tagged
         }
         return nil

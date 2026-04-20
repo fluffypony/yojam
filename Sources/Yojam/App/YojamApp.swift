@@ -30,7 +30,11 @@ struct YojamApp: App {
             )
         }
         .defaultSize(width: 900, height: 600)
-        .windowResizability(.contentMinSize)
+        // Deliberately no .windowResizability modifier: `.contentMinSize`
+        // reads the view's *intrinsic* minimum (which ignores our explicit
+        // `.frame(minWidth:)` floor) and keeps resetting NSWindow.minSize
+        // underneath us. Default `.automatic` leaves the NSWindow alone,
+        // so AppDelegate can be the single authority on minSize.
         .commands {
             // Replace the default "Settings…" menu item (which used to dispatch
             // to showSettingsWindow: for the Settings scene) with one that
