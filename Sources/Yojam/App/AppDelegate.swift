@@ -87,14 +87,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // was created by SwiftUI before showPreferences() ran. Relying on
         // identifySettingsWindow() inside showPreferences() misses the
         // scene-autoopened window entirely.
+        // Selector-based observer — AppDelegate is @MainActor, and AppKit
+        // posts window notifications on the main thread, so the callback
+        // is main-actor-isolated without needing a Sendable-note hop.
         NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] note in
-            guard let window = note.object as? NSWindow else { return }
-            self?.applyPreferencesWindowConstraintsIfMatching(window)
-        }
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil)
 
         // TipKit
         try? Tips.configure([
@@ -459,11 +459,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             guard let resolvedAppURL = appURL(for: entry.bundleIdentifier) else { return }
+
+            // Rule-level overrides: a matching custom rule can pin the
+            // profile, private-window state, or launch args regardless of
+            // how the BrowserEntry is configured on the Browsers tab. nil
+            // fields fall back to the entry's defaults.
+            let effectiveProfile = matchedRule?.ruleProfileId ?? entry.profileId
+            let effectivePrivate = matchedRule?.ruleOpenInPrivateWindow ?? privateWindow
+            let effectiveArgs = matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs
+
             openURL(effectiveURL, withAppAt: resolvedAppURL,
-                    profile: entry.profileId,
+                    profile: effectiveProfile,
                     bundleId: entry.bundleIdentifier,
-                    privateWindow: privateWindow,
-                    customLaunchArgs: entry.customLaunchArgs)
+                    privateWindow: effectivePrivate,
+                    customLaunchArgs: effectiveArgs)
 
             // Per-display targeting (best-effort, requires AX permission).
             if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
@@ -1030,6 +1039,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the user resizes the window).
     static let settingsWindowIdentifier = NSUserInterfaceItemIdentifier("YojamPreferences")
     private weak var settingsWindow: NSWindow?
+
+    @objc private func windowDidBecomeKey(_ note: Notification) {
+        guard let window = note.object as? NSWindow else { return }
+        applyPreferencesWindowConstraintsIfMatching(window)
+    }
 
     /// Pin the preferences window to our known-good minimum size. The
     /// Window scene's `.windowResizability(.contentMinSize)` reads the

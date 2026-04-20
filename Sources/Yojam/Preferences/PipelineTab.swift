@@ -560,10 +560,40 @@ struct AddRuleSheet: View {
     @State private var sourceAppBundleId = ""
     @State private var firefoxContainer = ""
     @State private var targetDisplayUUID: String? = nil
+    @State private var ruleProfileId: String? = nil
+    @State private var rulePrivateWindowOverride: PrivateWindowOverride = .inherit
+    @State private var ruleCustomLaunchArgs = ""
+    @State private var targetProfiles: [BrowserProfile] = []
     @State private var testURL = ""
     @State private var testResult = ""
     @State private var testExplanation = ""
     @State private var testMatched = false
+
+    private enum PrivateWindowOverride: String, CaseIterable, Identifiable {
+        case inherit, forcePrivate, forceNormal
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .inherit:      "Inherit from browser"
+            case .forcePrivate: "Private window"
+            case .forceNormal:  "Normal window"
+            }
+        }
+        var boolValue: Bool? {
+            switch self {
+            case .inherit: nil
+            case .forcePrivate: true
+            case .forceNormal: false
+            }
+        }
+        static func from(_ value: Bool?) -> PrivateWindowOverride {
+            switch value {
+            case .none: .inherit
+            case .some(true): .forcePrivate
+            case .some(false): .forceNormal
+            }
+        }
+    }
 
     private var installedApps: [(String, String)] {
         let handlers = NSWorkspace.shared.urlsForApplications(
@@ -603,6 +633,7 @@ struct AddRuleSheet: View {
                     priorityStripRow
                     sourceAppField
                     advancedTargetingFields
+                    browserOptionsSection
                     liveTestSection
                 }
                 .padding(24)
@@ -634,7 +665,17 @@ struct AddRuleSheet: View {
         .frame(minWidth: 560, idealWidth: 560, minHeight: 560, idealHeight: 660, maxHeight: 800)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
-        .onAppear { loadEditing() }
+        .onAppear {
+            loadEditing()
+            refreshTargetProfiles()
+        }
+        .onChange(of: targetBundleId) { _, _ in
+            // New target → its profile list is different. Clear the rule's
+            // profile override (the old ID won't apply to the new browser)
+            // and reload.
+            ruleProfileId = nil
+            refreshTargetProfiles()
+        }
     }
 
     private var nameField: some View {
@@ -719,7 +760,72 @@ struct AddRuleSheet: View {
 
     private var sourceAppField: some View {
         fieldRow("Source App (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
-            ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
+            HStack(spacing: 8) {
+                ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
+                ThemeButton("Choose App\u{2026}") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.applicationBundle]
+                    panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                    if panel.runModal() == .OK, let url = panel.url,
+                       let bundle = Bundle(url: url),
+                       let bundleId = bundle.bundleIdentifier {
+                        sourceAppBundleId = bundleId
+                    }
+                }
+            }
+        }
+    }
+
+    /// Per-rule browser overrides: profile, private-window, custom launch args.
+    /// Only surface this block when a target is picked — without a
+    /// bundle ID there's nothing sensible to list profiles for.
+    @ViewBuilder
+    private var browserOptionsSection: some View {
+        if !targetBundleId.isEmpty {
+            Divider().background(Theme.borderSubtle).padding(.vertical, 4)
+            Text("Browser options for this rule")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(Theme.textSecondary)
+            Text("Overrides the target browser's defaults when this rule matches. Leave as \u{201C}Inherit\u{201D} to use whatever is configured on the Browsers tab.")
+                .font(.system(size: 10))
+                .foregroundColor(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !targetProfiles.isEmpty {
+                fieldRow("Profile") {
+                    Picker("", selection: $ruleProfileId) {
+                        Text("Inherit from browser").tag(nil as String?)
+                        ForEach(targetProfiles) { profile in
+                            Text(profile.name).tag(profile.id as String?)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Rule profile")
+                }
+            }
+
+            if ProfileLaunchHelper.supportsPrivateWindow(browserBundleId: targetBundleId) {
+                fieldRow("Window Type") {
+                    Picker("", selection: $rulePrivateWindowOverride) {
+                        ForEach(PrivateWindowOverride.allCases) { opt in
+                            Text(opt.displayName).tag(opt)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Window type for this rule")
+                }
+            }
+
+            fieldRow("Custom Launch Args", helpText: HelpText.Browsers.customLaunchArgs) {
+                HStack(spacing: 8) {
+                    ThemeTextField(
+                        placeholder: "Leave blank to inherit (use $URL for the link)",
+                        text: $ruleCustomLaunchArgs,
+                        isMono: true)
+                }
+            }
         }
     }
 
@@ -789,10 +895,33 @@ struct AddRuleSheet: View {
         sourceAppBundleId = rule.sourceAppBundleId ?? ""
         firefoxContainer = rule.firefoxContainer ?? ""
         targetDisplayUUID = rule.targetDisplayUUID
+        ruleProfileId = rule.ruleProfileId
+        rulePrivateWindowOverride = PrivateWindowOverride.from(rule.ruleOpenInPrivateWindow)
+        ruleCustomLaunchArgs = rule.ruleCustomLaunchArgs ?? ""
+    }
+
+    /// Load profiles for the current target browser off the main thread —
+    /// ChromiumProfileReader touches `~/Library/Application Support/<app>/`
+    /// which can be slow on cold disk reads.
+    private func refreshTargetProfiles() {
+        let bundleId = targetBundleId
+        guard !bundleId.isEmpty else { targetProfiles = []; return }
+        let discovery = ProfileDiscovery()
+        Task { @MainActor in
+            let found = await Task.detached {
+                discovery.discoverProfiles(for: bundleId)
+            }.value
+            // Race guard: ignore result if the user picked a different
+            // target while we were fetching.
+            if bundleId == targetBundleId {
+                targetProfiles = found
+            }
+        }
     }
 
     private func commit() {
         let baseId = editing?.id ?? UUID()
+        let trimmedArgs = ruleCustomLaunchArgs.trimmingCharacters(in: .whitespacesAndNewlines)
         let rule = Rule(
             id: baseId,
             name: name, enabled: editing?.enabled ?? true,
@@ -804,7 +933,10 @@ struct AddRuleSheet: View {
             rewriteRules: editing?.rewriteRules ?? [],
             sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
             firefoxContainer: firefoxContainer.isEmpty ? nil : firefoxContainer,
-            targetDisplayUUID: targetDisplayUUID)
+            targetDisplayUUID: targetDisplayUUID,
+            ruleProfileId: ruleProfileId,
+            ruleOpenInPrivateWindow: rulePrivateWindowOverride.boolValue,
+            ruleCustomLaunchArgs: trimmedArgs.isEmpty ? nil : trimmedArgs)
         if editing == nil {
             ruleEngine.addRule(rule)
         } else {

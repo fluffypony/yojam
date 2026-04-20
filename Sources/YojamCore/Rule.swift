@@ -26,6 +26,19 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     /// Arbitrary per-rule metadata (e.g. import provenance).
     public var metadata: [String: String]?
 
+    // Rule-level browser overrides. Each is optional; `nil` means "inherit
+    // from the matched BrowserEntry." The launcher resolves effective
+    // values by OR-ing these over the entry's defaults.
+    /// Profile ID (Chromium profile dir, Firefox profile name) to launch
+    /// against when this rule matches. `nil` = inherit from BrowserEntry.
+    public var ruleProfileId: String?
+    /// Private/incognito window for this rule. `nil` = inherit from
+    /// BrowserEntry, `true` = force private, `false` = force normal.
+    public var ruleOpenInPrivateWindow: Bool?
+    /// Launch-arg template (with `$URL`) for this rule. `nil` = inherit
+    /// from BrowserEntry. Empty string is treated the same as nil.
+    public var ruleCustomLaunchArgs: String?
+
     public init(
         id: UUID = UUID(),
         name: String,
@@ -44,7 +57,10 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         firefoxContainer: String? = nil,
         targetDisplayUUID: String? = nil,
         targetDisplayIndex: Int? = nil,
-        metadata: [String: String]? = nil
+        metadata: [String: String]? = nil,
+        ruleProfileId: String? = nil,
+        ruleOpenInPrivateWindow: Bool? = nil,
+        ruleCustomLaunchArgs: String? = nil
     ) {
         self.id = id; self.name = name; self.enabled = enabled
         self.matchType = matchType; self.pattern = pattern
@@ -57,6 +73,9 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.targetDisplayUUID = targetDisplayUUID
         self.targetDisplayIndex = targetDisplayIndex
         self.metadata = metadata
+        self.ruleProfileId = ruleProfileId
+        self.ruleOpenInPrivateWindow = ruleOpenInPrivateWindow
+        self.ruleCustomLaunchArgs = ruleCustomLaunchArgs
     }
 
     enum CodingKeys: String, CodingKey {
@@ -65,6 +84,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         case stripUTMParams, rewriteRules
         case sourceAppBundleId, sourceAppName, lastModifiedAt
         case firefoxContainer, targetDisplayUUID, targetDisplayIndex, metadata
+        case ruleProfileId, ruleOpenInPrivateWindow, ruleCustomLaunchArgs
     }
 
     public init(from decoder: Decoder) throws {
@@ -87,6 +107,9 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.targetDisplayUUID = try c.decodeIfPresent(String.self, forKey: .targetDisplayUUID)
         self.targetDisplayIndex = try c.decodeIfPresent(Int.self, forKey: .targetDisplayIndex)
         self.metadata = try c.decodeIfPresent([String: String].self, forKey: .metadata)
+        self.ruleProfileId = try c.decodeIfPresent(String.self, forKey: .ruleProfileId)
+        self.ruleOpenInPrivateWindow = try c.decodeIfPresent(Bool.self, forKey: .ruleOpenInPrivateWindow)
+        self.ruleCustomLaunchArgs = try c.decodeIfPresent(String.self, forKey: .ruleCustomLaunchArgs)
     }
 }
 
