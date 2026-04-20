@@ -326,6 +326,13 @@ struct PreferencesView: View {
             .padding(.bottom, 12)
         }
         .frame(width: 240)
+        // Without fixedSize, SwiftUI's HStack layout algorithm compresses
+        // the sidebar to absorb wider content in tabs with large headers
+        // (the Link Handling tab's +Add Rule / +Add Rewrite row, notably),
+        // even though the sidebar has a fixed 240pt frame. Locking the
+        // horizontal axis keeps the sidebar width constant — the content
+        // tab compresses first instead.
+        .fixedSize(horizontal: true, vertical: false)
         .background(Theme.bgSidebar)
         .overlay(alignment: .trailing) {
             Rectangle()

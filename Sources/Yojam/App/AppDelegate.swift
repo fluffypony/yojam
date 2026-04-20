@@ -23,9 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         userDriverDelegate: nil)
     var updater: SPUUpdater { updaterController.updater }
 
-    /// Bridged from YojamApp so we can open Settings from AppKit code
-    /// without the deprecated showSettingsWindow: selector.
-    var openSettingsAction: OpenSettingsAction?
+    /// Bridged from YojamApp so we can open the preferences window from
+    /// AppKit code without the deprecated showSettingsWindow: selector.
+    /// Typed as a plain closure because we now use a Window scene with
+    /// `openWindow(id:)` rather than the Settings scene's OpenSettingsAction.
+    var openSettingsAction: (() -> Void)?
 
     // MARK: - Detection
     private var appInstallMonitor: AppInstallMonitor!
@@ -195,7 +197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }.store(in: &cancellables)
 
         // First launch
-        if settingsStore.isFirstLaunch {
+        let isFirst = settingsStore.isFirstLaunch
+        if isFirst {
             DefaultBrowserManager.promptSetDefault()
             settingsStore.isFirstLaunch = false
             // Auto-open Preferences so the user sees the Quick Start card
@@ -203,6 +206,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.showPreferences()
                 }
+            }
+        }
+
+        // The preferences Window scene may auto-open at launch. Close it
+        // on launches where we don't explicitly want it visible (i.e. not
+        // first-launch, not responding to a URL request). It stays
+        // registered with SwiftUI and will reopen via openSettingsAction().
+        if !isFirst && pendingRequests.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                self?.closeAutoOpenedPreferencesWindow()
             }
         }
 
@@ -990,12 +1003,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show in Cmd+Tab while preferences are open
         NSApp.setActivationPolicy(.regular)
 
-        if let openSettings = openSettingsAction {
-            openSettings()
-        } else {
-            NSApp.sendAction(
-                Selector(("showSettingsWindow:")), to: nil, from: nil)
-        }
+        // openSettingsAction is installed on every scene body evaluation by
+        // YojamApp, so by the time any showPreferences caller runs it's set.
+        openSettingsAction?()
 
         self.bringPreferencesToFront(attempts: 5)
         startWindowCloseObserver()
@@ -1006,6 +1016,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the user resizes the window).
     static let settingsWindowIdentifier = NSUserInterfaceItemIdentifier("YojamPreferences")
     private weak var settingsWindow: NSWindow?
+
+    /// Close the preferences window if SwiftUI's Window scene auto-opened
+    /// it at launch. Called from applicationDidFinishLaunching on launches
+    /// that aren't first-run or URL-driven.
+    private func closeAutoOpenedPreferencesWindow() {
+        guard let w = identifySettingsWindow(), w.isVisible else { return }
+        w.close()
+        hideFromCmdTab()
+    }
 
     private func identifySettingsWindow() -> NSWindow? {
         // Already captured on a previous call.
@@ -1029,11 +1048,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tagged.identifier = Self.settingsWindowIdentifier
             tagged.setFrameAutosaveName("YojamPreferences")
             tagged.minSize = NSSize(width: 750, height: 500)
-            // SwiftUI's Settings scene ships without `.resizable` in the
-            // style mask on macOS 14, so `.windowResizability(.contentMinSize)`
-            // alone produces a fixed-size window (no resize cursor at edges).
-            // Force the bit on here.
-            tagged.styleMask.insert(.resizable)
             settingsWindow = tagged
             return tagged
         }

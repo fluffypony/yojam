@@ -3,14 +3,23 @@ import SwiftUI
 @main
 struct YojamApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+
+    /// Stable identifier for the preferences Window scene. Used by both
+    /// `openWindow(id:)` and AppDelegate to match the NSWindow for any
+    /// AppKit-side tweaks (frame autosave, cmd-tab reveal, etc.).
+    static let preferencesWindowId = "preferences"
 
     var body: some Scene {
-        // Bridge openSettings to AppDelegate on every body evaluation so
+        // Bridge openWindow to AppDelegate on every body evaluation so
         // AppKit code can open preferences without the deprecated selector.
-        let _ = { appDelegate.openSettingsAction = openSettings }()
+        let _ = { appDelegate.openSettingsAction = { openWindow(id: Self.preferencesWindowId) } }()
 
-        Settings {
+        // Window scene (not Settings) because SwiftUI's Settings scene is
+        // hardcoded non-resizable on macOS 14 — `.windowResizability` is
+        // silently ignored there. A Window scene respects resizability and
+        // behaves identically for our purposes (we wire Cmd+, manually).
+        Window("Yojam Settings", id: Self.preferencesWindowId) {
             PreferencesView(
                 settingsStore: appDelegate.settingsStore,
                 browserManager: appDelegate.browserManager,
@@ -22,5 +31,16 @@ struct YojamApp: App {
         }
         .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)
+        .commands {
+            // Replace the default "Settings…" menu item (which used to dispatch
+            // to showSettingsWindow: for the Settings scene) with one that
+            // opens our Window by id, preserving Cmd+,.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings\u{2026}") {
+                    openWindow(id: Self.preferencesWindowId)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
