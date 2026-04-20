@@ -300,6 +300,33 @@ struct ThemeTextField: View {
     }
 }
 
+// MARK: - Highlight Modifier
+
+/// Applies a brief accent pulse when `settingsStore.highlightedControlId`
+/// matches `controlId`. Used by Quick Start deep links.
+struct ThemeHighlightModifier: ViewModifier {
+    @ObservedObject var settingsStore: SettingsStore
+    let controlId: String
+
+    func body(content: Content) -> some View {
+        let isActive = settingsStore.highlightedControlId == controlId
+        return content
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.radiusMd)
+                    .stroke(Theme.accent, lineWidth: 2)
+                    .opacity(isActive ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.4).repeatCount(2, autoreverses: true),
+                               value: isActive)
+            )
+    }
+}
+
+extension View {
+    func themeHighlight(_ settingsStore: SettingsStore, controlId: String) -> some View {
+        modifier(ThemeHighlightModifier(settingsStore: settingsStore, controlId: controlId))
+    }
+}
+
 // MARK: - Help Components
 
 /// Small (i) icon with hover/click popover for settings that need longer explanations.
@@ -326,12 +353,14 @@ struct ThemeHelpIcon: View {
                 }
             }
             .onTapGesture { isShowing.toggle() }
-            .popover(isPresented: $isShowing, arrowEdge: .trailing) {
+            // Omit arrowEdge so SwiftUI can auto-flip the popover
+            // near screen edges instead of being clipped.
+            .popover(isPresented: $isShowing) {
                 Text(text)
-                    .font(.system(size: 11))
+                    .font(.system(.caption))
                     .foregroundColor(Theme.textPrimary)
                     .padding(10)
-                    .frame(maxWidth: 260, alignment: .leading)
+                    .frame(minWidth: 200, maxWidth: 360, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .background(Theme.bgPanel)
             }

@@ -33,14 +33,6 @@ struct GeneralTab: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
-                        if !settingsStore.hasDismissedQuickStart {
-                            QuickStartCard(
-                                settingsStore: settingsStore,
-                                onSwitchTab: { tab in selectedTab = tab },
-                                onScrollToSection: { section in
-                                    withAnimation { proxy.scrollTo(section, anchor: .top) }
-                                })
-                        }
                         startupSection.id("Startup")
                         activationSection.id("Activation")
                         pickerSection.id("Picker")
@@ -102,7 +94,9 @@ struct GeneralTab: View {
                     }
                     Spacer()
                     defaultBrowserStatus
+                        .themeHighlight(settingsStore, controlId: "defaultBrowserButton")
                 }
+                .id("Default Browser")
             }
             if !isDefault {
                 TipView(setDefaultTip)
@@ -164,6 +158,7 @@ struct GeneralTab: View {
                     .frame(width: 220)
                     .accessibilityLabel("Activation mode")
                     .help("Choose when the browser picker appears")
+                    .themeHighlight(settingsStore, controlId: "activationMode")
                     .onChange(of: settingsStore.activationMode) { _, _ in
                         ActivationModeTip.hasChangedMode = true
                     }

@@ -187,11 +187,31 @@ struct PreferencesView: View {
     private var isSearching: Bool { !searchText.isEmpty }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            content
+        ZStack(alignment: .topTrailing) {
+            HStack(spacing: 0) {
+                sidebar
+                content
+            }
+            if !settingsStore.hasDismissedQuickStart {
+                QuickStartCard(
+                    settingsStore: settingsStore,
+                    onSwitchTab: { tab in selectedTab = tab },
+                    onScrollToSection: { section, controlId in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            scrollToSection = section
+                            if let controlId { settingsStore.highlightedControlId = controlId }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                                settingsStore.highlightedControlId = nil
+                            }
+                        }
+                    })
+                    .frame(width: 300)
+                    .padding(16)
+                    .shadow(radius: 8)
+                    .transition(.opacity)
+            }
         }
-        .frame(width: 900, height: 600)
+        .frame(minWidth: 750, idealWidth: 900, minHeight: 500, idealHeight: 600)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
         // When Quick Start is re-shown (e.g. from menu bar), switch to General tab
@@ -207,6 +227,25 @@ struct PreferencesView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 scrollToSection = section
                 settingsStore.pendingScrollToSection = nil
+            }
+        }
+        // Typed Quick Start route: switch tab, then scroll + highlight.
+        .onChange(of: settingsStore.pendingRoute) { _, route in
+            guard let route else { return }
+            if let tab = PreferencesTab(rawValue: route.tab) {
+                selectedTab = tab
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                scrollToSection = route.sectionId
+                if let controlId = route.controlId {
+                    settingsStore.highlightedControlId = controlId
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        if settingsStore.highlightedControlId == controlId {
+                            settingsStore.highlightedControlId = nil
+                        }
+                    }
+                }
+                settingsStore.pendingRoute = nil
             }
         }
     }

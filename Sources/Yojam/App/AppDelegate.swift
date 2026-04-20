@@ -432,7 +432,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.pickerPanel = nil
                     if NSApp.activationPolicy() == .regular {
                         let prefsOpen = NSApp.windows.contains { window in
-                            !(window is NSPanel) && window.isVisible && window.frame.width > 100
+                            window.identifier == AppDelegate.settingsWindowIdentifier
+                                && window.isVisible
                         }
                         if !prefsOpen { NSApp.setActivationPolicy(.accessory) }
                     }
@@ -905,33 +906,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWindowCloseObserver()
     }
 
+    /// Stable identifier attached to the SwiftUI Settings window so we can
+    /// locate it without relying on frame-size heuristics (which break when
+    /// the user resizes the window).
+    static let settingsWindowIdentifier = NSUserInterfaceItemIdentifier("YojamPreferences")
+    private weak var settingsWindow: NSWindow?
+
+    private func identifySettingsWindow() -> NSWindow? {
+        // Already captured on a previous call.
+        if let existing = settingsWindow, existing.isVisible { return existing }
+
+        // Match by stable identifier first.
+        if let byIdent = NSApp.windows.first(where: { $0.identifier == Self.settingsWindowIdentifier }) {
+            settingsWindow = byIdent
+            return byIdent
+        }
+
+        // Fallback: the SwiftUI Settings scene window has title "Yojam"
+        // and is not a panel. Tag it for future lookups.
+        if let tagged = NSApp.windows.first(where: { window in
+            !(window is NSPanel)
+                && window.isVisible
+                && (window.title.isEmpty || window.title.lowercased().contains("yojam")
+                    || window.title.lowercased().contains("settings")
+                    || window.title.lowercased().contains("preferences"))
+        }) {
+            tagged.identifier = Self.settingsWindowIdentifier
+            tagged.setFrameAutosaveName("YojamPreferences")
+            tagged.minSize = NSSize(width: 750, height: 500)
+            settingsWindow = tagged
+            return tagged
+        }
+        return nil
+    }
+
     private func bringPreferencesToFront(attempts: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
             }
-            // Use the deprecated form so we reliably pull to front from a
-            // status-bar menu click — plain `activate()` on macOS 14+ is a
-            // polite request that's ignored unless the activation was
-            // user-initiated in the strict sense (dock / app-icon click).
             NSApp.activate(ignoringOtherApps: true)
-            // Find the Settings window specifically — avoid picking AddRule sheets
-            // or Sparkle update windows. Settings windows are identifiable by their
-            // size (900x600+) and not being panels.
-            let settingsWindow = NSApp.windows.first { window in
-                !(window is NSPanel)
-                    && window.isVisible
-                    && window.frame.width >= 800
-                    && window.frame.height >= 500
-            } ?? NSApp.windows.first { window in
-                !(window is NSPanel) && window.frame.width > 100
-            }
-            if let settingsWindow {
+            if let settingsWindow = self.identifySettingsWindow() {
                 settingsWindow.makeKeyAndOrderFront(nil)
                 return
             }
             if attempts > 1 {
-                self?.bringPreferencesToFront(attempts: attempts - 1)
+                self.bringPreferencesToFront(attempts: attempts - 1)
             }
         }
     }
@@ -943,31 +964,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
-            // Find the settings window (large, non-panel, visible)
-            let settingsWindow = NSApp.windows.first { window in
-                !(window is NSPanel)
-                    && window.isVisible
-                    && window.frame.width >= 800
-                    && window.frame.height >= 500
-            } ?? NSApp.windows.first { window in
-                !(window is NSPanel)
-                    && window.isVisible
-                    && window.frame.width > 100
-            }
-            if let settingsWindow {
-                self.settingsWindowKVO = settingsWindow.observe(
-                    \.isVisible, options: [.new]
-                ) { [weak self] _, change in
-                    if change.newValue == false {
-                        DispatchQueue.main.async {
-                            self?.hideFromCmdTab()
-                        }
+            guard let settingsWindow = self.identifySettingsWindow() else { return }
+            self.settingsWindowKVO = settingsWindow.observe(
+                \.isVisible, options: [.new]
+            ) { [weak self] _, change in
+                if change.newValue == false {
+                    DispatchQueue.main.async {
+                        self?.hideFromCmdTab()
                     }
                 }
             }
         }
-        // Removed CGWindowList polling timer — KVO on isVisible is sufficient
-        // and avoids wasteful 2s CGWindowListCopyWindowInfo calls.
     }
 
     private func hideFromCmdTab() {

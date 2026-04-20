@@ -20,5 +20,7 @@ struct YojamApp: App {
                 updater: appDelegate.updater
             )
         }
+        .defaultSize(width: 900, height: 600)
+        .windowResizability(.contentMinSize)
     }
 }

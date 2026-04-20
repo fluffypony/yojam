@@ -4,15 +4,25 @@ import TipKit
 struct QuickStartCard: View {
     @ObservedObject var settingsStore: SettingsStore
     var onSwitchTab: ((PreferencesTab) -> Void)?
-    var onScrollToSection: ((String) -> Void)?
+    /// Scroll + optional highlight. Caller controls the delay / highlight-nil timing.
+    var onScrollToSection: ((String, String?) -> Void)?
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
 
-    private var allDone: Bool {
-        isDefault
-            && settingsStore.quickStartVisitedActivation
-            && settingsStore.quickStartVisitedBrowsers
-            && settingsStore.quickStartVisitedTester
+    // State-based completion: auto-ticked from live state rather than
+    // just "the user clicked the button".
+    private var step1Done: Bool { isDefault }
+    private var step2Done: Bool {
+        // Visited OR the user changed activation mode from factory default
+        settingsStore.quickStartVisitedActivation || settingsStore.activationMode != .always
     }
+    private var step3Done: Bool {
+        // Visited OR at least one browser is enabled
+        settingsStore.quickStartVisitedBrowsers
+            || !settingsStore.loadBrowsers().filter(\.enabled).isEmpty
+    }
+    private var step4Done: Bool { settingsStore.quickStartVisitedTester }
+
+    private var allDone: Bool { step1Done && step2Done && step3Done && step4Done }
 
     var body: some View {
         ThemeCalloutCard {
@@ -29,8 +39,10 @@ struct QuickStartCard: View {
                 quickStartItem(
                     number: 1,
                     text: "Set Yojam as your default browser",
-                    isDone: isDefault
+                    isDone: step1Done
                 ) {
+                    onSwitchTab?(.general)
+                    onScrollToSection?("Default Browser", "defaultBrowserButton")
                     if !isDefault {
                         DefaultBrowserManager.promptSetDefault()
                         SetDefaultBrowserTip.hasSetDefault = true
@@ -46,30 +58,33 @@ struct QuickStartCard: View {
                 quickStartItem(
                     number: 2,
                     text: "Choose when the picker appears",
-                    isDone: settingsStore.quickStartVisitedActivation
+                    isDone: step2Done
                 ) {
                     settingsStore.quickStartVisitedActivation = true
-                    onScrollToSection?("Activation")
+                    onSwitchTab?(.general)
+                    onScrollToSection?("Activation", "activationMode")
                     checkAllDone()
                 }
 
                 quickStartItem(
                     number: 3,
                     text: "Review your browsers",
-                    isDone: settingsStore.quickStartVisitedBrowsers
+                    isDone: step3Done
                 ) {
                     settingsStore.quickStartVisitedBrowsers = true
                     onSwitchTab?(.browsers)
+                    onScrollToSection?("Active Browsers", "browserList")
                     checkAllDone()
                 }
 
                 quickStartItem(
                     number: 4,
                     text: "Try the URL tester",
-                    isDone: settingsStore.quickStartVisitedTester
+                    isDone: step4Done
                 ) {
                     settingsStore.quickStartVisitedTester = true
                     onSwitchTab?(.pipeline)
+                    onScrollToSection?("URL Tester", "urlTester")
                     checkAllDone()
                 }
             }

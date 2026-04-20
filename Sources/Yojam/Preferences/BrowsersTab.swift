@@ -60,6 +60,7 @@ struct BrowsersTab: View {
     private var browsersSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Active Browsers")
+                .themeHighlight(settingsStore, controlId: "browserList")
             ThemeInlineHelp(text: HelpText.Browsers.dragReorder)
             TipView(browserOrderTip)
             if browserManager.browsers.isEmpty {

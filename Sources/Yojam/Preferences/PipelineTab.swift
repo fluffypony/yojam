@@ -126,8 +126,12 @@ struct PipelineTab: View {
                 ThemeTextField(placeholder: "Paste a URL here to test...", text: $testURL)
                 ThemeTextField(placeholder: "Source app (optional)", text: $testSourceApp)
                     .frame(width: 160)
-                ThemeButton("Test", help: "Run this URL through the pipeline to see what happens") { runTest() }
+                ThemeButton("Test", help: "Run this URL through the pipeline to see what happens") {
+                    runTest()
+                    settingsStore.quickStartVisitedTester = true
+                }
             }
+            .themeHighlight(settingsStore, controlId: "urlTester")
 
             if !testPipeline.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -517,6 +521,8 @@ struct PipelineNode {
 struct AddRuleSheet: View {
     @ObservedObject var ruleEngine: RuleEngine
     let onDismiss: () -> Void
+    /// When provided, the sheet edits the given rule in-place instead of adding a new one.
+    var editing: Rule?
 
     @State private var name = ""
     @State private var matchType: MatchType = .domain
@@ -526,8 +532,12 @@ struct AddRuleSheet: View {
     @State private var priority = 100
     @State private var stripUTMParams = false
     @State private var sourceAppBundleId = ""
+    @State private var firefoxContainer = ""
+    @State private var targetDisplayUUID: String? = nil
     @State private var testURL = ""
     @State private var testResult = ""
+    @State private var testExplanation = ""
+    @State private var testMatched = false
 
     private var installedApps: [(String, String)] {
         let handlers = NSWorkspace.shared.urlsForApplications(
@@ -560,111 +570,33 @@ struct AddRuleSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    fieldRow("Name") {
-                        ThemeTextField(placeholder: "e.g. Work GitHub", text: $name)
-                    }
-                    fieldRow("Match Type", helpText: HelpText.Pipeline.ruleMatchType) {
-                        Picker("", selection: $matchType) {
-                            ForEach(MatchType.allCases) { type in
-                                Text(type.displayName).tag(type)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .accessibilityLabel("Match type")
-                    }
-                    fieldRow("Pattern") {
-                        ThemeTextField(placeholder: "e.g. github.com/my-company/*", text: $pattern, isMono: true)
-                        if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
-                            Text("Invalid regex pattern")
-                                .font(.system(size: 10))
-                                .foregroundColor(Theme.danger)
-                        }
-                    }
-                    fieldRow("Target App") {
-                        HStack(spacing: 8) {
-                            Picker("", selection: $targetBundleId) {
-                                Text("Select...").tag("")
-                                ForEach(installedApps, id: \.0) { bundleId, appName in
-                                    Text(appName).tag(bundleId)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .accessibilityLabel("Target application")
-                            .onChange(of: targetBundleId) { _, newValue in
-                                targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
-                            }
-                            ThemeButton("Choose App...") {
-                                let panel = NSOpenPanel()
-                                panel.allowedContentTypes = [.applicationBundle]
-                                panel.directoryURL = URL(fileURLWithPath: "/Applications")
-                                if panel.runModal() == .OK, let url = panel.url,
-                                   let bundle = Bundle(url: url),
-                                   let bundleId = bundle.bundleIdentifier {
-                                    targetBundleId = bundleId
-                                    targetAppName = bundle.infoDictionary?["CFBundleName"] as? String
-                                        ?? url.deletingPathExtension().lastPathComponent
-                                }
-                            }
-                        }
-                    }
-                    HStack(spacing: 24) {
-                        fieldRow("Priority", helpText: HelpText.Pipeline.rulePriority) {
-                            HStack(spacing: 8) {
-                                Text("\(priority)")
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .foregroundColor(Theme.textPrimary)
-                                Stepper("", value: $priority, in: 1...1000)
-                                    .labelsHidden()
-                                    .accessibilityLabel("Rule priority")
-                            }
-                        }
-                        fieldRow("Strip Trackers") {
-                            ThemeToggle(isOn: $stripUTMParams)
-                        }
-                    }
-                    fieldRow("Source App (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
-                        ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
-                    }
-
-                    Divider().background(Theme.borderSubtle).padding(.vertical, 4)
-                    HStack(spacing: 8) {
-                        ThemeTextField(placeholder: "Test URL...", text: $testURL)
-                        ThemeButton("Test") {
-                            guard let url = URL(string: testURL) else {
-                                testResult = "Invalid URL"; return
-                            }
-                            let testRule = Rule(
-                                name: name, matchType: matchType,
-                                pattern: pattern, targetBundleId: targetBundleId,
-                                targetAppName: targetAppName)
-                            testResult = ruleEngine.matches(url: url, rule: testRule)
-                                ? "Match" : "No match"
-                        }
-                    }
-                    if !testResult.isEmpty {
-                        Text(testResult)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(testResult == "Match" ? Theme.success : Theme.textSecondary)
-                    }
+                    nameField
+                    matchTypeField
+                    patternField
+                    targetAppField
+                    priorityStripRow
+                    sourceAppField
+                    advancedTargetingFields
+                    liveTestSection
                 }
                 .padding(24)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [Theme.bgApp.opacity(0), Theme.bgApp],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 20)
+                .allowsHitTesting(false)
             }
 
             Divider().background(Theme.borderSubtle)
             HStack {
                 ThemeButton("Cancel") { onDismiss() }
                 Spacer()
-                ThemeButton("Add Rule", isPrimary: true) {
-                    let rule = Rule(
-                        name: name, matchType: matchType,
-                        pattern: pattern, targetBundleId: targetBundleId,
-                        targetAppName: targetAppName,
-                        priority: priority, stripUTMParams: stripUTMParams,
-                        sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId)
-                    ruleEngine.addRule(rule)
-                    onDismiss()
+                ThemeButton(editing == nil ? "Add Rule" : "Save", isPrimary: true) {
+                    commit()
                 }
                 .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty
                           || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern)))
@@ -673,9 +605,207 @@ struct AddRuleSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 520, height: 520)
+        .frame(minWidth: 560, idealWidth: 560, minHeight: 560, idealHeight: 660, maxHeight: 800)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
+        .onAppear { loadEditing() }
+    }
+
+    private var nameField: some View {
+        fieldRow("Name") {
+            ThemeTextField(placeholder: "e.g. Work GitHub", text: $name)
+        }
+    }
+
+    private var matchTypeField: some View {
+        fieldRow("Match Type", helpText: HelpText.Pipeline.ruleMatchType) {
+            Picker("", selection: $matchType) {
+                ForEach(MatchType.allCases) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .accessibilityLabel("Match type")
+        }
+    }
+
+    @ViewBuilder
+    private var patternField: some View {
+        fieldRow("Pattern") {
+            ThemeTextField(placeholder: "e.g. github.com/my-company", text: $pattern, isMono: true)
+            if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
+                Text("Invalid regex pattern")
+                    .font(.system(size: 10))
+                    .foregroundColor(Theme.danger)
+            }
+        }
+    }
+
+    private var targetAppField: some View {
+        fieldRow("Target App") {
+            HStack(spacing: 8) {
+                Picker("", selection: $targetBundleId) {
+                    Text("Select...").tag("")
+                    ForEach(installedApps, id: \.0) { bundleId, appName in
+                        Text(appName).tag(bundleId)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityLabel("Target application")
+                .onChange(of: targetBundleId) { _, newValue in
+                    targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
+                }
+                ThemeButton("Choose App...") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.applicationBundle]
+                    panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                    if panel.runModal() == .OK, let url = panel.url,
+                       let bundle = Bundle(url: url),
+                       let bundleId = bundle.bundleIdentifier {
+                        targetBundleId = bundleId
+                        targetAppName = bundle.infoDictionary?["CFBundleName"] as? String
+                            ?? url.deletingPathExtension().lastPathComponent
+                    }
+                }
+            }
+        }
+    }
+
+    private var priorityStripRow: some View {
+        HStack(spacing: 24) {
+            fieldRow("Priority", helpText: HelpText.Pipeline.rulePriority) {
+                HStack(spacing: 8) {
+                    Text("\(priority)")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(Theme.textPrimary)
+                    Stepper("", value: $priority, in: 1...1000)
+                        .labelsHidden()
+                        .accessibilityLabel("Rule priority")
+                }
+            }
+            fieldRow("Strip Trackers") {
+                ThemeToggle(isOn: $stripUTMParams)
+            }
+        }
+    }
+
+    private var sourceAppField: some View {
+        fieldRow("Source App (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
+            ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
+        }
+    }
+
+    @ViewBuilder
+    private var advancedTargetingFields: some View {
+        if isFirefoxTarget(targetBundleId) {
+            fieldRow("Firefox Container (optional)") {
+                ThemeTextField(placeholder: "Work", text: $firefoxContainer)
+            }
+        }
+        fieldRow("Target Display (optional)") {
+            Picker("", selection: $targetDisplayUUID) {
+                Text("Any").tag(nil as String?)
+                ForEach(DisplayManager.availableDisplays()) { display in
+                    Text(display.name).tag(display.id as String?)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+        }
+    }
+
+    @ViewBuilder
+    private var liveTestSection: some View {
+        Divider().background(Theme.borderSubtle).padding(.vertical, 4)
+        Text("Live test")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(Theme.textSecondary)
+        ThemeTextField(placeholder: "https://example.com/path to test match...", text: $testURL)
+            .onChange(of: testURL) { _, _ in runLiveTest() }
+            .onChange(of: pattern) { _, _ in runLiveTest() }
+            .onChange(of: matchType) { _, _ in runLiveTest() }
+        if !testResult.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(testMatched ? Theme.success : Theme.textSecondary)
+                        .frame(width: 6, height: 6)
+                    Text(testResult)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(testMatched ? Theme.success : Theme.textSecondary)
+                }
+                if !testExplanation.isEmpty {
+                    Text(testExplanation)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func isFirefoxTarget(_ bundleId: String) -> Bool {
+        ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
+            .contains(bundleId)
+    }
+
+    private func loadEditing() {
+        guard let rule = editing else { return }
+        name = rule.name
+        matchType = rule.matchType
+        pattern = rule.pattern
+        targetBundleId = rule.targetBundleId
+        targetAppName = rule.targetAppName
+        priority = rule.priority
+        stripUTMParams = rule.stripUTMParams
+        sourceAppBundleId = rule.sourceAppBundleId ?? ""
+        firefoxContainer = rule.firefoxContainer ?? ""
+        targetDisplayUUID = rule.targetDisplayUUID
+    }
+
+    private func commit() {
+        let baseId = editing?.id ?? UUID()
+        let rule = Rule(
+            id: baseId,
+            name: name, enabled: editing?.enabled ?? true,
+            matchType: matchType,
+            pattern: pattern, targetBundleId: targetBundleId,
+            targetAppName: targetAppName,
+            isBuiltIn: editing?.isBuiltIn ?? false,
+            priority: priority, stripUTMParams: stripUTMParams,
+            rewriteRules: editing?.rewriteRules ?? [],
+            sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+            firefoxContainer: firefoxContainer.isEmpty ? nil : firefoxContainer,
+            targetDisplayUUID: targetDisplayUUID)
+        if editing == nil {
+            ruleEngine.addRule(rule)
+        } else {
+            ruleEngine.updateRule(rule)
+        }
+        onDismiss()
+    }
+
+    private func runLiveTest() {
+        guard !testURL.isEmpty else {
+            testResult = ""; testExplanation = ""; testMatched = false; return
+        }
+        guard let url = URL(string: testURL) else {
+            testResult = "Invalid URL"
+            testExplanation = "Could not parse \"\(testURL)\" as a URL."
+            testMatched = false
+            return
+        }
+        let testRule = Rule(
+            name: name, matchType: matchType,
+            pattern: pattern, targetBundleId: targetBundleId,
+            targetAppName: targetAppName)
+        let result = RuleMatcher.evaluate(url: url, against: testRule,
+                                          sourceApp: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId)
+        testMatched = result.matched
+        testResult = result.matched ? "Match (\(matchType.displayName))" : "No match"
+        testExplanation = result.explanation
     }
 
     private func fieldRow<Content: View>(_ label: String, helpText: String? = nil, @ViewBuilder content: () -> Content) -> some View {
