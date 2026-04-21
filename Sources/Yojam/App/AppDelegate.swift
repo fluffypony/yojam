@@ -233,9 +233,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Install native messaging host manifests on every launch to
-        // repair them after the app bundle is moved.
-        NativeMessagingInstaller.reconcileInstalled()
+        // Install native messaging host manifests — but only once per
+        // bundle location. Writing to other apps' NativeMessagingHosts
+        // dirs trips the macOS "access data from other apps" TCC prompt,
+        // and there's no need to rewrite identical content on every
+        // launch. Re-runs automatically when the bundle is moved (the
+        // classic "repair after move" case) because the stored path no
+        // longer matches Bundle.main.bundleURL.path.
+        let currentBundlePath = Bundle.main.bundleURL.path
+        if settingsStore.lastNativeMessagingBundlePath != currentBundlePath {
+            NativeMessagingInstaller.reconcileInstalled()
+            settingsStore.lastNativeMessagingBundlePath = currentBundlePath
+        }
 
         // Belt-and-suspenders: if the user later trashes Yojam.app without
         // using the in-app Uninstall flow, a periodic LaunchAgent sweeps
@@ -253,48 +262,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Profile discovery - async to avoid blocking launch.
-        // Auto-assign the default profile to each base browser entry.
-        // Users who want additional profiles as separate picker entries
-        // can add the browser again via + and select a different profile.
-        // Pending URLs are drained AFTER profile discovery completes
-        // to avoid opening the first URL without the intended profile.
-        let profileDiscovery = ProfileDiscovery()
+        // Profile discovery at startup used to read Chromium `Local State`
+        // and Firefox `profiles.ini` from every installed browser's app
+        // support dir to auto-assign a default profile on base entries.
+        // Those reads trip the "access data from other apps" TCC prompt
+        // on every launch for any browser that has only one profile (the
+        // `count > 1` guard leaves profileId nil, so the loop re-runs
+        // forever). Discovery still happens lazily when the user opens
+        // the Browsers-tab profile picker or the rule editor's target
+        // picker — both already call `discoverProfiles(for:)` on-demand,
+        // at a moment where any TCC prompt is in-context and one-shot.
+        //
+        // Tradeoff: a freshly-added multi-profile browser entry opens
+        // against its own "default" until the user picks a profile. For
+        // most users that's what they want anyway.
         Task { @MainActor in
-            var changed = false
-            for i in browserManager.browsers.indices {
-                // Only process base entries that don't have a profile set yet
-                guard browserManager.browsers[i].profileId == nil else { continue }
-                let bundleId = browserManager.browsers[i].bundleIdentifier
-                let profiles = await Task.detached {
-                    profileDiscovery.discoverProfiles(for: bundleId)
-                }.value
-                let namedProfiles = profiles.filter { !$0.name.isEmpty }
-                guard namedProfiles.count > 1 else { continue }
-                // Set the default profile on the base entry
-                if let defaultProfile = namedProfiles.first(where: \.isDefault)
-                    ?? namedProfiles.first {
-                    browserManager.browsers[i].profileId = defaultProfile.id
-                    browserManager.browsers[i].profileName = defaultProfile.name
-                    changed = true
-                }
-            }
-            if changed {
-                browserManager.save()
-                browserManager.refreshProfileSuggestions()
-            }
-            // Now that profiles are assigned, drain pending queue.
-            // Drain synchronously to close the race window where new URLs
-            // arriving between the flag flip and the drain would be processed
-            // out of order. The 0.2s delay for window-server activation policy
-            // only applies to the first picker display, which the normal
-            // enqueueOrHandle → handleIncomingRequest path handles fine.
+            // Drain pending URL queue (the former discovery block used to
+            // gate this). Drain synchronously so new URLs arriving between
+            // the flag flip and the drain don't get processed out of order.
             let requests = self.pendingRequests
             self.pendingRequests.removeAll()
             for request in requests {
                 self.handleIncomingRequest(request)
             }
-            // Flip AFTER drain so nothing is re-queued during processing.
             self.isFinishedLaunching = true
         }
     }

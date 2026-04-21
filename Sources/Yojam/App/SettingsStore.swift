@@ -110,6 +110,11 @@ final class SettingsStore: ObservableObject {
         static let deletedBuiltInRuleIds = "deletedBuiltInRuleIds"
         // Last-used editor app for the flat-file config (bundle identifier).
         static let configFileEditorBundleId = "configFileEditorBundleId"
+        // Bundle path where we last ran NativeMessagingInstaller.reconcileInstalled.
+        // Used to skip the reconcile on every launch — writing to other apps'
+        // NativeMessagingHosts dirs triggers the macOS "access data from
+        // other apps" TCC prompt.
+        static let lastNativeMessagingBundlePath = "lastNativeMessagingBundlePath"
     }
 
     @Published var isFirstLaunch: Bool {
@@ -202,6 +207,20 @@ final class SettingsStore: ObservableObject {
     @Published var quickStartVisitedImport: Bool {
         didSet { defaults.set(quickStartVisitedImport, forKey: Keys.quickStartVisitedImport) }
     }
+    /// Bundle path where we last reconciled native-messaging manifests.
+    /// nil or mismatched path means we need to reconcile on next launch.
+    /// Avoids re-writing manifests into other apps' NativeMessagingHosts
+    /// dirs on every launch, which trips the TCC prompt.
+    @Published var lastNativeMessagingBundlePath: String? {
+        didSet {
+            if let path = lastNativeMessagingBundlePath, !path.isEmpty {
+                defaults.set(path, forKey: Keys.lastNativeMessagingBundlePath)
+            } else {
+                defaults.removeObject(forKey: Keys.lastNativeMessagingBundlePath)
+            }
+        }
+    }
+
     /// Bundle identifier of the editor the user last picked via
     /// "Edit With..." in Advanced > Settings Data. `nil` means no custom
     /// editor has been chosen yet.
@@ -265,6 +284,7 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
         self.quickStartVisitedImport = d.bool(forKey: Keys.quickStartVisitedImport)
         self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
+        self.lastNativeMessagingBundlePath = d.string(forKey: Keys.lastNativeMessagingBundlePath)
 
         // Routing settings from App Group suite
         self.isEnabled = s.object(forKey: Keys.isEnabled) as? Bool ?? true
