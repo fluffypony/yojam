@@ -202,9 +202,17 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   info "Generating appcast"
   mkdir -p "$RELEASES_DIR"
   cp "$DMG_PATH" "$RELEASES_DIR/"
-  "$SPARKLE_BIN/generate_appcast" "$RELEASES_DIR"
+  # --download-url-prefix: enclosures must point at yoj.am/releases/ (where
+  # the DMGs/deltas actually live). Without it, generate_appcast infers the
+  # prefix from each bundle's SUFeedURL host (yoj.am/) and emits 404 URLs.
+  "$SPARKLE_BIN/generate_appcast" "$RELEASES_DIR" \
+    --download-url-prefix https://yoj.am/releases/
   if [ -f "$RELEASES_DIR/appcast.xml" ]; then
     ok "appcast.xml generated at $RELEASES_DIR/appcast.xml"
+    DELTA_COUNT=$(find "$RELEASES_DIR" -maxdepth 1 -name "*.delta" | wc -l | tr -d ' ')
+    if [ "$DELTA_COUNT" -gt 0 ]; then
+      ok "$DELTA_COUNT delta file(s) in $RELEASES_DIR — upload alongside DMGs"
+    fi
   else
     echo "    ⚠ generate_appcast ran but no appcast.xml found"
   fi
@@ -220,7 +228,8 @@ printf "  │  Version: %-31s│\n" "v${MARKETING_VERSION} (build ${BUILD_NUMBER
 printf "  │  DMG:     %-31s│\n" "$DMG_NAME"
 echo "  │                                           │"
 echo "  │  Next steps:                              │"
-echo "  │  1. Upload DMG to yoj.am/releases/        │"
+echo "  │  1. Upload DMG + any *.delta files to     │"
+echo "  │     yoj.am/releases/                      │"
 echo "  │  2. Upload appcast.xml to yoj.am/         │"
 echo "  │  3. Verify: open old version, check for   │"
 echo "  │     updates, confirm it finds the new one │"
