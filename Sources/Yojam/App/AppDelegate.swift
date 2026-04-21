@@ -1020,6 +1020,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // YojamApp, so by the time any showPreferences caller runs it's set.
         openSettingsAction?()
 
+        // Activate synchronously while we're still inside the user-gesture
+        // run-loop tick (status-item menu action). macOS 14+ cooperative
+        // activation grants the request inside the gesture context but can
+        // refuse it from a deferred async block — the previous bring-to-
+        // front-only-after-150ms-asyncAfter path consistently lost the
+        // gesture window and left preferences buried behind other apps.
+        // If the window already exists from a prior open, promote it now;
+        // first-time opens still need bringPreferencesToFront to wait for
+        // SwiftUI to instantiate the window.
+        NSApp.activate(ignoringOtherApps: true)
+        if let existing = identifySettingsWindow() {
+            existing.makeKeyAndOrderFront(nil)
+        }
+
         self.bringPreferencesToFront(attempts: 5)
         startWindowCloseObserver()
     }
@@ -1110,11 +1124,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
             }
-            NSApp.activate(ignoringOtherApps: true)
+            // Order the window in first so when activate lands the right
+            // window is already at the top of the app's window stack and
+            // won't end up behind a sheet, About panel, or stale frame.
+            // Plain activate() on macOS 14+ is a polite request that's
+            // ignored unless the activation was user-initiated in the
+            // strict sense, so use the deprecated form here too.
             if let settingsWindow = self.identifySettingsWindow() {
                 settingsWindow.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
                 return
             }
+            NSApp.activate(ignoringOtherApps: true)
             if attempts > 1 {
                 self.bringPreferencesToFront(attempts: attempts - 1)
             }
