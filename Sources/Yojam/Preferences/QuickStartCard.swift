@@ -9,7 +9,6 @@ struct QuickStartCard: View {
     /// Scroll + optional highlight. Caller controls the delay / highlight-nil timing.
     var onScrollToSection: ((String, String?) -> Void)?
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
-    @State private var detectedImportSources: [ConfigImporter.Source] = []
     @State private var showingImportSheet = false
 
     // State-based completion: auto-ticked from live state rather than
@@ -27,11 +26,15 @@ struct QuickStartCard: View {
     private var step4Done: Bool { settingsStore.quickStartVisitedTester }
     private var importStepDone: Bool { settingsStore.quickStartVisitedImport }
 
-    /// Only surface the import step when at least one of Bumpr / Choosy /
-    /// Finicky is on disk now, or when the user has already acted on it once
-    /// (so it stays visibly checked even if they later uninstall the source).
+    /// Always surface the import step until the user has acted on it.
+    /// Pre-detecting via `ConfigImporter.detectAvailable()` at startup
+    /// triggers the macOS "access data from other apps" TCC prompt on
+    /// every launch (even LaunchServices queries against sandboxed
+    /// bundle IDs like com.nickvdh.Bumpr stat the container). Detection
+    /// runs inside the Import sheet instead, where any TCC prompt is
+    /// in-context and user-initiated.
     private var importStepVisible: Bool {
-        !detectedImportSources.isEmpty || settingsStore.quickStartVisitedImport
+        !settingsStore.quickStartVisitedImport
     }
     private var numberShift: Int { importStepVisible ? 1 : 0 }
 
@@ -123,7 +126,6 @@ struct QuickStartCard: View {
         }
         .onAppear {
             isDefault = DefaultBrowserManager.isDefaultBrowser
-            detectedImportSources = ConfigImporter.detectAvailable()
         }
         .sheet(isPresented: $showingImportSheet) {
             ImportFromOtherAppsSheet(
@@ -134,15 +136,10 @@ struct QuickStartCard: View {
     }
 
     private var importStepLabel: String {
-        let names = detectedImportSources.map(\.displayName)
-        switch names.count {
-        case 0: return "Import rules from Bumpr, Choosy, or Finicky"
-        case 1: return "Import rules from \(names[0])"
-        case 2: return "Import rules from \(names[0]) or \(names[1])"
-        default:
-            let head = names.dropLast().joined(separator: ", ")
-            return "Import rules from \(head), or \(names.last!)"
-        }
+        // Generic label — we deliberately don't pre-detect what's
+        // installed (see `importStepVisible` comment). The sheet shows
+        // which sources are actually present when the user opens it.
+        "Import rules from Bumpr, Choosy, or Finicky"
     }
 
     private func checkAllDone() {
