@@ -266,6 +266,7 @@ targets:
       base:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Yojam.app/Contents/MacOS/Yojam"
         BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
 
   YojamCoreTests:
     type: bundle.unit-test
@@ -274,3 +275,6 @@ targets:
       - path: Tests/YojamCoreTests
     dependencies:
       - target: YojamCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
