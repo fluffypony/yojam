@@ -220,15 +220,12 @@ fi
 
 # ---- Homebrew cask ----
 #
-# Render Casks/yojam.rb with the new version + sha256 of the just-built DMG
-# and print the cask block so it can be copy-pasted into the homebrew tap.
-# The authoritative template lives inline here so the formula stays in lockstep
-# with what the release script just shipped.
+# Print a ready-to-commit cask block for the fluffypony/homebrew-yojam tap,
+# pinned to the version + sha256 of the just-built DMG. Copy-paste the output
+# into that repo's Casks/yojam.rb and push.
 
-info "Updating Homebrew cask"
+info "Rendering Homebrew cask block"
 DMG_SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
-CASK_PATH="$PROJECT_DIR/Casks/yojam.rb"
-mkdir -p "$(dirname "$CASK_PATH")"
 
 CASK_CONTENT=$(cat <<EOF
 cask "yojam" do
@@ -283,11 +280,10 @@ end
 EOF
 )
 
-printf '%s\n' "$CASK_CONTENT" > "$CASK_PATH"
-ok "Casks/yojam.rb updated (v${MARKETING_VERSION}, sha256 ${DMG_SHA256:0:12}...)"
+ok "Cask rendered for v${MARKETING_VERSION} (sha256 ${DMG_SHA256:0:12}...)"
 
 echo ""
-echo "  ── Homebrew cask (copy-paste into your tap) ──────────────"
+echo "  ── Homebrew cask (paste into homebrew-yojam/Casks/yojam.rb) ──"
 echo ""
 printf '%s\n' "$CASK_CONTENT" | sed 's/^/  /'
 echo ""
@@ -306,8 +302,8 @@ echo "  │  Next steps:                              │"
 echo "  │  1. Upload DMG + any *.delta files to     │"
 echo "  │     yoj.am/releases/                      │"
 echo "  │  2. Upload appcast.xml to yoj.am/         │"
-echo "  │  3. Copy the cask block above into your   │"
-echo "  │     homebrew tap and push                 │"
+echo "  │  3. Paste the cask block above into       │"
+echo "  │     homebrew-yojam/Casks/yojam.rb + push  │"
 echo "  │  4. Verify: open old version, check for   │"
 echo "  │     updates, confirm it finds the new one │"
 echo "  └──────────────────────────────────────────┘"
