@@ -237,7 +237,7 @@ cask "yojam" do
 
   url "https://yoj.am/releases/Yojam-#{version}.dmg"
   name "Yojam"
-  desc "Open links in whatever browser, app, or profile you need - whatever yo jam is."
+  desc "Open links in whatever browser, app, or profile you need - whatever yo jam is"
   homepage "https://yoj.am/"
 
   livecheck do
@@ -252,9 +252,9 @@ cask "yojam" do
 
   uninstall quit: [
     "com.yojam.app",
-    "com.yojam.app.ShareExtension",
-    "com.yojam.app.SafariExtension",
     "com.yojam.app.NativeHost",
+    "com.yojam.app.SafariExtension",
+    "com.yojam.app.ShareExtension",
   ]
 
   zap trash: [
@@ -273,9 +273,9 @@ cask "yojam" do
     "~/Library/Logs/Yojam",
     "~/Library/Preferences/com.yojam.app.CLI.plist",
     "~/Library/Preferences/com.yojam.app.NativeHost.plist",
+    "~/Library/Preferences/com.yojam.app.plist",
     "~/Library/Preferences/com.yojam.app.SafariExtension.plist",
     "~/Library/Preferences/com.yojam.app.ShareExtension.plist",
-    "~/Library/Preferences/com.yojam.app.plist",
     "~/Library/Saved Application State/com.yojam.app.savedState",
     "~/Library/WebKit/com.yojam.app",
   ]
