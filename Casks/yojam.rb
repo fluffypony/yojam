@@ -4,7 +4,7 @@ cask "yojam" do
 
   url "https://yoj.am/releases/Yojam-#{version}.dmg"
   name "Yojam"
-  desc "Default-browser router with rules, profiles, and tracker stripping"
+  desc "Open links in whatever browser, app, or profile you need - whatever yo jam is."
   homepage "https://yoj.am/"
 
   livecheck do
