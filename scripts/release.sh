@@ -218,6 +218,80 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   fi
 fi
 
+# ---- Homebrew cask ----
+#
+# Render Casks/yojam.rb with the new version + sha256 of the just-built DMG
+# and print the cask block so it can be copy-pasted into the homebrew tap.
+# The authoritative template lives inline here so the formula stays in lockstep
+# with what the release script just shipped.
+
+info "Updating Homebrew cask"
+DMG_SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+CASK_PATH="$PROJECT_DIR/Casks/yojam.rb"
+mkdir -p "$(dirname "$CASK_PATH")"
+
+CASK_CONTENT=$(cat <<EOF
+cask "yojam" do
+  version "${MARKETING_VERSION}"
+  sha256 "${DMG_SHA256}"
+
+  url "https://yoj.am/releases/Yojam-#{version}.dmg"
+  name "Yojam"
+  desc "Default-browser router with rules, profiles, and tracker stripping"
+  homepage "https://yoj.am/"
+
+  livecheck do
+    url "https://yoj.am/appcast.xml"
+    strategy :sparkle
+  end
+
+  auto_updates true
+  depends_on macos: ">= :sonoma"
+
+  app "Yojam.app"
+
+  uninstall quit: [
+    "com.yojam.app",
+    "com.yojam.app.ShareExtension",
+    "com.yojam.app.SafariExtension",
+    "com.yojam.app.NativeHost",
+  ]
+
+  zap trash: [
+    "~/.config/yojam",
+    "~/Library/Application Support/*/NativeMessagingHosts/org.yojam.host.json",
+    "~/Library/Application Support/Yojam",
+    "~/Library/Caches/com.yojam.app",
+    "~/Library/Caches/com.yojam.app.CLI",
+    "~/Library/Caches/com.yojam.app.NativeHost",
+    "~/Library/Caches/com.yojam.app.SafariExtension",
+    "~/Library/Caches/com.yojam.app.ShareExtension",
+    "~/Library/Group Containers/group.org.yojam.shared",
+    "~/Library/HTTPStorages/com.yojam.app",
+    "~/Library/HTTPStorages/com.yojam.app.binarycookies",
+    "~/Library/Logs/Yojam",
+    "~/Library/Preferences/com.yojam.app.CLI.plist",
+    "~/Library/Preferences/com.yojam.app.NativeHost.plist",
+    "~/Library/Preferences/com.yojam.app.SafariExtension.plist",
+    "~/Library/Preferences/com.yojam.app.ShareExtension.plist",
+    "~/Library/Preferences/com.yojam.app.plist",
+    "~/Library/Saved Application State/com.yojam.app.savedState",
+    "~/Library/WebKit/com.yojam.app",
+  ]
+end
+EOF
+)
+
+printf '%s\n' "$CASK_CONTENT" > "$CASK_PATH"
+ok "Casks/yojam.rb updated (v${MARKETING_VERSION}, sha256 ${DMG_SHA256:0:12}...)"
+
+echo ""
+echo "  ── Homebrew cask (copy-paste into your tap) ──────────────"
+echo ""
+printf '%s\n' "$CASK_CONTENT" | sed 's/^/  /'
+echo ""
+echo "  ──────────────────────────────────────────────────────────"
+
 # ---- Summary ----
 
 echo ""
@@ -231,7 +305,9 @@ echo "  │  Next steps:                              │"
 echo "  │  1. Upload DMG + any *.delta files to     │"
 echo "  │     yoj.am/releases/                      │"
 echo "  │  2. Upload appcast.xml to yoj.am/         │"
-echo "  │  3. Verify: open old version, check for   │"
+echo "  │  3. Copy the cask block above into your   │"
+echo "  │     homebrew tap and push                 │"
+echo "  │  4. Verify: open old version, check for   │"
 echo "  │     updates, confirm it finds the new one │"
 echo "  └──────────────────────────────────────────┘"
 echo ""
