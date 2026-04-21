@@ -237,12 +237,12 @@ cask "yojam" do
 
   url "https://yoj.am/releases/Yojam-#{version}.dmg"
   name "Yojam"
-  desc "Default-browser router with rules, profiles, and tracker stripping"
+  desc "Open links in whatever browser, app, or profile you need - whatever yo jam is."
   homepage "https://yoj.am/"
 
   livecheck do
     url "https://yoj.am/appcast.xml"
-    strategy :sparkle
+    strategy :sparkle, &:short_version
   end
 
   auto_updates true
@@ -259,6 +259,7 @@ cask "yojam" do
 
   zap trash: [
     "~/.config/yojam",
+    "~/Library/Application Support/*/*/NativeMessagingHosts/org.yojam.host.json",
     "~/Library/Application Support/*/NativeMessagingHosts/org.yojam.host.json",
     "~/Library/Application Support/Yojam",
     "~/Library/Caches/com.yojam.app",

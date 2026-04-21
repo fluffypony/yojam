@@ -9,7 +9,7 @@ cask "yojam" do
 
   livecheck do
     url "https://yoj.am/appcast.xml"
-    strategy :sparkle
+    strategy :sparkle, &:short_version
   end
 
   auto_updates true
@@ -26,6 +26,7 @@ cask "yojam" do
 
   zap trash: [
     "~/.config/yojam",
+    "~/Library/Application Support/*/*/NativeMessagingHosts/org.yojam.host.json",
     "~/Library/Application Support/*/NativeMessagingHosts/org.yojam.host.json",
     "~/Library/Application Support/Yojam",
     "~/Library/Caches/com.yojam.app",
