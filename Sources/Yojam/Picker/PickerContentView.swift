@@ -273,6 +273,14 @@ struct PickerIconView: View {
 
     private static let sharedIconResolver = IconResolver.shared
 
+    // Desaturate the resolved app icon when the entry will launch in
+    // private/incognito mode and the user has not provided a custom icon
+    // to distinguish it. A custom icon is treated as the user's own signal
+    // and left untouched.
+    private var dimForPrivateMode: Bool {
+        entry.openInPrivateWindow && entry.customIconData == nil
+    }
+
     var body: some View {
         let image: NSImage = {
             if let data = entry.customIconData, let img = NSImage(data: data) { return img }
@@ -280,6 +288,8 @@ struct PickerIconView: View {
         }()
         Image(nsImage: image)
             .resizable().frame(width: size, height: size)
+            .saturation(dimForPrivateMode ? 0 : 1)
+            .opacity(dimForPrivateMode ? 0.65 : 1)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
             .overlay(
                 RoundedRectangle(cornerRadius: size * 0.2)
