@@ -21,11 +21,13 @@ public enum IncomingLinkExtractor {
         guard incoming.isFileURL else { return nil }
         let ext = incoming.pathExtension.lowercased()
 
-        // Allowlist of local file extensions we will route.
-        // HTML files are excluded: file:// URLs pass through to URLSanitizer
-        // which rejects non-http(s)/mailto schemes, so they'd be silently
-        // dropped anyway. Let the system handle local HTML normally.
+        // Allowlist of local file extensions we will route. Yojam registers
+        // itself as the default handler for public.html / public.xhtml, so
+        // these file URLs reach us and must be passed through to a browser;
+        // otherwise double-clicking a local HTML file is silently dropped.
         switch ext {
+        case "html", "xhtml", "htm":
+            return incoming
         case "webloc", "inetloc":
             return parseInternetLocation(incoming)
         case "url":

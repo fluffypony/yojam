@@ -255,6 +255,12 @@ public enum RoutingService {
         guard url.absoluteString.count <= 32_768 else { return nil }
         switch scheme {
         case "http", "https", "mailto": return url
+        case "file":
+            // Local files (HTML/XHTML/HTM) reach here when Yojam is the
+            // registered default handler. Require a real file URL with a
+            // non-empty path so a malformed `file:` string can't sneak through.
+            guard url.isFileURL, !url.path.isEmpty else { return nil }
+            return url
         default: return nil
         }
     }

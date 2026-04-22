@@ -17,21 +17,21 @@ final class IncomingLinkExtractorTests: XCTestCase {
         XCTAssertEqual(IncomingLinkExtractor.normalize(url)?.absoluteString, "mailto:test@example.com")
     }
 
-    func testLocalHTMLRejected() {
-        // Local HTML files are no longer routed — file:// URLs would be
-        // rejected by URLSanitizer anyway.
+    func testLocalHTMLPassThrough() {
+        // Yojam is registered as the system handler for public.html, so
+        // double-clicked HTML files must pass through as file:// URLs.
         let url = URL(fileURLWithPath: "/tmp/test.html")
-        XCTAssertNil(IncomingLinkExtractor.normalize(url))
+        XCTAssertEqual(IncomingLinkExtractor.normalize(url), url)
     }
 
-    func testLocalXHTMLRejected() {
+    func testLocalXHTMLPassThrough() {
         let url = URL(fileURLWithPath: "/tmp/test.xhtml")
-        XCTAssertNil(IncomingLinkExtractor.normalize(url))
+        XCTAssertEqual(IncomingLinkExtractor.normalize(url), url)
     }
 
-    func testLocalHTMRejected() {
+    func testLocalHTMPassThrough() {
         let url = URL(fileURLWithPath: "/tmp/test.htm")
-        XCTAssertNil(IncomingLinkExtractor.normalize(url))
+        XCTAssertEqual(IncomingLinkExtractor.normalize(url), url)
     }
 
     func testArbitraryLocalFileRejected() {
