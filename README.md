@@ -43,7 +43,14 @@ Every one of these goes through the same rule engine, tracker scrubber, and rewr
 
 ## Installing
 
-Download the latest release from [yoj.am](https://yoj.am). Open the DMG and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
+Install via Homebrew:
+
+```bash
+brew tap fluffypony/yojam
+brew install --cask yojam
+```
+
+Or grab the DMG from [yoj.am](https://yoj.am) and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
 
 Yojam checks for updates automatically. You can also check manually from the menu bar icon > "Check for Updates..."
 
