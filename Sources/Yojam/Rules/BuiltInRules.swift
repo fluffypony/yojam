@@ -10,6 +10,17 @@ enum BuiltInRules {
         UUID(uuidString: "550e8400-e29b-41d4-a716-446655440015")!, // YouTube Short
     ]
 
+    /// One-shot bundle-id corrections for built-ins that shipped with the wrong
+    /// targetBundleId. loadRules() rewrites any saved rule whose UUID matches
+    /// and whose saved targetBundleId equals `from`, replacing it with the
+    /// current canonical built-in (which also re-enables it — autoDisable
+    /// would have flipped it off because the wrong id wasn't installable).
+    static let bundleIdCorrections: [UUID: String] = [
+        // Linear shipped as "com.linear.Linear" but the actual app's
+        // CFBundleIdentifier is "com.linear".
+        UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000e")!: "com.linear.Linear",
+    ]
+
     static let all: [Rule] = [
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440001")!,
              name: "Zoom Meetings", matchType: .urlContains, pattern: "zoom.us/j/",
@@ -61,7 +72,7 @@ enum BuiltInRules {
              isBuiltIn: true, priority: 113),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000e")!,
              name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
-             targetBundleId: "com.linear.Linear", targetAppName: "Linear",
+             targetBundleId: "com.linear", targetAppName: "Linear",
              isBuiltIn: true, priority: 114),
         Rule(id: UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000f")!,
              name: "Notion", matchType: .domainSuffix, pattern: "notion.so",
