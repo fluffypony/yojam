@@ -717,12 +717,25 @@ struct AddRuleSheet: View {
         }
     }
 
+    /// Picker options: the HTTP-handler list plus, if the current selection
+    /// is an app outside that list (picked via "Choose App..."), an extra
+    /// row so the picker reflects the actual selection.
+    private var targetPickerOptions: [(String, String)] {
+        var options = installedApps
+        if !targetBundleId.isEmpty,
+           !options.contains(where: { $0.0 == targetBundleId }) {
+            let label = targetAppName.isEmpty ? targetBundleId : targetAppName
+            options.insert((targetBundleId, label), at: 0)
+        }
+        return options
+    }
+
     private var targetAppField: some View {
         fieldRow("Target App") {
             HStack(spacing: 8) {
                 Picker("", selection: $targetBundleId) {
                     Text("Select...").tag("")
-                    ForEach(installedApps, id: \.0) { bundleId, appName in
+                    ForEach(targetPickerOptions, id: \.0) { bundleId, appName in
                         Text(appName).tag(bundleId)
                     }
                 }
@@ -730,7 +743,13 @@ struct AddRuleSheet: View {
                 .pickerStyle(.menu)
                 .accessibilityLabel("Target application")
                 .onChange(of: targetBundleId) { _, newValue in
-                    targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
+                    // Only sync the name when the new bundle id is in the
+                    // HTTP-handler list. For arbitrary apps chosen via
+                    // "Choose App...", that button has already set
+                    // targetAppName — don't clobber it with "".
+                    if let match = installedApps.first(where: { $0.0 == newValue }) {
+                        targetAppName = match.1
+                    }
                 }
                 ThemeButton("Choose App...") {
                     let panel = NSOpenPanel()
@@ -739,9 +758,9 @@ struct AddRuleSheet: View {
                     if panel.runModal() == .OK, let url = panel.url,
                        let bundle = Bundle(url: url),
                        let bundleId = bundle.bundleIdentifier {
-                        targetBundleId = bundleId
                         targetAppName = bundle.infoDictionary?["CFBundleName"] as? String
                             ?? url.deletingPathExtension().lastPathComponent
+                        targetBundleId = bundleId
                     }
                 }
             }
