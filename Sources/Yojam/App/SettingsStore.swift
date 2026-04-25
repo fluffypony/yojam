@@ -415,9 +415,21 @@ final class SettingsStore: ObservableObject {
         // Drop built-ins that are tombstoned (either baked-in removedIds or user-deleted).
         var merged: [Rule] = []
         var seenIds = Set<UUID>()
+        let canonicalBuiltIns = Dictionary(uniqueKeysWithValues: BuiltInRules.all.map { ($0.id, $0) })
         for rule in savedRules {
             if rule.isBuiltIn && BuiltInRules.removedIds.contains(rule.id) { continue }
             if rule.isBuiltIn && deletedIds.contains(rule.id) { continue }
+            // One-shot fix for built-ins that shipped with the wrong bundle id.
+            // Replace with the current canonical built-in so the rule targets
+            // the right app and gets re-enabled.
+            if rule.isBuiltIn,
+               let badBundleId = BuiltInRules.bundleIdCorrections[rule.id],
+               rule.targetBundleId == badBundleId,
+               let canonical = canonicalBuiltIns[rule.id] {
+                merged.append(canonical)
+                seenIds.insert(rule.id)
+                continue
+            }
             merged.append(rule)
             seenIds.insert(rule.id)
         }
