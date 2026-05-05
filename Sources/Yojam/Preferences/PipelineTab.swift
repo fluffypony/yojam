@@ -259,7 +259,7 @@ struct PipelineTab: View {
                     // HStack overflows and the sidebar visibly shifts.
                     HStack(spacing: 0) {
                         Text("").frame(width: 24)
-                        Text("STATUS").frame(width: 44, alignment: .leading)
+                        Text("STATUS").frame(width: 52, alignment: .leading)
                             .help("Whether this rule is active")
                         Text("TYPE").frame(width: 64, alignment: .leading)
                             .help("Rewrite transforms URLs; Rule routes to a browser")
@@ -342,7 +342,7 @@ struct PipelineTab: View {
             .tint(Theme.accent)
             .labelsHidden()
             .scaleEffect(0.7)
-            .frame(width: 44, alignment: .leading)
+            .frame(width: 52, alignment: .leading)
             .help("Enable or disable this rule")
             .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
@@ -393,7 +393,7 @@ struct PipelineTab: View {
             .tint(Theme.accent)
             .labelsHidden()
             .scaleEffect(0.7)
-            .frame(width: 44, alignment: .leading)
+            .frame(width: 52, alignment: .leading)
             .help("Enable or disable this rule")
             .accessibilityLabel(rule.enabled ? "Enabled" : "Disabled")
 
@@ -839,7 +839,7 @@ struct AddRuleSheet: View {
     }
 
     private var targetAppField: some View {
-        fieldRow("Target App") {
+        fieldRow("Target App", helpText: HelpText.Pipeline.ruleTargetApp) {
             HStack(spacing: 8) {
                 Picker("", selection: Binding(
                     get: { targetSelection },
@@ -883,6 +883,7 @@ struct AddRuleSheet: View {
                         )
                     }
                 }
+                .help("Choose any installed app, including apps that do not handle web links by default.")
             }
         }
     }
