@@ -825,6 +825,19 @@ struct AddRuleSheet: View {
         }
     }
 
+    /// Picker options: the HTTP-handler list plus, if the current selection
+    /// is an app outside that list (picked via "Choose App..."), an extra
+    /// row so the picker reflects the actual selection.
+    private var targetPickerOptions: [(String, String)] {
+        var options = installedApps
+        if !targetBundleId.isEmpty,
+           !options.contains(where: { $0.0 == targetBundleId }) {
+            let label = targetAppName.isEmpty ? targetBundleId : targetAppName
+            options.insert((targetBundleId, label), at: 0)
+        }
+        return options
+    }
+
     private var targetAppField: some View {
         fieldRow("Target App") {
             HStack(spacing: 8) {
@@ -844,7 +857,7 @@ struct AddRuleSheet: View {
                         }
                     }
                     Section("Apps") {
-                        ForEach(installedApps, id: \.0) { bundleId, appName in
+                        ForEach(targetPickerOptions, id: \.0) { bundleId, appName in
                             Text(appName).tag("app:\(bundleId)")
                         }
                     }
