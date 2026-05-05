@@ -18,6 +18,8 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
     public var customIconData: Data?
     /// Custom CLI launch arguments. Use $URL as a placeholder for the URL.
     public var customLaunchArgs: String?
+    /// Launch this entry as a separate app instance when using app-bundle opens.
+    public var openAsNewInstance: Bool
 
     public init(
         id: UUID = UUID(),
@@ -35,7 +37,8 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         lastSeenAt: Date? = Date(),
         lastModifiedAt: Date? = nil,
         customIconData: Data? = nil,
-        customLaunchArgs: String? = nil
+        customLaunchArgs: String? = nil,
+        openAsNewInstance: Bool = false
     ) {
         self.id = id
         self.bundleIdentifier = bundleIdentifier
@@ -53,6 +56,7 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         self.lastModifiedAt = lastModifiedAt
         self.customIconData = customIconData
         self.customLaunchArgs = customLaunchArgs
+        self.openAsNewInstance = openAsNewInstance
     }
 
     public var fullDisplayName: String {
@@ -66,7 +70,7 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         case id, bundleIdentifier, displayName, enabled, position
         case profileId, profileName, stripUTMParams, openInPrivateWindow
         case rewriteRules, source, isInstalled, lastSeenAt, lastModifiedAt
-        case customIconData, customLaunchArgs
+        case customIconData, customLaunchArgs, openAsNewInstance
     }
 
     public init(from decoder: Decoder) throws {
@@ -87,6 +91,7 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
         lastModifiedAt = try c.decodeIfPresent(Date.self, forKey: .lastModifiedAt)
         customIconData = try c.decodeIfPresent(Data.self, forKey: .customIconData)
         customLaunchArgs = try c.decodeIfPresent(String.self, forKey: .customLaunchArgs)
+        openAsNewInstance = try c.decodeIfPresent(Bool.self, forKey: .openAsNewInstance) ?? false
     }
 }
 

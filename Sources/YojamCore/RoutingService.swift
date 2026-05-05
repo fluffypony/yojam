@@ -73,12 +73,11 @@ public enum RoutingService {
         let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
 
         if let rule = evaluateRules(configuration.rules, url: processedURL,
-                                    sourceAppBundleId: request.sourceAppBundleId) {
+                                    sourceAppBundleId: request.sourceAppBundleId,
+                                    machineIdentifier: configuration.currentMachineIdentifier) {
             processedURL = applyRewrites(rule.rewriteRules.filter(\.enabled), to: processedURL)
 
-            let matchedEntry = configuration.browsers.first {
-                $0.bundleIdentifier == rule.targetBundleId
-            }
+            let matchedEntry = matchedBrowserEntry(for: rule, in: configuration.browsers)
             if rule.stripUTMParams {
                 processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
             } else if let entry = matchedEntry, entry.stripUTMParams {
@@ -110,38 +109,18 @@ public enum RoutingService {
                                    privateWindow: priv, reason: reason)
             }
 
-            switch configuration.activationMode {
-            case .always:
+            if configuration.activationMode == .holdShift && shiftHeld {
                 let entries = configuration.browsers
                 guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
-                let preselected = entries.firstIndex(where: {
-                    $0.bundleIdentifier == rule.targetBundleId
-                }) ?? 0
+                let preselected = preselectedRuleTargetIndex(rule: rule, entries: entries) ?? 0
                 return .showPicker(entries: entries, preselectedIndex: preselected,
                                    finalURL: processedURL, isEmail: false, reason: reason)
-
-            case .holdShift:
-                if shiftHeld {
-                    let entries = configuration.browsers
-                    guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
-                    let preselected = entries.firstIndex(where: {
-                        $0.bundleIdentifier == rule.targetBundleId
-                    }) ?? 0
-                    return .showPicker(entries: entries, preselectedIndex: preselected,
-                                       finalURL: processedURL, isEmail: false, reason: reason)
-                } else {
-                    let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
-                    let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
-                    return .openDirect(browser: effectiveEntry, finalURL: finalURL,
-                                       privateWindow: priv, reason: reason)
-                }
-
-            case .smartFallback:
-                let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
-                let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
-                return .openDirect(browser: effectiveEntry, finalURL: finalURL,
-                                   privateWindow: priv, reason: reason)
             }
+
+            let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
+            let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+            return .openDirect(browser: effectiveEntry, finalURL: finalURL,
+                               privateWindow: priv, reason: reason)
         }
 
         // No rule matched — mailto.
@@ -239,13 +218,43 @@ public enum RoutingService {
     // MARK: - Rule Evaluation
 
     private static func evaluateRules(
-        _ rules: [Rule], url: URL, sourceAppBundleId: String?
+        _ rules: [Rule],
+        url: URL,
+        sourceAppBundleId: String?,
+        machineIdentifier: String?
     ) -> Rule? {
         for rule in rules {
-            let result = RuleMatcher.evaluate(url: url, against: rule, sourceApp: sourceAppBundleId)
+            let result = RuleMatcher.evaluate(
+                url: url,
+                against: rule,
+                sourceApp: sourceAppBundleId,
+                machineIdentifier: machineIdentifier
+            )
             if result.matched { return rule }
         }
         return nil
+    }
+
+    private static func matchedBrowserEntry(
+        for rule: Rule,
+        in entries: [BrowserEntry]
+    ) -> BrowserEntry? {
+        if let targetId = rule.targetBrowserEntryId,
+           let entry = entries.first(where: { $0.id == targetId }) {
+            return entry
+        }
+        return entries.first { $0.bundleIdentifier == rule.targetBundleId }
+    }
+
+    private static func preselectedRuleTargetIndex(
+        rule: Rule,
+        entries: [BrowserEntry]
+    ) -> Int? {
+        if let targetId = rule.targetBrowserEntryId,
+           let index = entries.firstIndex(where: { $0.id == targetId }) {
+            return index
+        }
+        return entries.firstIndex { $0.bundleIdentifier == rule.targetBundleId }
     }
 
     // MARK: - URL Processing

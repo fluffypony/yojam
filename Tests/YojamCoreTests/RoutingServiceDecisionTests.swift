@@ -16,7 +16,8 @@ final class RoutingServiceDecisionTests: XCTestCase {
         defaultSelection: DefaultSelectionBehavior = .alwaysFirst,
         isEnabled: Bool = true,
         globalUTMStripping: Bool = false,
-        utmParams: Set<String> = []
+        utmParams: Set<String> = [],
+        currentMachineIdentifier: String? = nil
     ) -> RoutingConfiguration {
         RoutingConfiguration(
             browsers: browsers, emailClients: emailClients,
@@ -29,7 +30,8 @@ final class RoutingServiceDecisionTests: XCTestCase {
             learnedDomainPreferences: [:],
             lastUsedBrowserId: nil,
             lastUsedEmailClientId: nil,
-            shortlinkResolutionEnabled: false
+            shortlinkResolutionEnabled: false,
+            currentMachineIdentifier: currentMachineIdentifier
         )
     }
 
@@ -116,6 +118,136 @@ final class RoutingServiceDecisionTests: XCTestCase {
             XCTAssert(reason.contains("Zoom"))
         } else {
             XCTFail("Domain rule should match and open directly in smartFallback mode")
+        }
+    }
+
+    func testBrowserRuleOpensDirectEvenWhenPickerNormallyShows() {
+        let rule = Rule(
+            name: "Chrome Work", matchType: .domain, pattern: "example.com",
+            targetBundleId: "com.google.Chrome", targetAppName: "Chrome")
+        let config = makeConfig(
+            browsers: [chrome, firefox], rules: [rule], activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://example.com")!, origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openDirect(let browser, _, _, let reason) = decision {
+            XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
+            XCTAssertEqual(reason, "Matched rule: Chrome Work")
+        } else {
+            XCTFail("Matched browser rules should open directly")
+        }
+    }
+
+    func testHoldShiftStillShowsPickerForMatchedRule() {
+        let rule = Rule(
+            name: "Chrome Work", matchType: .domain, pattern: "example.com",
+            targetBundleId: "com.google.Chrome", targetAppName: "Chrome")
+        let config = makeConfig(
+            browsers: [chrome, firefox], rules: [rule], activationMode: .holdShift)
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://example.com")!,
+            origin: .defaultHandler,
+            modifierFlags: 1 << 17)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .showPicker(let entries, let preselected, _, _, let reason) = decision {
+            XCTAssertEqual(entries.count, 2)
+            XCTAssertEqual(preselected, 0)
+            XCTAssertEqual(reason, "Matched rule: Chrome Work")
+        } else {
+            XCTFail("Shift in hold-shift mode should force picker")
+        }
+    }
+
+    func testAllURLsRuleCanBeScopedToSourceApp() {
+        let rule = Rule(
+            name: "Slack Links", matchType: .all, pattern: "",
+            targetBundleId: "com.google.Chrome", targetAppName: "Chrome",
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+        let config = makeConfig(
+            browsers: [chrome], rules: [rule], activationMode: .smartFallback)
+
+        let matching = IncomingLinkRequest(
+            url: URL(string: "https://anything.example/path")!,
+            sourceAppBundleId: "com.tinyspeck.slackmacgap",
+            origin: .defaultHandler)
+        if case .openDirect(let browser, _, _, _) =
+            RoutingService.decide(request: matching, configuration: config) {
+            XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
+        } else {
+            XCTFail("All-URLs source rule should match the configured source")
+        }
+
+        let nonMatching = IncomingLinkRequest(
+            url: URL(string: "https://anything.example/path")!,
+            sourceAppBundleId: "com.apple.mail",
+            origin: .defaultHandler)
+        if case .showPicker = RoutingService.decide(request: nonMatching, configuration: config) {
+        } else {
+            XCTFail("All-URLs source rule should skip other sources")
+        }
+    }
+
+    func testRuleTargetsSpecificBrowserEntryById() {
+        let workId = UUID()
+        let personalId = UUID()
+        let work = BrowserEntry(
+            id: workId,
+            bundleIdentifier: "com.vivaldi.Vivaldi",
+            displayName: "Vivaldi",
+            profileId: "Work",
+            profileName: "Work")
+        let personal = BrowserEntry(
+            id: personalId,
+            bundleIdentifier: "com.vivaldi.Vivaldi",
+            displayName: "Vivaldi",
+            profileId: "Personal",
+            profileName: "Personal")
+        let rule = Rule(
+            name: "Beeper Personal", matchType: .all, pattern: "",
+            targetBundleId: "com.vivaldi.Vivaldi",
+            targetAppName: "Vivaldi — Personal",
+            targetBrowserEntryId: personalId,
+            sourceAppBundleId: "com.automattic.beeper")
+        let config = makeConfig(
+            browsers: [work, personal], rules: [rule], activationMode: .smartFallback)
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://example.com")!,
+            sourceAppBundleId: "com.automattic.beeper",
+            origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openDirect(let browser, _, _, _) = decision {
+            XCTAssertEqual(browser.id, personalId)
+            XCTAssertEqual(browser.profileId, "Personal")
+        } else {
+            XCTFail("Rule should carry the selected browser entry/profile")
+        }
+    }
+
+    func testMachineScopedRuleOnlyMatchesCurrentMachine() {
+        let rule = Rule(
+            name: "Work Mac", matchType: .all, pattern: "",
+            targetBundleId: "com.google.Chrome", targetAppName: "Chrome",
+            machineScopeIdentifiers: ["machine-a"],
+            machineScopeNames: ["machine-a": "Work Mac"])
+
+        let matchingConfig = makeConfig(
+            browsers: [chrome], rules: [rule], activationMode: .smartFallback,
+            currentMachineIdentifier: "machine-a")
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://example.com")!, origin: .defaultHandler)
+        if case .openDirect(let browser, _, _, _) =
+            RoutingService.decide(request: request, configuration: matchingConfig) {
+            XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
+        } else {
+            XCTFail("Machine-scoped rule should match its own machine")
+        }
+
+        let otherConfig = makeConfig(
+            browsers: [chrome], rules: [rule], activationMode: .smartFallback,
+            currentMachineIdentifier: "machine-b")
+        if case .showPicker = RoutingService.decide(request: request, configuration: otherConfig) {
+        } else {
+            XCTFail("Machine-scoped rule should not match another machine")
         }
     }
 

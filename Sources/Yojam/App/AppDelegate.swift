@@ -395,7 +395,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isEnabled: settingsStore.isEnabled,
             learnedDomainPreferences: routingSuggestionEngine.allSuggestions(),
             lastUsedBrowserId: browserManager.lastUsedId(isEmail: false),
-            lastUsedEmailClientId: browserManager.lastUsedId(isEmail: true)
+            lastUsedEmailClientId: browserManager.lastUsedId(isEmail: true),
+            currentMachineIdentifier: settingsStore.sharedStore.localMachineIdentifier
         )
     }
 
@@ -476,12 +477,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let effectiveProfile = matchedRule?.ruleProfileId ?? entry.profileId
             let effectivePrivate = matchedRule?.ruleOpenInPrivateWindow ?? privateWindow
             let effectiveArgs = matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs
+            let effectiveNewInstance = matchedRule?.ruleOpenAsNewInstance ?? entry.openAsNewInstance
 
             openURL(effectiveURL, withAppAt: resolvedAppURL,
                     profile: effectiveProfile,
                     bundleId: entry.bundleIdentifier,
                     privateWindow: effectivePrivate,
-                    customLaunchArgs: effectiveArgs)
+                    customLaunchArgs: effectiveArgs,
+                    openAsNewInstance: effectiveNewInstance)
 
             // Per-display targeting (best-effort, requires AX permission).
             if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
@@ -776,7 +779,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             profile: entry.profileId,
             bundleId: entry.bundleIdentifier,
             privateWindow: entry.openInPrivateWindow,
-            customLaunchArgs: entry.customLaunchArgs)
+            customLaunchArgs: entry.customLaunchArgs,
+            openAsNewInstance: entry.openAsNewInstance)
 
         if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -813,7 +817,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ url: URL, withAppAt appURL: URL,
         profile: String? = nil, bundleId: String? = nil,
         privateWindow: Bool = false,
-        customLaunchArgs: String? = nil
+        customLaunchArgs: String? = nil,
+        openAsNewInstance: Bool = false
     ) {
         // AppleScript-based private window for Safari/Orion
         // Run off-main to avoid beachballing UI (the script has a 0.3s delay).
@@ -840,25 +845,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Custom CLI launch: run the app executable with user-defined args
+        // Custom launch args: app bundles go through NSWorkspace so macOS
+        // can attach the URL document and optionally create a new instance.
         if let template = customLaunchArgs, !template.isEmpty {
-            let execURL: URL
-            if appURL.pathExtension == "app" {
-                if let bundle = Bundle(url: appURL),
-                   let exec = bundle.executableURL {
-                    execURL = exec
-                } else {
-                    let name = appURL.deletingPathExtension().lastPathComponent
-                    execURL = appURL
-                        .appendingPathComponent("Contents/MacOS")
-                        .appendingPathComponent(name)
-                }
-            } else {
-                execURL = appURL
-            }
-
             var args = shellSplitArguments(template)
-                .map { $0.replacingOccurrences(of: "$URL", with: url.absoluteString) }
+                .map { expandLaunchArgument($0, url: url) }
 
             if let profile, let bundleId {
                 args.append(contentsOf: ProfileLaunchHelper.launchArguments(
@@ -869,8 +860,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     browserBundleId: bundleId))
             }
 
+            if appURL.pathExtension == "app" && !template.contains("$URL") {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                config.arguments = args
+                config.createsNewApplicationInstance = openAsNewInstance
+                Task {
+                    do {
+                        _ = try await NSWorkspace.shared.open(
+                            [url], withApplicationAt: appURL, configuration: config)
+                    } catch {
+                        YojamLogger.shared.log(
+                            "Custom launch failed: \(error.localizedDescription)")
+                    }
+                }
+                return
+            }
+
+            if !template.contains("$URL") {
+                args.append(url.absoluteString)
+            }
             let process = Process()
-            process.executableURL = execURL
+            process.executableURL = executableURL(for: appURL) ?? appURL
             process.arguments = args
             process.terminationHandler = { proc in
                 if proc.terminationStatus != 0 {
@@ -902,22 +913,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if !arguments.isEmpty {
-            let execURL: URL
             if appURL.pathExtension == "app" {
-                if let bundle = Bundle(url: appURL), let exec = bundle.executableURL {
-                    execURL = exec
-                } else {
-                    let name = appURL.deletingPathExtension().lastPathComponent
-                    execURL = appURL
-                        .appendingPathComponent("Contents/MacOS")
-                        .appendingPathComponent(name)
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                config.arguments = arguments
+                config.createsNewApplicationInstance = openAsNewInstance
+                Task {
+                    do {
+                        _ = try await NSWorkspace.shared.open(
+                            [url], withApplicationAt: appURL, configuration: config)
+                    } catch {
+                        YojamLogger.shared.log(
+                            "Profile launch failed: \(error.localizedDescription)")
+                    }
                 }
-            } else {
-                execURL = appURL
+                return
             }
 
             let process = Process()
-            process.executableURL = execURL
+            process.executableURL = appURL
             process.arguments = arguments + [url.absoluteString]
             process.terminationHandler = { proc in
                 if proc.terminationStatus != 0 {
@@ -938,6 +952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 config.arguments = arguments
+                config.createsNewApplicationInstance = openAsNewInstance
                 Task {
                     try? await NSWorkspace.shared.open(
                         [url], withApplicationAt: appURL, configuration: config)
@@ -948,6 +963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
+        config.createsNewApplicationInstance = openAsNewInstance
 
         Task {
             do {
@@ -980,6 +996,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tokens
     }
 
+    private func expandLaunchArgument(_ argument: String, url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var expanded = argument
+            .replacingOccurrences(of: "$URL", with: url.absoluteString)
+            .replacingOccurrences(of: "$HOME", with: home)
+        if expanded == "~" {
+            expanded = home
+        } else if expanded.hasPrefix("~/") {
+            expanded = home + String(expanded.dropFirst())
+        }
+        return expanded
+    }
+
+    private func executableURL(for appURL: URL) -> URL? {
+        guard appURL.pathExtension == "app" else { return appURL }
+        if let bundle = Bundle(url: appURL), let exec = bundle.executableURL {
+            return exec
+        }
+        let name = appURL.deletingPathExtension().lastPathComponent
+        return appURL
+            .appendingPathComponent("Contents/MacOS")
+            .appendingPathComponent(name)
+    }
+
     private func openInDefaultBrowser(_ url: URL) {
         guard let first = browserManager.browsers.first(where: { entry in
             entry.enabled && appURL(for: entry.bundleIdentifier) != nil
@@ -1000,7 +1040,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             profile: first.profileId,
             bundleId: first.bundleIdentifier,
             privateWindow: first.openInPrivateWindow,
-            customLaunchArgs: first.customLaunchArgs)
+            customLaunchArgs: first.customLaunchArgs,
+            openAsNewInstance: first.openAsNewInstance)
     }
 
     /// Resolve a browser entry's identifier to an app/executable URL.

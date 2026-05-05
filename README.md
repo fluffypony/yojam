@@ -10,7 +10,7 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 
 ## What it actually does
 
-- **Rules engine:** Route URLs by domain, prefix, regex, or source app. Send work stuff to your corporate Edge profile and personal stuff to Safari. Each rule can override the target browser's defaults: specific profile, private-window on/off, custom launch args, target display, or Firefox container.
+- **Rules engine:** Route URLs by domain, prefix, regex, source app, or all links from a source. Send work stuff to your corporate Edge profile and personal stuff to Safari. Each rule can override the target browser's defaults: specific profile, private-window on/off, custom launch args, target display, machine scope, or Firefox container.
 - **Profile support:** Targets specific profiles in Chrome, Firefox, Brave, Edge, Vivaldi, and Opera. Work profile for work links, personal for everything else.
 - **Firefox containers:** Rules can route into a named Multi-Account Container (Work, Personal, Banking, etc.) through the bundled Firefox extension. The link gets reopened inside the right container instead of the default context.
 - **Multi-monitor targeting:** Pin a rule's output to a specific display. Jira on the left screen, Slack-forwarded links on the right, whatever you want.
@@ -22,7 +22,7 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 - **Auto-learning:** Yojam notices which browser you pick for each domain and starts suggesting it automatically.
 - **Migrate from Bumpr, Choosy, or Finicky:** Quick Start detects these on first launch and imports their rules, tagged so you can review them before committing.
 - **Flat-file config:** A live-editable JSON copy of your setup at `~/Library/Application Support/Yojam/config.json`. Edits in the file get picked up by the app in real time, and vice-versa. Good for dotfile repos or scripted changes.
-- **iCloud sync:** Your rules and browser setups sync across all your Macs.
+- **iCloud sync:** Your rules and browser setups sync across all your Macs, with per-rule machine scope for rules that should only run on one Mac.
 - **Shortcuts integration:** "Open URL in Browser" and "Apply URL Rules" intents for automation.
 - **Menu bar only:** No dock icon, no Cmd+Tab entry. Just a menu bar icon with recent URLs and quick access to preferences.
 
@@ -90,7 +90,7 @@ When you click a link anywhere on your Mac, Yojam processes it through a pipelin
 
 | Mode | What happens |
 |---|---|
-| **Always show picker** | Every link shows the browser picker |
+| **Always show picker** | Unmatched links show the browser picker; matching rules still fire immediately. |
 | **Hold Shift to pick** | Links route via rules or your default. Hold Shift to force the picker. |
 | **Smart + Fallback** | Rules fire automatically. Learned domains auto-route. Everything else shows the picker. |
 
@@ -108,7 +108,7 @@ When you click a link anywhere on your Mac, Yojam processes it through a pipelin
 
 Yojam ships with built-in rules for Zoom, Telegram, Slack, Discord, Spotify, Apple Music, FaceTime, Apple Maps, Microsoft Teams, Figma, Linear, Notion, WhatsApp, Signal, App Store, TestFlight, and Podcasts. They auto-disable when the target app isn't installed and re-enable when it is. Built-in rules are also fully editable - tweak, duplicate, or delete them, and *Restore Default Rules* in Advanced brings them back.
 
-Add your own rules matching on domain (exact), domain suffix, URL prefix, URL substring, or regex. Rules can optionally filter by source app - only route GitHub links from Slack to your work browser, for example.
+Add your own rules matching on all URLs, domain (exact), domain suffix, URL prefix, URL substring, or regex. Rules can optionally filter by source app - only route links from Slack to your work browser, for example.
 
 ### Per-rule overrides
 
@@ -119,6 +119,8 @@ Beyond picking the target app or browser, each rule can pin:
 - **Firefox container** - route into a named Multi-Account Container. Needs the Yojam Firefox extension enabled.
 - **Target display** - send the browser window to a particular monitor after it opens (requires Accessibility permission).
 - **Custom launch arguments** - pass whatever CLI flags the target needs, with `$URL` as the placeholder.
+- **Machine scope** - keep an iCloud-synced rule active only on the Mac where it was created.
+- **New instance** - open a separate app instance for custom Chromium `--user-data-dir` setups.
 
 These overrides only apply to the specific rule, so a rule-level private-window toggle won't flip the browser's own default.
 
@@ -199,7 +201,8 @@ $URL
 --browse $URL
 ```
 
-Yojam runs the executable directly with these arguments - no shell involved.
+Yojam passes these arguments directly - no shell involved.
+For app bundles, enable **Open as new instance** if the entry needs its own Chromium user-data directory. `$HOME` and leading `~/` are expanded without invoking a shell.
 
 ## Settings
 

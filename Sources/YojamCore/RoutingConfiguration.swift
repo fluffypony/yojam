@@ -30,6 +30,8 @@ public struct RoutingConfiguration: Sendable {
     public let lastUsedEmailClientId: UUID?
     /// Whether shortlink resolution is enabled (opt-in async pre-stage).
     public let shortlinkResolutionEnabled: Bool
+    /// Stable local ID for this Mac, used by machine-scoped rules.
+    public let currentMachineIdentifier: String?
 
     public init(
         browsers: [BrowserEntry],
@@ -44,7 +46,8 @@ public struct RoutingConfiguration: Sendable {
         learnedDomainPreferences: [String: String],
         lastUsedBrowserId: UUID?,
         lastUsedEmailClientId: UUID?,
-        shortlinkResolutionEnabled: Bool = false
+        shortlinkResolutionEnabled: Bool = false,
+        currentMachineIdentifier: String? = nil
     ) {
         self.browsers = browsers
         self.emailClients = emailClients
@@ -59,5 +62,6 @@ public struct RoutingConfiguration: Sendable {
         self.lastUsedBrowserId = lastUsedBrowserId
         self.lastUsedEmailClientId = lastUsedEmailClientId
         self.shortlinkResolutionEnabled = shortlinkResolutionEnabled
+        self.currentMachineIdentifier = currentMachineIdentifier
     }
 }

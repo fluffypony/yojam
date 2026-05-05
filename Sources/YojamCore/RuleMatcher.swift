@@ -9,7 +9,12 @@ public enum RuleMatcher {
     /// Evaluate a `Rule` against a URL with an optional source-app context.
     /// Returns a structured result that describes both whether the rule matched
     /// and why.
-    public static func evaluate(url: URL, against rule: Rule, sourceApp: String? = nil) -> RuleMatchResult {
+    public static func evaluate(
+        url: URL,
+        against rule: Rule,
+        sourceApp: String? = nil,
+        machineIdentifier: String? = nil
+    ) -> RuleMatchResult {
         let urlString = url.absoluteString
         let normalizedURL = normalizeURL(urlString)
 
@@ -23,11 +28,36 @@ public enum RuleMatcher {
             )
         }
 
+        let allowedMachines = (rule.machineScopeIdentifiers ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !allowedMachines.isEmpty {
+            guard let machineIdentifier, allowedMachines.contains(machineIdentifier) else {
+                let names = allowedMachines.map {
+                    rule.machineScopeNames?[$0] ?? $0
+                }.joined(separator: ", ")
+                return RuleMatchResult(
+                    matched: false,
+                    matcherFired: nil,
+                    normalizedURL: normalizedURL,
+                    explanation: "Machine filter requires \(names); got \(machineIdentifier ?? "<none>")."
+                )
+            }
+        }
+
         let host = url.host?.lowercased() ?? ""
         let pattern = rule.pattern
         let patternLower = pattern.lowercased()
 
         switch rule.matchType {
+        case .all:
+            return RuleMatchResult(
+                matched: true,
+                matcherFired: .all,
+                normalizedURL: normalizedURL,
+                explanation: "All URLs match."
+            )
+
         case .domain:
             let matched = host == patternLower
             let explanation = matched
@@ -92,9 +122,19 @@ public enum RuleMatcher {
 
     /// Convenience used by the URL Tester — evaluates against every rule in
     /// order and returns the first match, or the last non-match for feedback.
-    public static func firstMatch(url: URL, rules: [Rule], sourceApp: String? = nil) -> (rule: Rule, result: RuleMatchResult)? {
+    public static func firstMatch(
+        url: URL,
+        rules: [Rule],
+        sourceApp: String? = nil,
+        machineIdentifier: String? = nil
+    ) -> (rule: Rule, result: RuleMatchResult)? {
         for rule in rules {
-            let result = evaluate(url: url, against: rule, sourceApp: sourceApp)
+            let result = evaluate(
+                url: url,
+                against: rule,
+                sourceApp: sourceApp,
+                machineIdentifier: machineIdentifier
+            )
             if result.matched { return (rule, result) }
         }
         return nil

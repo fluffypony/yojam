@@ -8,12 +8,19 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     public var pattern: String
     public var targetBundleId: String
     public var targetAppName: String
+    /// Optional BrowserEntry UUID when this rule targets a configured browser
+    /// row/profile instead of just the app bundle.
+    public var targetBrowserEntryId: UUID?
     public var isBuiltIn: Bool
     public var priority: Int
     public var stripUTMParams: Bool
     public var rewriteRules: [URLRewriteRule]
     public var sourceAppBundleId: String?
     public var sourceAppName: String?
+    /// Local machine IDs allowed to run this rule. nil/empty means all Macs.
+    public var machineScopeIdentifiers: [String]?
+    /// Human-readable names captured when machine-scoped rules are created.
+    public var machineScopeNames: [String: String]?
     public var lastModifiedAt: Date?
 
     // Structured action fields.
@@ -38,6 +45,8 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     /// Launch-arg template (with `$URL`) for this rule. `nil` = inherit
     /// from BrowserEntry. Empty string is treated the same as nil.
     public var ruleCustomLaunchArgs: String?
+    /// Whether this rule should force a new app instance. `nil` = inherit.
+    public var ruleOpenAsNewInstance: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -47,12 +56,15 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         pattern: String,
         targetBundleId: String,
         targetAppName: String,
+        targetBrowserEntryId: UUID? = nil,
         isBuiltIn: Bool = false,
         priority: Int = 100,
         stripUTMParams: Bool = false,
         rewriteRules: [URLRewriteRule] = [],
         sourceAppBundleId: String? = nil,
         sourceAppName: String? = nil,
+        machineScopeIdentifiers: [String]? = nil,
+        machineScopeNames: [String: String]? = nil,
         lastModifiedAt: Date? = nil,
         firefoxContainer: String? = nil,
         targetDisplayUUID: String? = nil,
@@ -60,14 +72,18 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         metadata: [String: String]? = nil,
         ruleProfileId: String? = nil,
         ruleOpenInPrivateWindow: Bool? = nil,
-        ruleCustomLaunchArgs: String? = nil
+        ruleCustomLaunchArgs: String? = nil,
+        ruleOpenAsNewInstance: Bool? = nil
     ) {
         self.id = id; self.name = name; self.enabled = enabled
         self.matchType = matchType; self.pattern = pattern
         self.targetBundleId = targetBundleId; self.targetAppName = targetAppName
+        self.targetBrowserEntryId = targetBrowserEntryId
         self.isBuiltIn = isBuiltIn; self.priority = priority
         self.stripUTMParams = stripUTMParams; self.rewriteRules = rewriteRules
         self.sourceAppBundleId = sourceAppBundleId; self.sourceAppName = sourceAppName
+        self.machineScopeIdentifiers = machineScopeIdentifiers
+        self.machineScopeNames = machineScopeNames
         self.lastModifiedAt = lastModifiedAt
         self.firefoxContainer = firefoxContainer
         self.targetDisplayUUID = targetDisplayUUID
@@ -76,15 +92,18 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.ruleProfileId = ruleProfileId
         self.ruleOpenInPrivateWindow = ruleOpenInPrivateWindow
         self.ruleCustomLaunchArgs = ruleCustomLaunchArgs
+        self.ruleOpenAsNewInstance = ruleOpenAsNewInstance
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, enabled, matchType, pattern
-        case targetBundleId, targetAppName, isBuiltIn, priority
+        case targetBundleId, targetAppName, targetBrowserEntryId, isBuiltIn, priority
         case stripUTMParams, rewriteRules
-        case sourceAppBundleId, sourceAppName, lastModifiedAt
+        case sourceAppBundleId, sourceAppName
+        case machineScopeIdentifiers, machineScopeNames, lastModifiedAt
         case firefoxContainer, targetDisplayUUID, targetDisplayIndex, metadata
         case ruleProfileId, ruleOpenInPrivateWindow, ruleCustomLaunchArgs
+        case ruleOpenAsNewInstance
     }
 
     public init(from decoder: Decoder) throws {
@@ -96,12 +115,15 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.pattern = try c.decodeIfPresent(String.self, forKey: .pattern) ?? ""
         self.targetBundleId = try c.decodeIfPresent(String.self, forKey: .targetBundleId) ?? ""
         self.targetAppName = try c.decodeIfPresent(String.self, forKey: .targetAppName) ?? ""
+        self.targetBrowserEntryId = try c.decodeIfPresent(UUID.self, forKey: .targetBrowserEntryId)
         self.isBuiltIn = try c.decodeIfPresent(Bool.self, forKey: .isBuiltIn) ?? false
         self.priority = try c.decodeIfPresent(Int.self, forKey: .priority) ?? 100
         self.stripUTMParams = try c.decodeIfPresent(Bool.self, forKey: .stripUTMParams) ?? false
         self.rewriteRules = try c.decodeIfPresent([URLRewriteRule].self, forKey: .rewriteRules) ?? []
         self.sourceAppBundleId = try c.decodeIfPresent(String.self, forKey: .sourceAppBundleId)
         self.sourceAppName = try c.decodeIfPresent(String.self, forKey: .sourceAppName)
+        self.machineScopeIdentifiers = try c.decodeIfPresent([String].self, forKey: .machineScopeIdentifiers)
+        self.machineScopeNames = try c.decodeIfPresent([String: String].self, forKey: .machineScopeNames)
         self.lastModifiedAt = try c.decodeIfPresent(Date.self, forKey: .lastModifiedAt)
         self.firefoxContainer = try c.decodeIfPresent(String.self, forKey: .firefoxContainer)
         self.targetDisplayUUID = try c.decodeIfPresent(String.self, forKey: .targetDisplayUUID)
@@ -110,14 +132,16 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.ruleProfileId = try c.decodeIfPresent(String.self, forKey: .ruleProfileId)
         self.ruleOpenInPrivateWindow = try c.decodeIfPresent(Bool.self, forKey: .ruleOpenInPrivateWindow)
         self.ruleCustomLaunchArgs = try c.decodeIfPresent(String.self, forKey: .ruleCustomLaunchArgs)
+        self.ruleOpenAsNewInstance = try c.decodeIfPresent(Bool.self, forKey: .ruleOpenAsNewInstance)
     }
 }
 
 public enum MatchType: String, Codable, CaseIterable, Identifiable, Sendable {
-    case domain, domainSuffix, urlPrefix, hostPathPrefix, urlContains, regex
+    case all, domain, domainSuffix, urlPrefix, hostPathPrefix, urlContains, regex
     public var id: String { rawValue }
     public var displayName: String {
         switch self {
+        case .all: "All URLs"
         case .domain: "Host (exact)"
         case .domainSuffix: "Host suffix"
         case .urlPrefix: "Full URL prefix"

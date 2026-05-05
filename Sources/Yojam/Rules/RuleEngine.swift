@@ -29,10 +29,14 @@ final class RuleEngine: ObservableObject {
 
     func evaluate(_ url: URL, sourceAppBundleId: String? = nil) -> Rule? {
         for rule in sortedEnabledRules {
-            if let requiredSourceApp = rule.sourceAppBundleId,
-               sourceAppBundleId != requiredSourceApp { continue }
+            let result = RuleMatcher.evaluate(
+                url: url,
+                against: rule,
+                sourceApp: sourceAppBundleId,
+                machineIdentifier: settingsStore.sharedStore.localMachineIdentifier
+            )
+            guard result.matched else { continue }
             // §32: Check match before expensive LaunchServices IPC
-            guard matches(url: url, rule: rule) else { continue }
             // §18: Support bare executable paths in addition to bundle IDs
             let isPath = rule.targetBundleId.hasPrefix("/")
             guard isPath
@@ -46,11 +50,21 @@ final class RuleEngine: ObservableObject {
     }
 
     func matches(url: URL, rule: Rule) -> Bool {
-        RuleMatcher.evaluate(url: url, against: rule, sourceApp: nil).matched
+        RuleMatcher.evaluate(
+            url: url,
+            against: rule,
+            sourceApp: nil,
+            machineIdentifier: settingsStore.sharedStore.localMachineIdentifier
+        ).matched
     }
 
     func evaluateDetailed(_ url: URL, rule: Rule, sourceApp: String? = nil) -> RuleMatchResult {
-        RuleMatcher.evaluate(url: url, against: rule, sourceApp: sourceApp)
+        RuleMatcher.evaluate(
+            url: url,
+            against: rule,
+            sourceApp: sourceApp,
+            machineIdentifier: settingsStore.sharedStore.localMachineIdentifier
+        )
     }
 
     func enableRulesForApp(_ bundleId: String) {
@@ -103,16 +117,23 @@ final class RuleEngine: ObservableObject {
             pattern: original.pattern,
             targetBundleId: original.targetBundleId,
             targetAppName: original.targetAppName,
+            targetBrowserEntryId: original.targetBrowserEntryId,
             isBuiltIn: false,
             priority: original.priority,
             stripUTMParams: original.stripUTMParams,
             rewriteRules: original.rewriteRules,
             sourceAppBundleId: original.sourceAppBundleId,
             sourceAppName: original.sourceAppName,
+            machineScopeIdentifiers: original.machineScopeIdentifiers,
+            machineScopeNames: original.machineScopeNames,
             firefoxContainer: original.firefoxContainer,
             targetDisplayUUID: original.targetDisplayUUID,
             targetDisplayIndex: original.targetDisplayIndex,
-            metadata: original.metadata)
+            metadata: original.metadata,
+            ruleProfileId: original.ruleProfileId,
+            ruleOpenInPrivateWindow: original.ruleOpenInPrivateWindow,
+            ruleCustomLaunchArgs: original.ruleCustomLaunchArgs,
+            ruleOpenAsNewInstance: original.ruleOpenAsNewInstance)
         copy.lastModifiedAt = Date()
         rules.append(copy)
         save()

@@ -26,6 +26,8 @@ final class SharedRoutingStoreTests: XCTestCase {
         XCTAssertFalse(SharedRoutingStore.Keys.learnedDomainPreferences.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.recentURLs.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.recentURLTimestamps.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.localMachineIdentifier.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.localMachineName.isEmpty)
     }
 
     func testKeysAreUnique() {
@@ -44,6 +46,8 @@ final class SharedRoutingStoreTests: XCTestCase {
             SharedRoutingStore.Keys.recentURLTimestamps,
             SharedRoutingStore.Keys.verticalThreshold,
             SharedRoutingStore.Keys.soundEffects,
+            SharedRoutingStore.Keys.localMachineIdentifier,
+            SharedRoutingStore.Keys.localMachineName,
         ]
         let unique = Set(allKeys)
         XCTAssertEqual(unique.count, allKeys.count, "All keys should be unique")
@@ -99,5 +103,13 @@ final class SharedRoutingStoreTests: XCTestCase {
         } else {
             XCTAssertFalse(store.isUsingAppGroup)
         }
+    }
+
+    func testLocalMachineIdentifierPersists() {
+        let store = SharedRoutingStore()
+        let first = store.localMachineIdentifier
+        let second = store.localMachineIdentifier
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertEqual(first, second)
     }
 }

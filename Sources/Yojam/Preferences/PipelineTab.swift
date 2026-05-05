@@ -63,11 +63,15 @@ struct PipelineTab: View {
             rewriteRules = settingsStore.loadGlobalRewriteRules()
         }
         .sheet(isPresented: $showingAddRule) {
-            AddRuleSheet(ruleEngine: ruleEngine, onDismiss: { showingAddRule = false })
+            AddRuleSheet(
+                ruleEngine: ruleEngine,
+                browserManager: browserManager,
+                onDismiss: { showingAddRule = false })
         }
         .sheet(item: $editingRule) { rule in
             AddRuleSheet(
                 ruleEngine: ruleEngine,
+                browserManager: browserManager,
                 onDismiss: { editingRule = nil },
                 editing: rule)
         }
@@ -134,6 +138,9 @@ struct PipelineTab: View {
                 ThemeTextField(placeholder: "Paste a URL here to test...", text: $testURL)
                 ThemeTextField(placeholder: "Source app (optional)", text: $testSourceApp)
                     .frame(width: 160)
+                ThemeButton("Source...") {
+                    chooseTesterSourceApp()
+                }
                 ThemeButton("Test", help: "Run this URL through the pipeline to see what happens") {
                     runTest()
                     settingsStore.quickStartVisitedTester = true
@@ -393,7 +400,7 @@ struct PipelineTab: View {
             ThemeBadge(text: rule.isBuiltIn ? "Built-in" : "Rule", isRewrite: false)
                 .frame(width: 64, alignment: .leading)
 
-            Text(rule.pattern)
+            Text(rule.matchType == .all ? "All URLs" : rule.pattern)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(Theme.textSecondary)
                 .lineLimit(1)
@@ -473,7 +480,7 @@ struct PipelineTab: View {
             processedURL = stripped
         }
 
-        let sourceApp = testSourceApp.isEmpty ? nil : testSourceApp
+        let sourceApp = resolveSourceAppInput(testSourceApp)
         if let match = ruleEngine.evaluate(processedURL, sourceAppBundleId: sourceApp) {
             let host = processedURL.host ?? ""
             let result = RuleMatcher.evaluate(url: processedURL, against: match, sourceApp: sourceApp)
@@ -491,6 +498,51 @@ struct PipelineTab: View {
         }
 
         testPipeline = nodes
+    }
+
+    private func chooseTesterSourceApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        if panel.runModal() == .OK, let url = panel.url,
+           let bundle = Bundle(url: url),
+           let bundleId = bundle.bundleIdentifier {
+            testSourceApp = bundleId
+        }
+    }
+
+    private func resolveSourceAppInput(_ input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.contains(".") { return trimmed }
+        return findBundleIdentifier(forAppNamed: trimmed) ?? trimmed
+    }
+
+    private func findBundleIdentifier(forAppNamed name: String) -> String? {
+        let wanted = name.lowercased()
+        let roots = [
+            "/Applications",
+            "/System/Applications",
+            NSString(string: "~/Applications").expandingTildeInPath,
+        ]
+        for root in roots {
+            guard let items = try? FileManager.default.contentsOfDirectory(
+                at: URL(fileURLWithPath: root),
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for url in items where url.pathExtension == "app" {
+                guard let bundle = Bundle(url: url),
+                      let bundleId = bundle.bundleIdentifier else { continue }
+                let display = (bundle.infoDictionary?["CFBundleName"] as? String)
+                    ?? url.deletingPathExtension().lastPathComponent
+                if display.lowercased() == wanted
+                    || url.deletingPathExtension().lastPathComponent.lowercased() == wanted {
+                    return bundleId
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Rewrite Helpers
@@ -554,6 +606,7 @@ struct PipelineNode {
 
 struct AddRuleSheet: View {
     @ObservedObject var ruleEngine: RuleEngine
+    @ObservedObject var browserManager: BrowserManager
     let onDismiss: () -> Void
     /// When provided, the sheet edits the given rule in-place instead of adding a new one.
     var editing: Rule?
@@ -563,14 +616,20 @@ struct AddRuleSheet: View {
     @State private var pattern = ""
     @State private var targetBundleId = ""
     @State private var targetAppName = ""
+    @State private var targetSelection = ""
+    @State private var targetBrowserEntryId: UUID? = nil
     @State private var priority = 100
     @State private var stripUTMParams = false
     @State private var sourceAppBundleId = ""
+    @State private var machineScope: MachineScope = .allMacs
+    @State private var machineScopeIdentifiers: [String] = []
+    @State private var machineScopeNames: [String: String] = [:]
     @State private var firefoxContainer = ""
     @State private var targetDisplayUUID: String? = nil
     @State private var ruleProfileId: String? = nil
     @State private var rulePrivateWindowOverride: PrivateWindowOverride = .inherit
     @State private var ruleCustomLaunchArgs = ""
+    @State private var ruleNewInstanceOverride: NewInstanceOverride = .inherit
     @State private var targetProfiles: [BrowserProfile] = []
     @State private var testURL = ""
     @State private var testResult = ""
@@ -601,6 +660,61 @@ struct AddRuleSheet: View {
             case .some(false): .forceNormal
             }
         }
+    }
+
+    private enum NewInstanceOverride: String, CaseIterable, Identifiable {
+        case inherit, forceNew, forceNormal
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .inherit: "Inherit from browser"
+            case .forceNew: "New instance"
+            case .forceNormal: "Existing instance"
+            }
+        }
+        var boolValue: Bool? {
+            switch self {
+            case .inherit: nil
+            case .forceNew: true
+            case .forceNormal: false
+            }
+        }
+        static func from(_ value: Bool?) -> NewInstanceOverride {
+            switch value {
+            case .none: .inherit
+            case .some(true): .forceNew
+            case .some(false): .forceNormal
+            }
+        }
+    }
+
+    private enum MachineScope: String, CaseIterable, Identifiable {
+        case allMacs, thisMac, otherMac
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .allMacs: "All Macs"
+            case .thisMac: "This Mac only"
+            case .otherMac: "Another Mac"
+            }
+        }
+    }
+
+    private var currentMachineId: String {
+        SharedRoutingStore().localMachineIdentifier
+    }
+
+    private var currentMachineName: String {
+        SharedRoutingStore().localMachineName
+    }
+
+    private var isPatternRequired: Bool { matchType != .all }
+
+    private var formInvalid: Bool {
+        name.isEmpty
+            || (isPatternRequired && pattern.isEmpty)
+            || targetBundleId.isEmpty
+            || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern))
     }
 
     private var installedApps: [(String, String)] {
@@ -640,6 +754,7 @@ struct AddRuleSheet: View {
                     targetAppField
                     priorityStripRow
                     sourceAppField
+                    machineScopeField
                     advancedTargetingFields
                     browserOptionsSection
                     liveTestSection
@@ -663,10 +778,8 @@ struct AddRuleSheet: View {
                 ThemeButton(editing == nil ? "Add Rule" : "Save", isPrimary: true) {
                     commit()
                 }
-                .disabled(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty
-                          || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern)))
-                .opacity(name.isEmpty || pattern.isEmpty || targetBundleId.isEmpty
-                         || (matchType == .regex && !RegexMatcher.isValid(pattern: pattern)) ? 0.5 : 1)
+                .disabled(formInvalid)
+                .opacity(formInvalid ? 0.5 : 1)
             }
             .padding(16)
         }
@@ -675,13 +788,6 @@ struct AddRuleSheet: View {
         .preferredColorScheme(.dark)
         .onAppear {
             loadEditing()
-            refreshTargetProfiles()
-        }
-        .onChange(of: targetBundleId) { _, _ in
-            // New target → its profile list is different. Clear the rule's
-            // profile override (the old ID won't apply to the new browser)
-            // and reload.
-            ruleProfileId = nil
             refreshTargetProfiles()
         }
     }
@@ -707,12 +813,14 @@ struct AddRuleSheet: View {
 
     @ViewBuilder
     private var patternField: some View {
-        fieldRow("Pattern") {
-            ThemeTextField(placeholder: "e.g. github.com/my-company", text: $pattern, isMono: true)
-            if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
-                Text("Invalid regex pattern")
-                    .font(.system(size: 10))
-                    .foregroundColor(Theme.danger)
+        if isPatternRequired {
+            fieldRow("Pattern") {
+                ThemeTextField(placeholder: "e.g. github.com/my-company", text: $pattern, isMono: true)
+                if matchType == .regex && !pattern.isEmpty && !RegexMatcher.isValid(pattern: pattern) {
+                    Text("Invalid regex pattern")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.danger)
+                }
             }
         }
     }
@@ -720,18 +828,30 @@ struct AddRuleSheet: View {
     private var targetAppField: some View {
         fieldRow("Target App") {
             HStack(spacing: 8) {
-                Picker("", selection: $targetBundleId) {
+                Picker("", selection: Binding(
+                    get: { targetSelection },
+                    set: { newValue in
+                        targetSelection = newValue
+                        applyTargetSelection(newValue)
+                    }
+                )) {
                     Text("Select...").tag("")
-                    ForEach(installedApps, id: \.0) { bundleId, appName in
-                        Text(appName).tag(bundleId)
+                    if !browserManager.browsers.isEmpty {
+                        Section("Configured Browsers") {
+                            ForEach(browserManager.browsers) { entry in
+                                Text(entry.fullDisplayName).tag("browser:\(entry.id.uuidString)")
+                            }
+                        }
+                    }
+                    Section("Apps") {
+                        ForEach(installedApps, id: \.0) { bundleId, appName in
+                            Text(appName).tag("app:\(bundleId)")
+                        }
                     }
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .accessibilityLabel("Target application")
-                .onChange(of: targetBundleId) { _, newValue in
-                    targetAppName = installedApps.first(where: { $0.0 == newValue })?.1 ?? ""
-                }
                 ThemeButton("Choose App...") {
                     let panel = NSOpenPanel()
                     panel.allowedContentTypes = [.applicationBundle]
@@ -739,9 +859,15 @@ struct AddRuleSheet: View {
                     if panel.runModal() == .OK, let url = panel.url,
                        let bundle = Bundle(url: url),
                        let bundleId = bundle.bundleIdentifier {
-                        targetBundleId = bundleId
-                        targetAppName = bundle.infoDictionary?["CFBundleName"] as? String
+                        let appName = bundle.infoDictionary?["CFBundleName"] as? String
                             ?? url.deletingPathExtension().lastPathComponent
+                        setTarget(
+                            bundleId: bundleId,
+                            appName: appName,
+                            browserEntryId: nil,
+                            selection: "app:\(bundleId)",
+                            resetOverrides: true
+                        )
                     }
                 }
             }
@@ -784,6 +910,21 @@ struct AddRuleSheet: View {
         }
     }
 
+    private var machineScopeField: some View {
+        fieldRow("Machine", helpText: HelpText.Pipeline.ruleMachineScope) {
+            Picker("", selection: $machineScope) {
+                Text(MachineScope.allMacs.displayName).tag(MachineScope.allMacs)
+                Text(MachineScope.thisMac.displayName).tag(MachineScope.thisMac)
+                if machineScope == .otherMac {
+                    Text(MachineScope.otherMac.displayName).tag(MachineScope.otherMac)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Rule machine scope")
+        }
+    }
+
     /// Per-rule browser overrides: profile, private-window, custom launch args.
     /// Only surface this block when a target is picked — without a
     /// bundle ID there's nothing sensible to list profiles for.
@@ -802,7 +943,7 @@ struct AddRuleSheet: View {
             if !targetProfiles.isEmpty {
                 fieldRow("Profile") {
                     Picker("", selection: $ruleProfileId) {
-                        Text("Inherit from browser").tag(nil as String?)
+                        Text("Inherit from target").tag(nil as String?)
                         ForEach(targetProfiles) { profile in
                             Text(profile.name).tag(profile.id as String?)
                         }
@@ -833,6 +974,17 @@ struct AddRuleSheet: View {
                         text: $ruleCustomLaunchArgs,
                         isMono: true)
                 }
+            }
+
+            fieldRow("Instance") {
+                Picker("", selection: $ruleNewInstanceOverride) {
+                    ForEach(NewInstanceOverride.allCases) { opt in
+                        Text(opt.displayName).tag(opt)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityLabel("Instance mode for this rule")
             }
         }
     }
@@ -892,20 +1044,41 @@ struct AddRuleSheet: View {
     }
 
     private func loadEditing() {
-        guard let rule = editing else { return }
+        guard let rule = editing else {
+            targetSelection = ""
+            return
+        }
         name = rule.name
         matchType = rule.matchType
         pattern = rule.pattern
         targetBundleId = rule.targetBundleId
         targetAppName = rule.targetAppName
+        targetBrowserEntryId = rule.targetBrowserEntryId
+        if let targetBrowserEntryId,
+           browserManager.browsers.contains(where: { $0.id == targetBrowserEntryId }) {
+            targetSelection = "browser:\(targetBrowserEntryId.uuidString)"
+        } else if !rule.targetBundleId.isEmpty {
+            targetSelection = "app:\(rule.targetBundleId)"
+        }
         priority = rule.priority
         stripUTMParams = rule.stripUTMParams
         sourceAppBundleId = rule.sourceAppBundleId ?? ""
+        machineScopeIdentifiers = (rule.machineScopeIdentifiers ?? [])
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        machineScopeNames = rule.machineScopeNames ?? [:]
+        if machineScopeIdentifiers.isEmpty {
+            machineScope = .allMacs
+        } else if machineScopeIdentifiers.contains(currentMachineId) {
+            machineScope = .thisMac
+        } else {
+            machineScope = .otherMac
+        }
         firefoxContainer = rule.firefoxContainer ?? ""
         targetDisplayUUID = rule.targetDisplayUUID
         ruleProfileId = rule.ruleProfileId
         rulePrivateWindowOverride = PrivateWindowOverride.from(rule.ruleOpenInPrivateWindow)
         ruleCustomLaunchArgs = rule.ruleCustomLaunchArgs ?? ""
+        ruleNewInstanceOverride = NewInstanceOverride.from(rule.ruleOpenAsNewInstance)
     }
 
     /// Load profiles for the current target browser off the main thread —
@@ -927,24 +1100,93 @@ struct AddRuleSheet: View {
         }
     }
 
+    private func applyTargetSelection(_ selection: String) {
+        guard !selection.isEmpty else {
+            setTarget(bundleId: "", appName: "", browserEntryId: nil, selection: "", resetOverrides: true)
+            return
+        }
+        if selection.hasPrefix("browser:"),
+           let id = UUID(uuidString: String(selection.dropFirst("browser:".count))),
+           let entry = browserManager.browsers.first(where: { $0.id == id }) {
+            setTarget(
+                bundleId: entry.bundleIdentifier,
+                appName: entry.fullDisplayName,
+                browserEntryId: entry.id,
+                selection: selection,
+                resetOverrides: true
+            )
+            return
+        }
+        if selection.hasPrefix("app:") {
+            let bundleId = String(selection.dropFirst("app:".count))
+            let appName = installedApps.first(where: { $0.0 == bundleId })?.1
+                ?? targetAppName
+            setTarget(
+                bundleId: bundleId,
+                appName: appName,
+                browserEntryId: nil,
+                selection: selection,
+                resetOverrides: true
+            )
+        }
+    }
+
+    private func setTarget(
+        bundleId: String,
+        appName: String,
+        browserEntryId: UUID?,
+        selection: String,
+        resetOverrides: Bool
+    ) {
+        targetBundleId = bundleId
+        targetAppName = appName
+        targetBrowserEntryId = browserEntryId
+        targetSelection = selection
+        if resetOverrides {
+            ruleProfileId = nil
+            rulePrivateWindowOverride = .inherit
+            ruleCustomLaunchArgs = ""
+            ruleNewInstanceOverride = .inherit
+        }
+        refreshTargetProfiles()
+    }
+
+    private func resolvedMachineScope() -> (ids: [String]?, names: [String: String]?) {
+        switch machineScope {
+        case .allMacs:
+            return (nil, nil)
+        case .thisMac:
+            let id = currentMachineId
+            return ([id], [id: currentMachineName])
+        case .otherMac:
+            return (machineScopeIdentifiers.isEmpty ? nil : machineScopeIdentifiers,
+                    machineScopeNames.isEmpty ? nil : machineScopeNames)
+        }
+    }
+
     private func commit() {
         let baseId = editing?.id ?? UUID()
         let trimmedArgs = ruleCustomLaunchArgs.trimmingCharacters(in: .whitespacesAndNewlines)
+        let machine = resolvedMachineScope()
         let rule = Rule(
             id: baseId,
             name: name, enabled: editing?.enabled ?? true,
             matchType: matchType,
-            pattern: pattern, targetBundleId: targetBundleId,
+            pattern: matchType == .all ? "" : pattern, targetBundleId: targetBundleId,
             targetAppName: targetAppName,
+            targetBrowserEntryId: targetBrowserEntryId,
             isBuiltIn: editing?.isBuiltIn ?? false,
             priority: priority, stripUTMParams: stripUTMParams,
             rewriteRules: editing?.rewriteRules ?? [],
             sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+            machineScopeIdentifiers: machine.ids,
+            machineScopeNames: machine.names,
             firefoxContainer: firefoxContainer.isEmpty ? nil : firefoxContainer,
             targetDisplayUUID: targetDisplayUUID,
             ruleProfileId: ruleProfileId,
             ruleOpenInPrivateWindow: rulePrivateWindowOverride.boolValue,
-            ruleCustomLaunchArgs: trimmedArgs.isEmpty ? nil : trimmedArgs)
+            ruleCustomLaunchArgs: trimmedArgs.isEmpty ? nil : trimmedArgs,
+            ruleOpenAsNewInstance: ruleNewInstanceOverride.boolValue)
         if editing == nil {
             ruleEngine.addRule(rule)
         } else {
@@ -965,10 +1207,16 @@ struct AddRuleSheet: View {
         }
         let testRule = Rule(
             name: name, matchType: matchType,
-            pattern: pattern, targetBundleId: targetBundleId,
-            targetAppName: targetAppName)
+            pattern: matchType == .all ? "" : pattern,
+            targetBundleId: targetBundleId,
+            targetAppName: targetAppName,
+            targetBrowserEntryId: targetBrowserEntryId,
+            sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+            machineScopeIdentifiers: resolvedMachineScope().ids,
+            machineScopeNames: resolvedMachineScope().names)
         let result = RuleMatcher.evaluate(url: url, against: testRule,
-                                          sourceApp: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId)
+                                          sourceApp: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+                                          machineIdentifier: currentMachineId)
         testMatched = result.matched
         testResult = result.matched ? "Match (\(matchType.displayName))" : "No match"
         testExplanation = result.explanation

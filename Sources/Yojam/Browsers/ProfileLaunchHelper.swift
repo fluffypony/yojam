@@ -9,8 +9,9 @@ enum ProfileLaunchHelper {
              "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium":
             return ["--profile-directory=\(profileId)"]
         case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
-            // Firefox: -P expects profile name; --new-instance needed when already running
-            return ["-P", profileId, "--new-instance"]
+            // Firefox profile locks reject a forced new instance when the
+            // profile is already open. -P lets Firefox reuse that profile.
+            return ["-P", profileId]
         default:
             return []
         }

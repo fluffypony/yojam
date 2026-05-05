@@ -97,7 +97,8 @@ public enum RoutingSnapshotLoader {
             learnedDomainPreferences: learned,
             lastUsedBrowserId: lastUsedBrowserIdStr.flatMap(UUID.init(uuidString:)),
             lastUsedEmailClientId: lastUsedEmailIdStr.flatMap(UUID.init(uuidString:)),
-            shortlinkResolutionEnabled: shortlinkEnabled
+            shortlinkResolutionEnabled: shortlinkEnabled,
+            currentMachineIdentifier: store.localMachineIdentifier
         )
     }
 }

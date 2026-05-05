@@ -61,5 +61,25 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
         public static let lastUsedBrowserId = "lastUsedBrowserId"
         public static let lastUsedEmailId = "lastUsedEmailId"
         public static let installedBundleIds = "installedBundleIds"
+        public static let localMachineIdentifier = "localMachineIdentifier"
+        public static let localMachineName = "localMachineName"
+    }
+
+    public var localMachineIdentifier: String {
+        if let existing = defaults.string(forKey: Keys.localMachineIdentifier),
+           !existing.isEmpty {
+            return existing
+        }
+        let generated = UUID().uuidString
+        defaults.set(generated, forKey: Keys.localMachineIdentifier)
+        return generated
+    }
+
+    public var localMachineName: String {
+        let current = ProcessInfo.processInfo.hostName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = current.isEmpty ? "This Mac" : current
+        defaults.set(name, forKey: Keys.localMachineName)
+        return name
     }
 }

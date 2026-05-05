@@ -72,6 +72,21 @@ final class RuleEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testSourceAppFilteringMatchesWhenSourceAndURLMatch() {
+        let rule = Rule(
+            name: "From Slack", matchType: .all,
+            pattern: "",
+            targetBundleId: "/bin/echo",
+            targetAppName: "Echo",
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+        let engine = RuleEngine(settingsStore: SettingsStore())
+        engine.rules = [rule]
+        XCTAssertEqual(engine.evaluate(
+            URL(string: "https://github.com/repo")!,
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")?.id, rule.id)
+    }
+
+    @MainActor
     func testPrecedenceUserOverBuiltIn() {
         let engine = RuleEngine(settingsStore: SettingsStore())
         let userRule = Rule(

@@ -275,6 +275,16 @@ struct BrowsersTab: View {
                             .font(.system(size: 10))
                             .foregroundColor(Theme.textSecondary)
                     }
+                    inlineCheckbox("Open as new instance", isOn: Binding(
+                        get: {
+                            browserManager.browsers.first(where: { $0.id == browserId })?.openAsNewInstance ?? false
+                        },
+                        set: { newValue in
+                            guard var entry = browserManager.browsers.first(where: { $0.id == browserId }) else { return }
+                            entry.openAsNewInstance = newValue
+                            browserManager.updateBrowser(entry)
+                        }
+                    ), helpTip: HelpText.Browsers.newInstance)
                 }
                 TipView(customArgsTip)
 
