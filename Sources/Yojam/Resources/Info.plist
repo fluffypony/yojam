@@ -93,10 +93,6 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Yojam needs to send Apple Events to open private browsing windows in Safari and Orion.</string>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>NSUserActivityTypeBrowsingWeb</string>
-	</array>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -116,11 +112,15 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>NSUserActivityTypeBrowsingWeb</string>
+	</array>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://yoj.am/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>ewMIKU3we8bcoyPz/88uD1n1fpThNNnDJIfXk/eHLGA=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<string>UoXaVVJyS2+xwKUsL4UM25gXmhUAJMwce9wLfXM86zU=</string>
 </dict>
 </plist>
