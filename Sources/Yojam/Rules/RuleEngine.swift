@@ -19,12 +19,13 @@ final class RuleEngine: ObservableObject {
 
     private var sortedEnabledRules: [Rule] {
         if let cached = sortedEnabledRulesCache { return cached }
-        let sorted = rules.filter(\.enabled).sorted {
-            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
-            return $0.priority < $1.priority
-        }
+        let sorted = RuleOrdering.enabled(rules)
         sortedEnabledRulesCache = sorted
         return sorted
+    }
+
+    var orderedRules: [Rule] {
+        RuleOrdering.sorted(rules)
     }
 
     func evaluate(_ url: URL, sourceAppBundleId: String? = nil) -> Rule? {
@@ -146,6 +147,7 @@ final class RuleEngine: ObservableObject {
               let idx = rules.firstIndex(where: { $0.id == id }) else { return }
         var reset = original
         reset.enabled = rules[idx].enabled
+        reset.priority = rules[idx].priority
         rules[idx] = reset
         save()
     }
@@ -166,6 +168,20 @@ final class RuleEngine: ObservableObject {
             rules[idx].lastModifiedAt = Date()
             save()
         }
+    }
+
+    func moveRule(draggedId: UUID, to currentId: UUID) {
+        guard draggedId != currentId else { return }
+        var ordered = orderedRules
+        guard let fromIndex = ordered.firstIndex(where: { $0.id == draggedId }),
+              let toIndex = ordered.firstIndex(where: { $0.id == currentId })
+        else { return }
+        ordered.move(
+            fromOffsets: IndexSet(integer: fromIndex),
+            toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        reindexPriorities(&ordered)
+        rules = ordered
+        save()
     }
 
     func reloadRules() { rules = settingsStore.loadRules() }
@@ -201,6 +217,16 @@ final class RuleEngine: ObservableObject {
             rule.machineScopeModifiedAt = now
         }
         rule.lastModifiedAt = now
+    }
+
+    private func reindexPriorities(_ ordered: inout [Rule]) {
+        let now = Date()
+        for index in ordered.indices {
+            let priority = (index + 1) * 10
+            guard ordered[index].priority != priority else { continue }
+            ordered[index].priority = priority
+            ordered[index].lastModifiedAt = now
+        }
     }
 
     private func normalizedMachineScope(_ ids: [String]?) -> [String] {

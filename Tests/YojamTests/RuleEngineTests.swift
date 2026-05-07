@@ -87,7 +87,7 @@ final class RuleEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testPrecedenceUserOverBuiltIn() {
+    func testPriorityOrderingCanPlaceBuiltInBeforeUserRule() {
         let engine = RuleEngine(settingsStore: SettingsStore())
         let userRule = Rule(
             name: "User", matchType: .urlContains, pattern: "zoom.us/j/",
@@ -96,13 +96,10 @@ final class RuleEngineTests: XCTestCase {
         let builtIn = Rule(
             name: "BuiltIn", matchType: .urlContains, pattern: "zoom.us/j/",
             targetBundleId: "us.zoom.xos", targetAppName: "Zoom",
-            isBuiltIn: true, priority: 100)
+            isBuiltIn: true, priority: 10)
         engine.rules = [builtIn, userRule]
-        let sorted = engine.rules.filter(\.enabled).sorted {
-            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
-            return $0.priority < $1.priority
-        }
-        XCTAssertEqual(sorted.first?.name, "User")
+        let sorted = RuleOrdering.enabled(engine.rules)
+        XCTAssertEqual(sorted.first?.name, "BuiltIn")
     }
 
     @MainActor
@@ -115,10 +112,28 @@ final class RuleEngineTests: XCTestCase {
             name: "High", matchType: .domainSuffix, pattern: "example.com",
             targetBundleId: "com.b", targetAppName: "B", priority: 100)
         engine.rules = [high, low]
-        let sorted = engine.rules.filter(\.enabled).sorted {
-            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
-            return $0.priority < $1.priority
-        }
+        let sorted = RuleOrdering.enabled(engine.rules)
         XCTAssertEqual(sorted.first?.name, "Low")
+    }
+
+    @MainActor
+    func testMoveRuleReindexesPrioritiesAcrossBuiltInAndUserRules() {
+        let engine = RuleEngine(settingsStore: SettingsStore())
+        let slack = Rule(
+            name: "All Slack", matchType: .all, pattern: "",
+            targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
+            isBuiltIn: false, priority: 10,
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+        let linear = Rule(
+            name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
+            targetBundleId: "com.linear", targetAppName: "Linear",
+            isBuiltIn: true, priority: 20)
+
+        engine.rules = [slack, linear]
+        engine.moveRule(draggedId: linear.id, to: slack.id)
+
+        let ordered = engine.orderedRules
+        XCTAssertEqual(ordered.map(\.id), [linear.id, slack.id])
+        XCTAssertLessThan(ordered[0].priority, ordered[1].priority)
     }
 }

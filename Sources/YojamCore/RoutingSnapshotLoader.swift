@@ -76,12 +76,9 @@ public enum RoutingSnapshotLoader {
             installedIds = Set(rules.map(\.targetBundleId))
         }
 
-        let filteredRules = rules.filter { $0.enabled }.filter { rule in
+        let filteredRules = RuleOrdering.enabled(rules).filter { rule in
             let isPath = rule.targetBundleId.hasPrefix("/")
             return isPath || installedIds.contains(rule.targetBundleId)
-        }.sorted {
-            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
-            return $0.priority < $1.priority
         }
 
         return RoutingConfiguration(

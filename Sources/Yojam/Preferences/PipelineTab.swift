@@ -20,6 +20,8 @@ struct PipelineTab: View {
     @State private var showingTrackerList = false
     @State private var errorMessage: String?
     @State private var editingRule: Rule?
+    @State private var draggedRewriteId: UUID?
+    @State private var draggedRuleId: UUID?
     @State private var pipelineOverviewDismissed = UserDefaults.standard.bool(forKey: "helpDismissed_pipelineOverview")
 
     private let urlTesterTip = URLTesterTip()
@@ -247,9 +249,9 @@ struct PipelineTab: View {
         VStack(alignment: .leading, spacing: 12) {
             ThemeSectionTitle(text: "Routing & Transformation Pipeline (Executed top to bottom)", helpText: HelpText.Pipeline.pipelineOrder)
 
-            let userRules = ruleEngine.rules.filter { !$0.isBuiltIn }
-            let builtInRules = ruleEngine.rules.filter(\.isBuiltIn)
-            let hasContent = !rewriteRules.isEmpty || !userRules.isEmpty || !builtInRules.isEmpty
+            let orderedRules = ruleEngine.orderedRules
+            let hasRules = !orderedRules.isEmpty
+            let hasContent = !rewriteRules.isEmpty || hasRules
 
             if hasContent {
                 ThemePanel {
@@ -283,21 +285,35 @@ struct PipelineTab: View {
                     ForEach(Array(rewriteRules.enumerated()), id: \.element.id) { index, rule in
                         VStack(spacing: 0) {
                             pipelineRewriteRow(rule: rule, index: index)
-                            Divider().background(Theme.borderSubtle)
+                                .onDrag {
+                                    draggedRewriteId = rule.id
+                                    return NSItemProvider(object: rule.id.uuidString as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: PipelineRewriteDropDelegate(
+                                    currentId: rule.id,
+                                    draggedId: $draggedRewriteId,
+                                    rules: $rewriteRules,
+                                    settingsStore: settingsStore
+                                ))
+                            if hasRules || index < rewriteRules.count - 1 {
+                                Divider().background(Theme.borderSubtle)
+                            }
                         }
                     }
 
-                    ForEach(userRules) { rule in
+                    ForEach(Array(orderedRules.enumerated()), id: \.element.id) { index, rule in
                         VStack(spacing: 0) {
                             pipelineRuleRow(rule: rule)
-                            Divider().background(Theme.borderSubtle)
-                        }
-                    }
-
-                    ForEach(Array(builtInRules.enumerated()), id: \.element.id) { index, rule in
-                        VStack(spacing: 0) {
-                            pipelineRuleRow(rule: rule)
-                            if index < builtInRules.count - 1 {
+                                .onDrag {
+                                    draggedRuleId = rule.id
+                                    return NSItemProvider(object: rule.id.uuidString as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: PipelineRuleDropDelegate(
+                                    currentId: rule.id,
+                                    draggedId: $draggedRuleId,
+                                    ruleEngine: ruleEngine
+                                ))
+                            if index < orderedRules.count - 1 {
                                 Divider().background(Theme.borderSubtle)
                             }
                         }
@@ -332,7 +348,8 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
                 .frame(width: 24)
-                .help("Drag to reorder priority")
+                .contentShape(Rectangle())
+                .help("Drag to reorder rewrite priority")
 
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
@@ -383,7 +400,8 @@ struct PipelineTab: View {
                 .font(.system(size: 11))
                 .foregroundColor(Theme.textSecondary)
                 .frame(width: 24)
-                .help("Drag to reorder priority")
+                .contentShape(Rectangle())
+                .help("Drag to reorder rule priority")
 
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
@@ -599,6 +617,73 @@ struct PipelineNode {
 
     static var arrow: PipelineNode {
         PipelineNode(label: "", isArrow: true)
+    }
+}
+
+// MARK: - Pipeline Drag & Drop Delegates
+
+struct PipelineRuleDropDelegate: DropDelegate {
+    let currentId: UUID
+    @Binding var draggedId: UUID?
+    let ruleEngine: RuleEngine
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedId = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != currentId else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            ruleEngine.moveRule(draggedId: draggedId, to: currentId)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
+    }
+}
+
+struct PipelineRewriteDropDelegate: DropDelegate {
+    let currentId: UUID
+    @Binding var draggedId: UUID?
+    @Binding var rules: [URLRewriteRule]
+    let settingsStore: SettingsStore
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedId = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != currentId else { return }
+        guard let fromIndex = rules.firstIndex(where: { $0.id == draggedId }),
+              let toIndex = rules.firstIndex(where: { $0.id == currentId })
+        else { return }
+        guard fromIndex != toIndex else { return }
+
+        withAnimation(.easeInOut(duration: 0.15)) {
+            rules.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            let now = Date()
+            for index in rules.indices {
+                rules[index].lastModifiedAt = now
+            }
+            settingsStore.saveGlobalRewriteRules(rules)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
     }
 }
 

@@ -367,10 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildRoutingConfiguration() -> RoutingConfiguration {
         let browsers = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
         let emailClients = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
-        let rules = ruleEngine.rules.filter(\.enabled).sorted {
-            if $0.isBuiltIn != $1.isBuiltIn { return !$0.isBuiltIn }
-            return $0.priority < $1.priority
-        }.filter { rule in
+        let rules = RuleOrdering.enabled(ruleEngine.rules).filter { rule in
             // Pre-filter for installed targets (RoutingService has no NSWorkspace)
             let isPath = rule.targetBundleId.hasPrefix("/")
             return isPath

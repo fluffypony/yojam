@@ -44,7 +44,11 @@ enum SyncConflictResolver {
                 merged[rule.id] = rule
             }
         }
-        return merged.values.sorted { $0.priority < $1.priority }
+        let ordered = merged.values.sorted {
+            if $0.priority != $1.priority { return $0.priority < $1.priority }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        return RuleOrdering.sorted(ordered)
     }
 
     private static func mergeRule(local: Rule, remote: Rule) -> Rule {

@@ -187,6 +187,60 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
+    func testEarlierLinearRuleBeatsBroadSlackSourceRule() {
+        let slackRule = Rule(
+            name: "All Slack Links", matchType: .all, pattern: "",
+            targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+        let linearRule = Rule(
+            name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
+            targetBundleId: "com.linear", targetAppName: "Linear",
+            isBuiltIn: true)
+        let config = makeConfig(
+            browsers: [firefox],
+            rules: [linearRule, slackRule],
+            activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://linear.app/acme/issue/ABC-123")!,
+            sourceAppBundleId: "com.tinyspeck.slackmacgap",
+            origin: .defaultHandler)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openDirect(let browser, _, _, let reason) = decision {
+            XCTAssertEqual(browser.bundleIdentifier, "com.linear")
+            XCTAssertEqual(reason, "Matched rule: Linear")
+        } else {
+            XCTFail("Earlier Linear rule should beat a broader Slack source rule")
+        }
+    }
+
+    func testBroadSlackSourceRuleWinsWhenOrderedBeforeLinearRule() {
+        let slackRule = Rule(
+            name: "All Slack Links", matchType: .all, pattern: "",
+            targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
+            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+        let linearRule = Rule(
+            name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
+            targetBundleId: "com.linear", targetAppName: "Linear",
+            isBuiltIn: true)
+        let config = makeConfig(
+            browsers: [firefox],
+            rules: [slackRule, linearRule],
+            activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "https://linear.app/acme/issue/ABC-123")!,
+            sourceAppBundleId: "com.tinyspeck.slackmacgap",
+            origin: .defaultHandler)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openDirect(let browser, _, _, let reason) = decision {
+            XCTAssertEqual(browser.bundleIdentifier, "org.mozilla.firefox")
+            XCTAssertEqual(reason, "Matched rule: All Slack Links")
+        } else {
+            XCTFail("The first matching rule in the ordered list should win")
+        }
+    }
+
     func testRuleTargetsSpecificBrowserEntryById() {
         let workId = UUID()
         let personalId = UUID()

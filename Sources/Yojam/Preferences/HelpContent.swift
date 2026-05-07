@@ -47,11 +47,11 @@ enum HelpText {
     // MARK: - Pipeline Tab
     enum Pipeline {
         static let stripTrackingGlobal = "Strips tracking parameters (utm_source, fbclid, gclid, etc.) from every URL before any browser sees it. You can also turn this on per-browser in the Browsers tab."
-        static let pipelineOrder = "Links flow through top to bottom: rewrites run first, then tracker stripping, then routing rules pick the browser."
+        static let pipelineOrder = "Links flow through top to bottom: rewrites run first, then tracker stripping, then routing rules pick the browser. Drag rules or rewrites to change priority; the visible order is the execution order."
         static let urlTester = "Paste a URL to preview how Yojam would handle it: which rewrites apply, what gets stripped, and where it ends up."
         static let ruleMatchType = "All URLs: match every link after source and machine filters. Host (exact): match one host exactly. Host suffix: match the host and any subdomains. Full URL prefix: match the start of the URL (scheme-insensitive). Host + path prefix: match the start of the host+path portion, ignoring query. URL contains: match anywhere in the URL. Regex: full pattern matching."
         static let ruleTargetApp = "Pick a configured browser profile or any app that can open matching links. Use Choose App for apps that do not appear in the regular browser list."
-        static let rulePriority = "Lower numbers run first. When two rules match the same URL, the lower number wins."
+        static let rulePriority = "Lower numbers run first. When two rules match the same URL, the lower number wins. Dragging rules in the pipeline updates these numbers."
         static let ruleSourceApp = "Only applies when the link came from a specific app (e.g. com.apple.mail). Leave blank to match all apps.\n\nFor links from Handoff, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic IDs like com.yojam.source.handoff and com.yojam.source.airdrop."
         static let ruleMachineScope = "Limits this rule to the current Mac while still allowing the rest of your rules to sync through iCloud."
         static let rewriteMatch = "A regex pattern matched against the full URL. Use capture groups like (.*) to grab parts you want to keep."
