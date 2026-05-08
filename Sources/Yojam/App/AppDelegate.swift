@@ -885,59 +885,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Custom launch args: app bundles go through NSWorkspace so macOS
-        // can attach the URL document and optionally create a new instance.
+        // Custom launch args avoid NSWorkspace because macOS can drop
+        // arguments when it hands a URL to an already-running app.
         if let template = customLaunchArgs, !template.isEmpty {
-            var args = shellSplitArguments(template)
-                .map { expandLaunchArgument($0, url: url) }
-
-            if let profile, let bundleId {
-                args.append(contentsOf: ProfileLaunchHelper.launchArguments(
-                    forProfile: profile, browserBundleId: bundleId))
-            }
-            if privateWindow, let bundleId {
-                args.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
-                    browserBundleId: bundleId))
-            }
-
-            if appURL.pathExtension == "app" && !template.contains("$URL") {
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = true
-                config.arguments = args
-                config.createsNewApplicationInstance = openAsNewInstance
-                Task {
-                    do {
-                        _ = try await NSWorkspace.shared.open(
-                            [url], withApplicationAt: appURL, configuration: config)
-                    } catch {
-                        YojamLogger.shared.log(
-                            "Custom launch failed: \(error.localizedDescription)")
-                    }
-                }
-                return
-            }
-
-            if !template.contains("$URL") {
-                args.append(url.absoluteString)
-            }
-            let process = Process()
-            process.executableURL = executableURL(for: appURL) ?? appURL
-            process.arguments = args
-            process.terminationHandler = { proc in
-                if proc.terminationStatus != 0 {
-                    let status = proc.terminationStatus
-                    Task { @MainActor in
-                        YojamLogger.shared.log(
-                            "Custom launch exited with status \(status)")
-                    }
-                }
-            }
-            do {
-                try process.run()
-            } catch {
-                YojamLogger.shared.log(
-                    "Custom launch failed: \(error.localizedDescription)")
-            }
+            let args = Self.customLaunchArguments(
+                template: template,
+                url: url,
+                profile: profile,
+                bundleId: bundleId,
+                privateWindow: privateWindow)
+            runArgumentLaunch(
+                appURL: appURL,
+                arguments: args,
+                bundleId: bundleId,
+                logPrefix: "Custom launch")
             return
         }
 
@@ -953,51 +914,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if !arguments.isEmpty {
-            if appURL.pathExtension == "app" {
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = true
-                config.arguments = arguments
-                config.createsNewApplicationInstance = openAsNewInstance
-                Task {
-                    do {
-                        _ = try await NSWorkspace.shared.open(
-                            [url], withApplicationAt: appURL, configuration: config)
-                    } catch {
-                        YojamLogger.shared.log(
-                            "Profile launch failed: \(error.localizedDescription)")
-                    }
-                }
-                return
-            }
-
-            let process = Process()
-            process.executableURL = appURL
-            process.arguments = arguments + [url.absoluteString]
-            process.terminationHandler = { proc in
-                if proc.terminationStatus != 0 {
-                    let status = proc.terminationStatus
-                    Task { @MainActor in
-                        YojamLogger.shared.log("Profile launch exited with status \(status)")
-                    }
-                }
-            }
-            do {
-                try process.run()
-                if let bundleId,
-                   let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                    app.activate()
-                }
-            } catch {
-                YojamLogger.shared.log("Profile launch failed: \(error.localizedDescription)")
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = true
-                config.arguments = arguments
-                config.createsNewApplicationInstance = openAsNewInstance
-                Task {
-                    try? await NSWorkspace.shared.open(
-                        [url], withApplicationAt: appURL, configuration: config)
-                }
-            }
+            runArgumentLaunch(
+                appURL: appURL,
+                arguments: arguments + [url.absoluteString],
+                bundleId: bundleId,
+                logPrefix: "Profile launch")
             return
         }
 
@@ -1016,8 +937,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    static func customLaunchArguments(
+        template: String,
+        url: URL,
+        profile: String?,
+        bundleId: String?,
+        privateWindow: Bool
+    ) -> [String] {
+        var args = shellSplitArguments(template)
+            .map { expandLaunchArgument($0, url: url) }
+
+        if let profile, let bundleId {
+            args.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                forProfile: profile, browserBundleId: bundleId))
+        }
+        if privateWindow, let bundleId {
+            args.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
+                browserBundleId: bundleId))
+        }
+        if !template.contains("$URL") {
+            args.append(url.absoluteString)
+        }
+        return args
+    }
+
+    private func runArgumentLaunch(
+        appURL: URL,
+        arguments: [String],
+        bundleId: String?,
+        logPrefix: String
+    ) {
+        let process = Process()
+        process.executableURL = executableURL(for: appURL) ?? appURL
+        process.arguments = arguments
+        process.terminationHandler = { proc in
+            if proc.terminationStatus != 0 {
+                let status = proc.terminationStatus
+                Task { @MainActor in
+                    YojamLogger.shared.log("\(logPrefix) exited with status \(status)")
+                }
+            }
+        }
+        do {
+            try process.run()
+            if let bundleId,
+               let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+                app.activate()
+            }
+        } catch {
+            YojamLogger.shared.log("\(logPrefix) failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Split a string of command-line arguments respecting single and double quotes.
-    private func shellSplitArguments(_ template: String) -> [String] {
+    private static func shellSplitArguments(_ template: String) -> [String] {
         var tokens: [String] = []
         var current = ""
         var inQuote: Character? = nil
@@ -1036,7 +1009,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tokens
     }
 
-    private func expandLaunchArgument(_ argument: String, url: URL) -> String {
+    private static func expandLaunchArgument(_ argument: String, url: URL) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var expanded = argument
             .replacingOccurrences(of: "$URL", with: url.absoluteString)

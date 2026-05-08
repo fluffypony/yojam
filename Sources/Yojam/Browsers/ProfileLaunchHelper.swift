@@ -1,20 +1,50 @@
 import Foundation
 
 enum ProfileLaunchHelper {
+    private static let firefoxBundleIds: Set<String> = [
+        "org.mozilla.firefox",
+        "org.mozilla.firefoxdeveloperedition",
+        "org.mozilla.nightly",
+    ]
+
     static func launchArguments(
-        forProfile profileId: String, browserBundleId: String
+        forProfile profileId: String,
+        browserBundleId: String,
+        firefoxProfileReader: FirefoxProfileReader = FirefoxProfileReader()
     ) -> [String] {
         switch browserBundleId {
         case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac",
              "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium":
             return ["--profile-directory=\(profileId)"]
-        case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
+        case let id where firefoxBundleIds.contains(id):
+            if isFirefoxProfilePath(profileId) {
+                return ["--profile", expandedProfilePath(profileId), "--new-instance"]
+            }
+            if let profilePath = firefoxProfileReader.selectableProfilePath(
+                named: profileId,
+                bundleId: browserBundleId) {
+                return ["--profile", profilePath, "--new-instance"]
+            }
             // Firefox profile locks reject a forced new instance when the
             // profile is already open. -P lets Firefox reuse that profile.
             return ["-P", profileId]
         default:
             return []
         }
+    }
+
+    private static func isFirefoxProfilePath(_ profileId: String) -> Bool {
+        let expanded = expandedProfilePath(profileId)
+        return expanded.hasPrefix("/")
+    }
+
+    private static func expandedProfilePath(_ profileId: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if profileId == "~" { return home }
+        if profileId.hasPrefix("~/") {
+            return home + String(profileId.dropFirst())
+        }
+        return profileId
     }
 
     static func supportsPrivateWindow(browserBundleId: String) -> Bool {

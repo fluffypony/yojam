@@ -569,17 +569,19 @@ final class SettingsStore: ObservableObject {
         }
         saveBrowsers(sanitizedBrowsers)
         saveEmailClients(sanitizedEmailClients)
-        // Validate regex patterns and disable path-based targets in imported rules.
+        // Validate regex patterns and disable imported rules that can execute
+        // arbitrary commands. Users can re-enable them manually after review.
         // Rules with absolute-path `targetBundleId` are a code-execution vector
-        // (RuleEngine supports bare paths), so imported rules with that shape
-        // are force-disabled. Users can re-enable them manually after review.
+        // because RuleEngine supports bare paths; ruleCustomLaunchArgs can also
+        // invoke command-line behavior through a trusted browser bundle.
         let validatedImportedRules: [Rule] = imported.rules.compactMap { rule in
             if rule.matchType == .regex,
                !RegexMatcher.isValid(pattern: rule.pattern) {
                 return nil
             }
             var sanitized = rule
-            if sanitized.targetBundleId.hasPrefix("/") {
+            if sanitized.targetBundleId.hasPrefix("/")
+                || sanitized.ruleCustomLaunchArgs != nil {
                 sanitized.enabled = false
             }
             return sanitized

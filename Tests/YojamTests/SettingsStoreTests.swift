@@ -131,4 +131,45 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.suppressedClipboardDomains, ["example.com", "test.org"])
     }
+
+    @MainActor
+    func testImportDisablesRulesWithCustomLaunchArgs() throws {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+
+        let ruleId = UUID()
+        let rule = Rule(
+            id: ruleId,
+            name: "Imported custom args",
+            enabled: true,
+            matchType: .domain,
+            pattern: "example.com",
+            targetBundleId: "org.mozilla.firefox",
+            targetAppName: "Firefox",
+            ruleCustomLaunchArgs: "--profile /tmp/test-profile")
+        let export = SettingsExport(
+            version: 5,
+            activationMode: .always,
+            defaultSelection: .alwaysFirst,
+            verticalThreshold: 8,
+            soundEffects: false,
+            launchAtLogin: false,
+            globalUTMStripping: false,
+            clipboardMonitoring: false,
+            iCloudSync: false,
+            debugLoggingEnabled: false,
+            periodicRescanInterval: 1800,
+            browsers: [],
+            emailClients: [],
+            rules: [rule],
+            globalRewriteRules: [],
+            utmStripList: UTMStripper.defaultParameters)
+
+        try store.importJSON(try JSONEncoder().encode(export))
+
+        let imported = try XCTUnwrap(store.loadRules().first { $0.id == ruleId })
+        XCTAssertFalse(imported.enabled)
+        XCTAssertEqual(imported.ruleCustomLaunchArgs, "--profile /tmp/test-profile")
+    }
 }

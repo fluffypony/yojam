@@ -193,7 +193,7 @@ Example Shortcuts recipe: create a Shortcut with an "Open URL" action pointing a
 
 ## Custom apps
 
-Not limited to browsers. Click **+ Add** in the Browsers tab and pick any `.app` or executable. For apps that don't natively handle URLs, set custom launch arguments using `$URL` as a placeholder:
+Not limited to browsers. Click **+ Add** in the Browsers tab and pick any `.app` or executable. For apps that don't natively handle URLs, use `$URL` where the link belongs. Without it, Yojam appends the URL after your custom arguments:
 
 ```
 $URL

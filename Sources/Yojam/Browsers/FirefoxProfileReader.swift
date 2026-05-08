@@ -1,6 +1,15 @@
 import Foundation
 
-struct FirefoxProfileReader {
+struct FirefoxProfileReader: Sendable {
+    private let applicationSupportDirectory: URL
+
+    init(
+        applicationSupportDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support")
+    ) {
+        self.applicationSupportDirectory = applicationSupportDirectory
+    }
+
     func readProfiles(bundleId: String) -> [BrowserProfile] {
         let appSupportName: String
         switch bundleId {
@@ -8,8 +17,7 @@ struct FirefoxProfileReader {
         case "org.mozilla.nightly":                 appSupportName = "Firefox Nightly"
         default:                                    appSupportName = "Firefox"
         }
-        let profilesDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support")
+        let profilesDir = applicationSupportDirectory
             .appendingPathComponent(appSupportName)
         let profilesIni = profilesDir.appendingPathComponent("profiles.ini")
         guard let content = try? String(contentsOf: profilesIni, encoding: .utf8)
@@ -50,10 +58,20 @@ struct FirefoxProfileReader {
             }
         }
 
+        let profileGroupsDir = profilesDir.appendingPathComponent("Profile Groups")
+        let hasSelectableProfileStore = FileManager.default.fileExists(
+            atPath: profileGroupsDir.path)
+
         var profiles: [BrowserProfile] = []
         for (header, entries) in sections where header.hasPrefix("Profile") {
             guard let name = entries["Name"], let path = entries["Path"],
                   !name.isEmpty else { continue }
+            let profileURL = resolvedProfileURL(
+                path: path, entries: entries, profilesDir: profilesDir)
+            let storeID = value(in: entries, caseInsensitiveKey: "StoreID")
+            let profileId = (hasSelectableProfileStore && storeID?.isEmpty == false)
+                ? profileURL.path
+                : name
             let isDefault: Bool
             if let dp = defaultPath {
                 isDefault = (path == dp)
@@ -61,9 +79,37 @@ struct FirefoxProfileReader {
                 isDefault = (entries["Default"] == "1")
             }
             profiles.append(BrowserProfile(
-                id: name, name: name, browserBundleId: bundleId,
+                id: profileId, name: name, browserBundleId: bundleId,
                 isDefault: isDefault))
         }
         return profiles
+    }
+
+    func selectableProfilePath(named name: String, bundleId: String) -> String? {
+        readProfiles(bundleId: bundleId).first { profile in
+            profile.name == name && profile.id.hasPrefix("/")
+        }?.id
+    }
+
+    private func resolvedProfileURL(
+        path: String,
+        entries: [String: String],
+        profilesDir: URL
+    ) -> URL {
+        let isRelative = entries["IsRelative"] != "0"
+        if isRelative {
+            return URL(fileURLWithPath: path, relativeTo: profilesDir)
+                .standardizedFileURL
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
+    }
+
+    private func value(
+        in entries: [String: String],
+        caseInsensitiveKey target: String
+    ) -> String? {
+        entries.first { key, _ in
+            key.caseInsensitiveCompare(target) == .orderedSame
+        }?.value
     }
 }
