@@ -721,6 +721,8 @@ struct AddRuleSheet: View {
     @State private var testExplanation = ""
     @State private var testMatched = false
 
+    static let liveTestURLMetadataKey = "liveTestURL"
+
     private enum PrivateWindowOverride: String, CaseIterable, Identifiable {
         case inherit, forcePrivate, forceNormal
         var id: String { rawValue }
@@ -1180,6 +1182,8 @@ struct AddRuleSheet: View {
         rulePrivateWindowOverride = PrivateWindowOverride.from(rule.ruleOpenInPrivateWindow)
         ruleCustomLaunchArgs = rule.ruleCustomLaunchArgs ?? ""
         ruleNewInstanceOverride = NewInstanceOverride.from(rule.ruleOpenAsNewInstance)
+        testURL = rule.metadata?[Self.liveTestURLMetadataKey] ?? ""
+        runLiveTest()
     }
 
     /// Load profiles for the current target browser off the main thread —
@@ -1279,7 +1283,11 @@ struct AddRuleSheet: View {
     private func commit() {
         let baseId = editing?.id ?? UUID()
         let trimmedArgs = ruleCustomLaunchArgs.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTestURL = testURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let machine = resolvedMachineScope()
+        let metadata = Self.metadataByPersistingLiveTestURL(
+            trimmedTestURL,
+            existingMetadata: editing?.metadata)
         let rule = Rule(
             id: baseId,
             name: name, enabled: editing?.enabled ?? true,
@@ -1295,6 +1303,7 @@ struct AddRuleSheet: View {
             machineScopeNames: machine.names,
             firefoxContainer: firefoxContainer.isEmpty ? nil : firefoxContainer,
             targetDisplayUUID: targetDisplayUUID,
+            metadata: metadata,
             ruleProfileId: ruleProfileId,
             ruleOpenInPrivateWindow: rulePrivateWindowOverride.boolValue,
             ruleCustomLaunchArgs: trimmedArgs.isEmpty ? nil : trimmedArgs,
@@ -1305,6 +1314,19 @@ struct AddRuleSheet: View {
             ruleEngine.updateRule(rule)
         }
         onDismiss()
+    }
+
+    static func metadataByPersistingLiveTestURL(
+        _ liveTestURL: String,
+        existingMetadata: [String: String]?
+    ) -> [String: String]? {
+        var metadata = existingMetadata ?? [:]
+        if liveTestURL.isEmpty {
+            metadata.removeValue(forKey: Self.liveTestURLMetadataKey)
+        } else {
+            metadata[Self.liveTestURLMetadataKey] = liveTestURL
+        }
+        return metadata.isEmpty ? nil : metadata
     }
 
     private func runLiveTest() {
