@@ -149,11 +149,19 @@ command -v create-dmg >/dev/null  || fail "create-dmg not found (brew install cr
 command -v xcrun >/dev/null       || fail "xcrun not found"
 
 if [ -z "$SPARKLE_BIN" ]; then
-  echo "    ⚠ Sparkle bin not found - will skip EdDSA signing"
-  echo "    Set SPARKLE_BIN env var or build the project once in Xcode"
+  fail "Sparkle bin not found - cannot generate signed updates"
 else
   ok "Sparkle bin: $SPARKLE_BIN"
 fi
+
+[ -f "$SPARKLE_BIN/generate_keys" ] || fail "Sparkle generate_keys not found in $SPARKLE_BIN"
+CONFIGURED_SPARKLE_PUBLIC_KEY=$(grep 'SUPublicEDKey:' "$PROJECT_DIR/project.yml" | head -1 | awk '{print $2}' | tr -d '"')
+KEYCHAIN_SPARKLE_PUBLIC_KEY=$("$SPARKLE_BIN/generate_keys" -p)
+[ -n "$CONFIGURED_SPARKLE_PUBLIC_KEY" ] || fail "SUPublicEDKey not found in project.yml"
+if [ "$CONFIGURED_SPARKLE_PUBLIC_KEY" != "$KEYCHAIN_SPARKLE_PUBLIC_KEY" ]; then
+  fail "Sparkle key mismatch: project.yml has $CONFIGURED_SPARKLE_PUBLIC_KEY but keychain has $KEYCHAIN_SPARKLE_PUBLIC_KEY"
+fi
+ok "Sparkle key matches project.yml"
 
 # Check notarization credentials exist (dry run)
 if [ "$SKIP_NOTARIZE" = false ]; then
