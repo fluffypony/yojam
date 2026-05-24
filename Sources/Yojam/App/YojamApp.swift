@@ -41,7 +41,7 @@ struct YojamApp: App {
             // opens our Window by id, preserving Cmd+,.
             CommandGroup(replacing: .appSettings) {
                 Button("Settings\u{2026}") {
-                    openWindow(id: Self.preferencesWindowId)
+                    appDelegate.showPreferences()
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }

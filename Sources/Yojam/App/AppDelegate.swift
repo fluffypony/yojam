@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - UI
     private var statusBarController: StatusBarController!
     private var pickerPanel: PickerPanel?
+    private var preferencesWindowWasExplicitlyOpened = false
 
     // MARK: - Optional subsystems
     private var clipboardMonitor: ClipboardMonitor?
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recentlyRoutedURLs: [String: Date] = [:]
     private let deduplicationWindow: TimeInterval = 0.5
     private var pendingRequests: [IncomingLinkRequest] = []
+    private var pendingFirstLaunchPreferencesWorkItem: DispatchWorkItem?
     private var isFinishedLaunching = false
     // P14: Scheduled cleanup instead of per-click filter+copy
     private var dedupCleanupTimer: Timer?
@@ -217,20 +219,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore.isFirstLaunch = false
             // Auto-open Preferences so the user sees the Quick Start card
             if pendingRequests.isEmpty {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.pendingFirstLaunchPreferencesWorkItem = nil
+                    guard self.pendingRequests.isEmpty else { return }
                     self.showPreferences()
                 }
+                pendingFirstLaunchPreferencesWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
             }
         }
 
         // The preferences Window scene may auto-open at launch. Close it
-        // on launches where we don't explicitly want it visible (i.e. not
-        // first-launch, not responding to a URL request). It stays
-        // registered with SwiftUI and will reopen via openSettingsAction().
-        if !isFirst && pendingRequests.isEmpty {
-            DispatchQueue.main.async { [weak self] in
-                self?.closeAutoOpenedPreferencesWindow()
-            }
+        // on launches where we don't explicitly want it visible, including
+        // Finder document opens that queue pending routing requests.
+        if !isFirst || !pendingRequests.isEmpty {
+            closeAutoOpenedPreferencesWindow(retryCount: pendingRequests.isEmpty ? 3 : 8)
         }
 
         // Install native messaging host manifests — but only once per
@@ -330,6 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Single entry point for all ingress paths. Queues requests during cold
     /// launch, then routes them once subsystems are ready.
     private func enqueueOrHandle(_ request: IncomingLinkRequest) {
+        prepareForExternalRoutingRequest()
+
         guard isFinishedLaunching else {
             pendingRequests.append(request)
             return
@@ -364,6 +370,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = buildRoutingConfiguration()
         let decision = RoutingService.decide(request: request, configuration: config)
         executeRouteDecision(decision, request: request)
+    }
+
+    /// External routing should never leave SwiftUI's auto-created settings
+    /// window visible behind the picker. Explicit user-opened preferences are
+    /// tracked separately and left alone.
+    private func prepareForExternalRoutingRequest() {
+        pendingFirstLaunchPreferencesWorkItem?.cancel()
+        pendingFirstLaunchPreferencesWorkItem = nil
+        closeAutoOpenedPreferencesWindow(retryCount: 4)
     }
 
     /// Snapshot the current routing state for RoutingService.
@@ -1135,6 +1150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showPreferences() {
+        preferencesWindowWasExplicitlyOpened = true
+
         // Show in Cmd+Tab while preferences are open
         NSApp.setActivationPolicy(.regular)
 
@@ -1179,11 +1196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// us here. We also snap the frame up when the autosaved frame (or
     /// SwiftUI's initial layout) placed the window below the floor.
     private func applyPreferencesWindowConstraintsIfMatching(_ window: NSWindow) {
-        let isPreferences = window.identifier == Self.settingsWindowIdentifier
-            || window.title.lowercased().contains("yojam settings")
-            || window.title.lowercased().contains("settings")
-            || window.title.lowercased().contains("preferences")
-        guard isPreferences, !(window is NSPanel) else { return }
+        guard Self.isPreferencesWindowCandidate(
+            identifier: window.identifier,
+            title: window.title,
+            isPanel: window is NSPanel
+        ) else { return }
         window.identifier = Self.settingsWindowIdentifier
         window.setFrameAutosaveName("YojamPreferences")
         window.minSize = Self.preferencesMinSize
@@ -1206,13 +1223,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow = window
     }
 
-    /// Close the preferences window if SwiftUI's Window scene auto-opened
-    /// it at launch. Called from applicationDidFinishLaunching on launches
-    /// that aren't first-run or URL-driven.
-    private func closeAutoOpenedPreferencesWindow() {
-        guard let w = identifySettingsWindow(), w.isVisible else { return }
-        w.close()
-        hideFromCmdTab()
+    /// Close the preferences window if SwiftUI's Window scene auto-opened it.
+    /// Retries cover the short delay between AppKit launch and SwiftUI scene
+    /// materialization during Finder document opens.
+    private func closeAutoOpenedPreferencesWindow(retryCount: Int = 1) {
+        guard !preferencesWindowWasExplicitlyOpened else { return }
+        if let window = identifySettingsWindow() {
+            let wasVisible = window.isVisible
+            window.close()
+            hideFromCmdTab()
+            if wasVisible || retryCount <= 1 { return }
+        }
+
+        guard retryCount > 1 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.closeAutoOpenedPreferencesWindow(retryCount: retryCount - 1)
+        }
     }
 
     private func identifySettingsWindow() -> NSWindow? {
@@ -1228,16 +1254,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Fallback: the SwiftUI Settings scene window has title "Yojam"
         // and is not a panel. Tag it for future lookups.
         if let tagged = NSApp.windows.first(where: { window in
-            !(window is NSPanel)
-                && window.isVisible
-                && (window.title.isEmpty || window.title.lowercased().contains("yojam")
-                    || window.title.lowercased().contains("settings")
-                    || window.title.lowercased().contains("preferences"))
+            window.isVisible
+                && Self.isPreferencesWindowCandidate(
+                    identifier: window.identifier,
+                    title: window.title,
+                    isPanel: window is NSPanel
+                )
         }) {
             applyPreferencesWindowConstraintsIfMatching(tagged)
             return tagged
         }
         return nil
+    }
+
+    static func isPreferencesWindowCandidate(
+        identifier: NSUserInterfaceItemIdentifier?,
+        title: String,
+        isPanel: Bool
+    ) -> Bool {
+        guard !isPanel else { return false }
+        if identifier == settingsWindowIdentifier { return true }
+
+        let normalizedTitle = title.lowercased()
+        return title.isEmpty
+            || normalizedTitle.contains("yojam")
+            || normalizedTitle.contains("settings")
+            || normalizedTitle.contains("preferences")
     }
 
     private func bringPreferencesToFront(attempts: Int) {
@@ -1285,6 +1327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hideFromCmdTab() {
+        preferencesWindowWasExplicitlyOpened = false
         NSApp.setActivationPolicy(.accessory)
         stopWindowCloseObserver()
     }
