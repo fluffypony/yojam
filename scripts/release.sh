@@ -61,6 +61,63 @@ info()  { step=$((step + 1)); printf "\n\033[1;34m[%d] %s\033[0m\n" "$step" "$1"
 ok()    { printf "    \033[32m✓ %s\033[0m\n" "$1"; }
 fail()  { printf "    \033[31m✗ %s\033[0m\n" "$1"; exit 1; }
 
+ensure_full_update_signatures() {
+  local appcast="$1"
+  local releases_dir="$2"
+  local download_url_prefix="$3"
+  local found_dmg=false
+  local dmg dmg_name dmg_url signature signature_value length_value
+
+  [ -f "$appcast" ] || fail "appcast.xml not found at $appcast"
+
+  shopt -s nullglob
+  for dmg in "$releases_dir"/*.dmg; do
+    found_dmg=true
+    dmg_name=$(basename "$dmg")
+    dmg_url="${download_url_prefix%/}/$dmg_name"
+
+    if ! grep -Fq "url=\"$dmg_url\"" "$appcast"; then
+      continue
+    fi
+
+    signature=$("$SPARKLE_BIN/sign_update" "$dmg")
+    signature_value=$(printf '%s\n' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+    length_value=$(printf '%s\n' "$signature" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
+
+    [ -n "$signature_value" ] || fail "Could not parse Sparkle signature for $dmg_name"
+    [ -n "$length_value" ] || fail "Could not parse Sparkle length for $dmg_name"
+    "$SPARKLE_BIN/sign_update" --verify "$dmg" "$signature_value"
+
+    DMG_URL="$dmg_url" \
+    DMG_LENGTH="$length_value" \
+    DMG_SIGNATURE="$signature_value" \
+      /usr/bin/perl -0pi -e '
+        my $url = quotemeta $ENV{"DMG_URL"};
+        my $raw_url = $ENV{"DMG_URL"};
+        my $length = $ENV{"DMG_LENGTH"};
+        my $signature = $ENV{"DMG_SIGNATURE"};
+
+        s{<enclosure\b([^>]*)\burl="$url"([^>]*)/>}{
+          my $attrs = "$1 url=\"$raw_url\"$2";
+          $attrs =~ s/\s+length="[^"]*"//g;
+          $attrs =~ s/\s+sparkle:edSignature="[^"]*"//g;
+          $attrs =~ s/\s+/ /g;
+          $attrs =~ s/^\s+|\s+$//g;
+          "<enclosure $attrs length=\"$length\" sparkle:edSignature=\"$signature\"/>";
+        }eg;
+      ' "$appcast"
+  done
+  shopt -u nullglob
+
+  [ "$found_dmg" = true ] || fail "No DMGs found in $releases_dir"
+
+  if /usr/bin/perl -ne 'if (/<enclosure\b(?=[^>]*\.dmg")(?=[^>]*\burl=)(?![^>]*\bsparkle:edSignature=)/) { print; $missing=1 } END { exit($missing ? 1 : 0) }' "$appcast"; then
+    ok "Full update enclosures are Sparkle-signed"
+  else
+    fail "One or more full update enclosures are missing sparkle:edSignature"
+  fi
+}
+
 # ---- Extract version from project.yml ----
 
 MARKETING_VERSION=$(grep 'MARKETING_VERSION:' "$PROJECT_DIR/project.yml" | head -1 | awk '{print $2}' | tr -d '"')
@@ -198,6 +255,7 @@ fi
 # ---- Generate appcast (optional) ----
 
 RELEASES_DIR="$BUILD_DIR/releases"
+DOWNLOAD_URL_PREFIX="https://yoj.am/releases/"
 if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   info "Generating appcast"
   mkdir -p "$RELEASES_DIR"
@@ -206,9 +264,10 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   # the DMGs/deltas actually live). Without it, generate_appcast infers the
   # prefix from each bundle's SUFeedURL host (yoj.am/) and emits 404 URLs.
   "$SPARKLE_BIN/generate_appcast" "$RELEASES_DIR" \
-    --download-url-prefix https://yoj.am/releases/
+    --download-url-prefix "$DOWNLOAD_URL_PREFIX"
   if [ -f "$RELEASES_DIR/appcast.xml" ]; then
     ok "appcast.xml generated at $RELEASES_DIR/appcast.xml"
+    ensure_full_update_signatures "$RELEASES_DIR/appcast.xml" "$RELEASES_DIR" "$DOWNLOAD_URL_PREFIX"
     DELTA_COUNT=$(find "$RELEASES_DIR" -maxdepth 1 -name "*.delta" | wc -l | tr -d ' ')
     if [ "$DELTA_COUNT" -gt 0 ]; then
       ok "$DELTA_COUNT delta file(s) in $RELEASES_DIR — upload alongside DMGs"
