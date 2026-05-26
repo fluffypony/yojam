@@ -181,6 +181,51 @@ final class FirefoxProfileReaderTests: XCTestCase {
             firefoxDirectory.appendingPathComponent("Profiles/abc123.Work").path)
     }
 
+    func testAllInstallDefaultProfilesAreMarkedDefault() throws {
+        let firefoxDirectory = tempDirectory.appendingPathComponent("Firefox")
+        try FileManager.default.createDirectory(
+            at: firefoxDirectory,
+            withIntermediateDirectories: true)
+
+        let profilesIni = """
+        [Install111]
+        Default=Profiles/release.default-release
+        Locked=1
+
+        [Install222]
+        Default=Profiles/dev.dev-edition-default
+        Locked=1
+
+        [Profile0]
+        Name=default-release
+        IsRelative=1
+        Path=Profiles/release.default-release
+
+        [Profile1]
+        Name=dev-edition-default
+        IsRelative=1
+        Path=Profiles/dev.dev-edition-default
+
+        [Profile2]
+        Name=Work
+        IsRelative=1
+        Path=Profiles/work.Work
+        """
+        try profilesIni.write(
+            to: firefoxDirectory.appendingPathComponent("profiles.ini"),
+            atomically: true,
+            encoding: .utf8)
+
+        let profiles = FirefoxProfileReader(
+            applicationSupportDirectory: tempDirectory,
+            firefoxVersionProvider: { _ in "138.0" }
+        ).readProfiles(bundleId: "org.mozilla.firefox")
+
+        XCTAssertEqual(profiles.first { $0.name == "default-release" }?.isDefault, true)
+        XCTAssertEqual(profiles.first { $0.name == "dev-edition-default" }?.isDefault, true)
+        XCTAssertEqual(profiles.first { $0.name == "Work" }?.isDefault, false)
+    }
+
     func testShowSelectorStoreIDProfileUsesPathWhenVersionIsUnavailable() throws {
         let firefoxDirectory = tempDirectory.appendingPathComponent("Firefox")
         try FileManager.default.createDirectory(

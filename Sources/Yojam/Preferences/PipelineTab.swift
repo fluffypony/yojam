@@ -20,6 +20,8 @@ struct PipelineTab: View {
     @State private var showingTrackerList = false
     @State private var errorMessage: String?
     @State private var editingRule: Rule?
+    @State private var rulePendingDeletion: Rule?
+    @State private var isConfirmingRuleDeletion = false
     @State private var draggedRewriteId: UUID?
     @State private var draggedRuleId: UUID?
     @State private var pipelineOverviewDismissed = UserDefaults.standard.bool(forKey: "helpDismissed_pipelineOverview")
@@ -87,6 +89,25 @@ struct PipelineTab: View {
         }
         .sheet(isPresented: $showingTrackerList) {
             TrackerParameterSheet(settingsStore: settingsStore, onDismiss: { showingTrackerList = false })
+        }
+        .confirmationDialog(
+            Text("Delete rule?"),
+            isPresented: $isConfirmingRuleDeletion,
+            titleVisibility: .visible,
+            presenting: rulePendingDeletion
+        ) { rule in
+            Button("Delete Rule", role: .destructive) {
+                ruleEngine.deleteRule(rule.id)
+                rulePendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                rulePendingDeletion = nil
+            }
+        } message: { rule in
+            Text(Self.deleteRuleConfirmationMessage(for: rule))
+        }
+        .onChange(of: isConfirmingRuleDeletion) { _, isPresented in
+            if !isPresented { rulePendingDeletion = nil }
         }
         .alert("Error", isPresented: Binding(
             get: { errorMessage != nil },
@@ -265,7 +286,7 @@ struct PipelineTab: View {
                             .help("Whether this rule is active")
                         Text("TYPE").frame(width: 64, alignment: .leading)
                             .help("Rewrite transforms URLs; Rule routes to a browser")
-                        Text("PATTERN MATCH").frame(minWidth: 110, alignment: .leading)
+                        Text("RULE / PATTERN").frame(minWidth: 110, alignment: .leading)
                             .help("The URL pattern this entry matches against")
                         Spacer()
                         Text("ACTION / TARGET")
@@ -418,12 +439,21 @@ struct PipelineTab: View {
             ThemeBadge(text: rule.isBuiltIn ? "Built-in" : "Rule", isRewrite: false)
                 .frame(width: 64, alignment: .leading)
 
-            Text(rule.matchType == .all ? "All URLs" : rule.pattern)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(Theme.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(minWidth: 110, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.name.isEmpty ? rulePatternText(rule) : rule.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if !rule.name.isEmpty {
+                    Text(rulePatternText(rule))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(Theme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .frame(minWidth: 110, alignment: .leading)
 
             Spacer()
 
@@ -447,7 +477,8 @@ struct PipelineTab: View {
                     }
                 }
                 ThemeIconButton(systemName: "trash", isDanger: true) {
-                    ruleEngine.deleteRule(rule.id)
+                    rulePendingDeletion = rule
+                    isConfirmingRuleDeletion = true
                 }
             }
             .frame(width: 110)
@@ -459,6 +490,17 @@ struct PipelineTab: View {
         .onTapGesture(count: 2) {
             editingRule = rule
         }
+    }
+
+    private func rulePatternText(_ rule: Rule) -> String {
+        rule.matchType == .all ? "All URLs" : rule.pattern
+    }
+
+    private static func deleteRuleConfirmationMessage(for rule: Rule) -> String {
+        let name = rule.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = name.isEmpty ? "this rule" : "\"\(name)\""
+        let pattern = rule.matchType == .all ? "All URLs" : rule.pattern
+        return "This will remove \(title).\nPattern: \(pattern)\nTarget: \(rule.targetAppName)"
     }
 
     // MARK: - Test Logic
@@ -916,8 +958,12 @@ struct AddRuleSheet: View {
     /// is an app outside that list (picked via "Choose App..."), an extra
     /// row so the picker reflects the actual selection.
     private var targetPickerOptions: [(String, String)] {
-        var options = installedApps
+        let configuredBrowserBundleIds = Set(browserManager.browsers.map(\.bundleIdentifier))
+        var options = installedApps.filter { bundleId, _ in
+            !configuredBrowserBundleIds.contains(bundleId)
+        }
         if !targetBundleId.isEmpty,
+           targetSelection.hasPrefix("app:"),
            !options.contains(where: { $0.0 == targetBundleId }) {
             let label = targetAppName.isEmpty ? targetBundleId : targetAppName
             options.insert((targetBundleId, label), at: 0)

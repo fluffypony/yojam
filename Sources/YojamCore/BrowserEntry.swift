@@ -64,8 +64,21 @@ public struct BrowserEntry: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var fullDisplayName: String {
-        if let profileName { return "\(displayName) — \(profileName)" }
+        if let profileName { return "\(displayName) — \(Self.displayName(forProfileName: profileName))" }
         return displayName
+    }
+
+    private static func displayName(forProfileName profileName: String) -> String {
+        switch profileName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "default":
+            return "Default Profile"
+        case "default-release":
+            return "Default Release Profile"
+        case "dev-edition-default":
+            return "Developer Edition Default Profile"
+        default:
+            return profileName
+        }
     }
 
     // Manual Codable to tolerate schema evolution: any new field uses

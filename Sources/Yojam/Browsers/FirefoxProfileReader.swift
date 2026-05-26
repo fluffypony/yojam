@@ -56,10 +56,10 @@ struct FirefoxProfileReader: Sendable {
 
         // Find the default profile path from [Install*] sections (Firefox 67+).
         // Falls back to [Profile*] with Default=1.
-        var defaultPath: String?
+        var defaultPaths = Set<String>()
         for (header, entries) in sections where header.hasPrefix("Install") {
             if let path = entries["Default"] {
-                defaultPath = path; break
+                defaultPaths.insert(path)
             }
         }
 
@@ -84,8 +84,8 @@ struct FirefoxProfileReader: Sendable {
                 ? profileURL.path
                 : name
             let isDefault: Bool
-            if let dp = defaultPath {
-                isDefault = (path == dp)
+            if !defaultPaths.isEmpty {
+                isDefault = defaultPaths.contains(path)
             } else {
                 isDefault = (entries["Default"] == "1")
             }

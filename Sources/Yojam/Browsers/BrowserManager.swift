@@ -180,10 +180,10 @@ final class BrowserManager: ObservableObject {
                 let profiles = discovery.discoverProfiles(
                     for: bundleId,
                     userDataDirectory: target.userDataDirectory)
-                let named = profiles.filter { !$0.name.isEmpty }
-                guard named.count > 1 else { continue }
+                let suggestedProfiles = profiles.filter { Self.shouldSuggestProfile($0) }
+                guard !suggestedProfiles.isEmpty else { continue }
                 let baseName = target.displayName
-                for profile in named {
+                for profile in suggestedProfiles {
                     let key = Self.profileSuggestionKey(
                         bundleIdentifier: bundleId,
                         profileId: profile.id,
@@ -203,6 +203,21 @@ final class BrowserManager: ObservableObject {
                 guard let self else { return }
                 self.suggestedBrowsers = self.suggestedBrowsers.filter { $0.profileId == nil } + profileSuggestions
             }
+        }
+    }
+
+    nonisolated static func shouldSuggestProfile(_ profile: BrowserProfile) -> Bool {
+        let normalizedName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty, !profile.isDefault else { return false }
+        guard ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+               "org.mozilla.nightly"].contains(profile.browserBundleId) else {
+            return true
+        }
+        switch normalizedName.lowercased() {
+        case "default", "default-release", "dev-edition-default":
+            return false
+        default:
+            return true
         }
     }
 

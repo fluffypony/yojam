@@ -266,53 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Profile discovery - async to avoid blocking launch.
-        // Auto-assign the default profile to each base browser entry.
-        // Users who want additional profiles as separate picker entries
-        // can add the browser again via + and select a different profile.
-        // Pending URLs are drained AFTER profile discovery completes
-        // to avoid opening the first URL without the intended profile.
-        let profileDiscovery = ProfileDiscovery()
-        Task { @MainActor in
-            var changed = false
-            for i in browserManager.browsers.indices {
-                // Only process base entries that don't have a profile set yet
-                guard browserManager.browsers[i].profileId == nil else { continue }
-                let bundleId = browserManager.browsers[i].bundleIdentifier
-                let userDataDirectory = browserManager.browsers[i].userDataDirectory
-                let profiles = await Task.detached {
-                    profileDiscovery.discoverProfiles(
-                        for: bundleId,
-                        userDataDirectory: userDataDirectory)
-                }.value
-                let namedProfiles = profiles.filter { !$0.name.isEmpty }
-                guard namedProfiles.count > 1 else { continue }
-                // Set the default profile on the base entry
-                if let defaultProfile = namedProfiles.first(where: \.isDefault)
-                    ?? namedProfiles.first {
-                    browserManager.browsers[i].profileId = defaultProfile.id
-                    browserManager.browsers[i].profileName = defaultProfile.name
-                    changed = true
-                }
-            }
-            if changed {
-                browserManager.save()
-                browserManager.refreshProfileSuggestions()
-            }
-            // Now that profiles are assigned, drain pending queue.
-            // Drain synchronously to close the race window where new URLs
-            // arriving between the flag flip and the drain would be processed
-            // out of order. The 0.2s delay for window-server activation policy
-            // only applies to the first picker display, which the normal
-            // enqueueOrHandle → handleIncomingRequest path handles fine.
-            let requests = self.pendingRequests
-            self.pendingRequests.removeAll()
-            for request in requests {
-                self.handleIncomingRequest(request)
-            }
-            // Flip AFTER drain so nothing is re-queued during processing.
-            self.isFinishedLaunching = true
-        }
+        drainPendingLaunchRequests()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -364,6 +318,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handleIncomingRequest(request)
     }
 
+    private func drainPendingLaunchRequests() {
+        // Drain before marking launch complete so requests that arrive during
+        // processing stay queued and preserve their original order.
+        while !pendingRequests.isEmpty {
+            let requests = pendingRequests
+            pendingRequests.removeAll()
+            for request in requests {
+                handleIncomingRequest(request)
+            }
+        }
+        isFinishedLaunching = true
+    }
+
     /// Process an incoming link request through the routing pipeline.
     /// Calls `RoutingService.decide()` from YojamCore and executes the result.
     private func handleIncomingRequest(_ request: IncomingLinkRequest) {
@@ -383,8 +350,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Snapshot the current routing state for RoutingService.
     private func buildRoutingConfiguration() -> RoutingConfiguration {
-        let browsers = browserManager.browsers.filter { $0.enabled && $0.isInstalled }
-        let emailClients = browserManager.emailClients.filter { $0.enabled && $0.isInstalled }
+        let browsers = browserManager.browsers.filter {
+            $0.enabled && appURL(for: $0.bundleIdentifier) != nil
+        }
+        let emailClients = browserManager.emailClients.filter {
+            $0.enabled && appURL(for: $0.bundleIdentifier) != nil
+        }
         let rules = RuleOrdering.enabled(ruleEngine.rules).filter { rule in
             // Pre-filter for installed targets (RoutingService has no NSWorkspace)
             let isPath = rule.targetBundleId.hasPrefix("/")
