@@ -24,13 +24,25 @@ final class BrowserManager: ObservableObject {
     /// Remove duplicate profile entries and profile entries with empty names
     /// that may have been created by earlier versions of profile discovery.
     private func deduplicateProfileEntries() {
-        let cleanedInput = browsers.filter { entry in
-            !(entry.profileId != nil && (entry.profileName ?? "").isEmpty)
+        let cleanedInput = browsers.compactMap { entry -> BrowserEntry? in
+            guard !(entry.profileId != nil && (entry.profileName ?? "").isEmpty) else {
+                return nil
+            }
+            return Self.clearingDefaultProfileSelectionIfNeeded(entry)
         }
-        let cleaned = SyncConflictResolver.mergeBrowserLists(local: cleanedInput, remote: [])
-        if cleaned.count != browsers.count {
-            browsers = cleaned
+        let mergeResult = SyncConflictResolver.mergeBrowserListsWithAliases(
+            local: cleanedInput,
+            remote: [])
+        if mergeResult.entries != browsers {
+            browsers = mergeResult.entries
             save()
+            let rules = settingsStore.loadRules()
+            let remapped = SyncConflictResolver.remapRuleBrowserTargets(
+                rules,
+                aliases: mergeResult.idAliases)
+            if remapped != rules {
+                settingsStore.saveRules(remapped)
+            }
         }
     }
 
@@ -218,6 +230,36 @@ final class BrowserManager: ObservableObject {
             return false
         default:
             return true
+        }
+    }
+
+    nonisolated static func clearingDefaultProfileSelectionIfNeeded(
+        _ entry: BrowserEntry
+    ) -> BrowserEntry {
+        guard entry.profileId != nil,
+              entry.source != .manual,
+              Self.isFirefoxBundle(entry.bundleIdentifier),
+              Self.isFirefoxDefaultProfileName(entry.profileName ?? entry.profileId ?? "") else {
+            return entry
+        }
+        var cleaned = entry
+        cleaned.profileId = nil
+        cleaned.profileName = nil
+        cleaned.lastModifiedAt = Date()
+        return cleaned
+    }
+
+    nonisolated private static func isFirefoxBundle(_ bundleIdentifier: String) -> Bool {
+        ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+         "org.mozilla.nightly"].contains(bundleIdentifier)
+    }
+
+    nonisolated private static func isFirefoxDefaultProfileName(_ name: String) -> Bool {
+        switch name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "default", "default-release", "dev-edition-default":
+            return true
+        default:
+            return false
         }
     }
 
