@@ -46,7 +46,6 @@ Every one of these goes through the same rule engine, tracker scrubber, and rewr
 Install via Homebrew:
 
 ```bash
-brew tap fluffypony/yojam
 brew install --cask yojam
 ```
 
