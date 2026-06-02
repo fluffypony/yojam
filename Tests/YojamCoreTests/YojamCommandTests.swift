@@ -151,4 +151,18 @@ final class YojamCommandTests: XCTestCase {
             XCTFail("Expected .route command")
         }
     }
+
+    func testTelTarget() {
+        let url = URL(string: "yojam://route?url=tel%3A%2B15551234567")!
+        guard let command = YojamCommand.parse(url) else {
+            XCTFail("Should parse tel target")
+            return
+        }
+        if case .route(let request) = command {
+            XCTAssertEqual(request.url.scheme, "tel")
+            XCTAssertEqual(request.url.absoluteString, "tel:+15551234567")
+        } else {
+            XCTFail("Expected .route command")
+        }
+    }
 }

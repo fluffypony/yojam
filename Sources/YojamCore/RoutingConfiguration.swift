@@ -7,6 +7,8 @@ public struct RoutingConfiguration: Sendable {
     public let browsers: [BrowserEntry]
     /// Enabled, installed email clients in display order.
     public let emailClients: [BrowserEntry]
+    /// Enabled, installed phone-link clients in display order.
+    public let phoneClients: [BrowserEntry]
     /// Enabled rules sorted by priority (user rules first, then built-in).
     /// Caller should pre-filter for rules whose targets are installed.
     public let rules: [Rule]
@@ -28,6 +30,8 @@ public struct RoutingConfiguration: Sendable {
     public let lastUsedBrowserId: UUID?
     /// UUID of the last-used email client.
     public let lastUsedEmailClientId: UUID?
+    /// UUID of the last-used phone client.
+    public let lastUsedPhoneClientId: UUID?
     /// Whether shortlink resolution is enabled (opt-in async pre-stage).
     public let shortlinkResolutionEnabled: Bool
     /// Stable local ID for this Mac, used by machine-scoped rules.
@@ -36,6 +40,7 @@ public struct RoutingConfiguration: Sendable {
     public init(
         browsers: [BrowserEntry],
         emailClients: [BrowserEntry],
+        phoneClients: [BrowserEntry] = [],
         rules: [Rule],
         globalRewriteRules: [URLRewriteRule],
         utmStripParameters: Set<String>,
@@ -46,11 +51,13 @@ public struct RoutingConfiguration: Sendable {
         learnedDomainPreferences: [String: String],
         lastUsedBrowserId: UUID?,
         lastUsedEmailClientId: UUID?,
+        lastUsedPhoneClientId: UUID? = nil,
         shortlinkResolutionEnabled: Bool = false,
         currentMachineIdentifier: String? = nil
     ) {
         self.browsers = browsers
         self.emailClients = emailClients
+        self.phoneClients = phoneClients
         self.rules = rules
         self.globalRewriteRules = globalRewriteRules
         self.utmStripParameters = utmStripParameters
@@ -61,6 +68,7 @@ public struct RoutingConfiguration: Sendable {
         self.learnedDomainPreferences = learnedDomainPreferences
         self.lastUsedBrowserId = lastUsedBrowserId
         self.lastUsedEmailClientId = lastUsedEmailClientId
+        self.lastUsedPhoneClientId = lastUsedPhoneClientId
         self.shortlinkResolutionEnabled = shortlinkResolutionEnabled
         self.currentMachineIdentifier = currentMachineIdentifier
     }

@@ -223,8 +223,8 @@ func validateURL(_ raw: String) -> URL? {
     }
     guard let url = URL(string: raw),
           let scheme = url.scheme?.lowercased(),
-          ["http", "https", "mailto"].contains(scheme) else {
-        fputs("Invalid URL: must be http, https, or mailto\n", stderr)
+          ["http", "https", "mailto", "tel"].contains(scheme) else {
+        fputs("Invalid URL: must be http, https, mailto, or tel\n", stderr)
         return nil
     }
     // Reject recursive yojam:// URLs

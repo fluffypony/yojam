@@ -43,6 +43,7 @@ enum HelpText {
         static let customIcon = "Set a custom icon for this browser in the picker. Stored locally, not synced via iCloud."
         static let suggestedBrowsers = "Browsers detected on your Mac that aren't in your list yet. Click Add to include one."
         static let emailClients = "Apps that handle mailto: links. Turn on the ones you want Yojam to offer for email links."
+        static let phoneClients = "Apps that handle tel: links. Turn on the ones you want Yojam to offer for phone links."
     }
 
     // MARK: - Pipeline Tab

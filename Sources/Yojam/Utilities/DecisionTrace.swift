@@ -70,6 +70,7 @@ final class DecisionTrace: @unchecked Sendable {
         case .showPicker(_, _, let url, _, _): url
         case .openSystemDefault(let url): url
         case .openSystemMailHandler(let url): url
+        case .openSystemPhoneHandler(let url): url
         }
     }
 
@@ -79,6 +80,7 @@ final class DecisionTrace: @unchecked Sendable {
         case .showPicker: "showPicker"
         case .openSystemDefault: "openSystemDefault"
         case .openSystemMailHandler: "openSystemMailHandler"
+        case .openSystemPhoneHandler: "openSystemPhoneHandler"
         }
     }
 

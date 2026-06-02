@@ -107,7 +107,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     url = tab.url;
   }
 
-  if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+  if (
+    url &&
+    (url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("tel:"))
+  ) {
     await sendToYojam(url, getSourceSentinel());
   }
 });

@@ -90,6 +90,22 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSavePhoneClientsRoundTrip() {
+        let store = SettingsStore()
+        let original = store.loadPhoneClients()
+        defer { store.savePhoneClients(original) }
+
+        let clients = [
+            BrowserEntry(bundleIdentifier: "com.apple.FaceTime", displayName: "FaceTime"),
+            BrowserEntry(bundleIdentifier: "com.microsoft.teams2", displayName: "Teams"),
+        ]
+        store.savePhoneClients(clients)
+
+        let loaded = store.loadPhoneClients()
+        XCTAssertEqual(loaded.map(\.displayName), ["FaceTime", "Teams"])
+    }
+
+    @MainActor
     func testLoadRulesUpdatesBuiltInDefinitions() {
         let store = SettingsStore()
         // Save built-in rules with one disabled

@@ -83,6 +83,9 @@ targets:
           - CFBundleURLName: Mail URL
             CFBundleURLSchemes:
               - mailto
+          - CFBundleURLName: Phone URL
+            CFBundleURLSchemes:
+              - tel
           - CFBundleURLName: Yojam Control
             CFBundleURLSchemes:
               - yojam

@@ -17,6 +17,9 @@ public enum RoutingSnapshotLoader {
         let emailClients: [BrowserEntry] =
             (try? decoder.decode([BrowserEntry].self,
                 from: defaults.data(forKey: SharedRoutingStore.Keys.emailClients) ?? Data())) ?? []
+        let phoneClients: [BrowserEntry] =
+            (try? decoder.decode([BrowserEntry].self,
+                from: defaults.data(forKey: SharedRoutingStore.Keys.phoneClients) ?? Data())) ?? []
         let rules: [Rule] =
             (try? decoder.decode([Rule].self,
                 from: defaults.data(forKey: SharedRoutingStore.Keys.rules) ?? Data())) ?? []
@@ -55,6 +58,7 @@ public enum RoutingSnapshotLoader {
         let shortlinkEnabled = (defaults.object(forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled) as? Bool) ?? false
         let lastUsedBrowserIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedBrowserId)
         let lastUsedEmailIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedEmailId)
+        let lastUsedPhoneIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedPhoneId)
 
         // Filter by persisted isInstalled + optional installed override
         let filterEntry: (BrowserEntry) -> Bool = { entry in
@@ -84,6 +88,7 @@ public enum RoutingSnapshotLoader {
         return RoutingConfiguration(
             browsers: browsers.filter(filterEntry),
             emailClients: emailClients.filter(filterEntry),
+            phoneClients: phoneClients.filter(filterEntry),
             rules: filteredRules,
             globalRewriteRules: globalRewrites.filter { $0.enabled && $0.scope == .global },
             utmStripParameters: utm,
@@ -94,6 +99,7 @@ public enum RoutingSnapshotLoader {
             learnedDomainPreferences: learned,
             lastUsedBrowserId: lastUsedBrowserIdStr.flatMap(UUID.init(uuidString:)),
             lastUsedEmailClientId: lastUsedEmailIdStr.flatMap(UUID.init(uuidString:)),
+            lastUsedPhoneClientId: lastUsedPhoneIdStr.flatMap(UUID.init(uuidString:)),
             shortlinkResolutionEnabled: shortlinkEnabled,
             currentMachineIdentifier: store.localMachineIdentifier
         )

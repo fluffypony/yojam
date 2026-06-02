@@ -10,8 +10,9 @@ final class ChangeReconciler {
     // isInstalled=false on both when removed from only one list.
     private var knownBrowserIds: Set<String> = []
     private var knownEmailIds: Set<String> = []
+    private var knownPhoneIds: Set<String> = []
     private var knownBundleIds: Set<String> {
-        knownBrowserIds.union(knownEmailIds)
+        knownBrowserIds.union(knownEmailIds).union(knownPhoneIds)
     }
     // P11: Cache (bundleId, appURL, mtime) to skip re-reading Info.plist
     // when the app binary hasn't changed on disk.
@@ -22,6 +23,7 @@ final class ChangeReconciler {
         self.ruleEngine = ruleEngine
         knownBrowserIds = Set(browserManager.browsers.map(\.bundleIdentifier))
         knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
+        knownPhoneIds = Set(browserManager.phoneClients.map(\.bundleIdentifier))
     }
 
     // P11: Resolve bundleId from appURL using mtime cache to skip redundant reads
@@ -81,6 +83,38 @@ final class ChangeReconciler {
         }
         if emailClientsChanged {
             browserManager.saveEmailClients()
+        }
+
+        // tel: handler discovery
+        let telHandlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "tel:+15551234567")!)
+        var phoneClientsChanged = false
+        for appURL in telHandlers {
+            guard let bundleId = cachedBundleId(for: appURL),
+                  bundleId != Bundle.main.bundleIdentifier else { continue }
+            currentIds.insert(bundleId)
+            knownPhoneIds.insert(bundleId)
+            if let existingIdx = browserManager.phoneClients.firstIndex(where: {
+                $0.bundleIdentifier == bundleId
+            }) {
+                if !browserManager.phoneClients[existingIdx].isInstalled {
+                    browserManager.phoneClients[existingIdx].isInstalled = true
+                    browserManager.phoneClients[existingIdx].lastSeenAt = Date()
+                    phoneClientsChanged = true
+                }
+            } else {
+                let name = (CFBundleCopyInfoDictionaryForURL(appURL as CFURL) as NSDictionary?)?["CFBundleName"] as? String
+                    ?? appURL.deletingPathExtension().lastPathComponent
+                let entry = BrowserEntry(
+                    bundleIdentifier: bundleId, displayName: name,
+                    position: browserManager.phoneClients.count,
+                    source: .autoDetected)
+                browserManager.phoneClients.append(entry)
+                phoneClientsChanged = true
+            }
+        }
+        if phoneClientsChanged {
+            browserManager.savePhoneClients()
         }
 
         // §9: Verify actual existence before removing — retain manual path-based entries
@@ -150,6 +184,7 @@ final class ChangeReconciler {
             knownBrowserIds.union(Set(httpHandlers.compactMap { cachedBundleId(for: $0) }))
         )
         knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
+        knownPhoneIds = Set(browserManager.phoneClients.map(\.bundleIdentifier))
 
         // Persist installed bundle IDs for CLI/native-host preview filtering
         let allInstalled = Array(knownBundleIds)

@@ -85,7 +85,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         guard let urlString = message["url"] as? String,
               let targetURL = URL(string: urlString),
               let scheme = targetURL.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme)
+              ["http", "https", "mailto", "tel"].contains(scheme)
         else {
             sendError(context, message: "Invalid URL")
             return

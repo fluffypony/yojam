@@ -508,8 +508,9 @@ struct PipelineTab: View {
     private func runTest() {
         URLTesterTip.hasTestedURL = true
         var input = testURL
-        // B-URLTESTER: Don't blindly prepend https:// for mailto/file schemes
-        if !input.contains("://") && !input.hasPrefix("mailto:") && !input.hasPrefix("file:") {
+        // B-URLTESTER: Don't blindly prepend https:// for mailto/tel/file schemes
+        if !input.contains("://") && !input.hasPrefix("mailto:")
+            && !input.hasPrefix("tel:") && !input.hasPrefix("file:") {
             input = "https://" + input
         }
         guard let url = URL(string: input) else {

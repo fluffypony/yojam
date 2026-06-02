@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.browserManager.browsers = self.settingsStore.loadBrowsers()
             self.browserManager.emailClients = self.settingsStore.loadEmailClients()
+            self.browserManager.phoneClients = self.settingsStore.loadPhoneClients()
             self.ruleEngine.reloadRules()
         }
         configFileManager?.start()
@@ -361,6 +362,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let emailClients = browserManager.emailClients.filter {
             $0.enabled && appURL(for: $0.bundleIdentifier) != nil
         }
+        let phoneClients = browserManager.phoneClients.filter {
+            $0.enabled && appURL(for: $0.bundleIdentifier) != nil
+        }
         let rules = RuleOrdering.enabled(ruleEngine.rules).filter { rule in
             // Pre-filter for installed targets (RoutingService has no NSWorkspace)
             let isPath = rule.targetBundleId.hasPrefix("/")
@@ -377,6 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return RoutingConfiguration(
             browsers: browsers,
             emailClients: emailClients,
+            phoneClients: phoneClients,
             rules: rules,
             globalRewriteRules: globalRules,
             utmStripParameters: utmParams,
@@ -387,6 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             learnedDomainPreferences: routingSuggestionEngine.allSuggestions(),
             lastUsedBrowserId: browserManager.lastUsedId(isEmail: false),
             lastUsedEmailClientId: browserManager.lastUsedId(isEmail: true),
+            lastUsedPhoneClientId: browserManager.lastUsedPhoneId(),
             currentMachineIdentifier: settingsStore.sharedStore.localMachineIdentifier
         )
     }
@@ -402,6 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .showPicker(_, _, let url, _, _): deduplicationURL = url
         case .openSystemDefault(let url): deduplicationURL = url
         case .openSystemMailHandler(let url): deduplicationURL = url
+        case .openSystemPhoneHandler(let url): deduplicationURL = url
         }
         let urlKey = deduplicationURL.absoluteString
         let now = Date()
@@ -491,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
         case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
+            let isPhone = finalURL.scheme?.lowercased() == "tel"
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
 
             let pickerMatchedRule: Rule?
@@ -512,7 +520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             guard !entries.isEmpty else {
-                if isEmail { NSWorkspace.shared.open(finalURL) }
+                if isEmail || isPhone { NSWorkspace.shared.open(finalURL) }
                 else { openInDefaultBrowser(finalURL) }
                 return
             }
@@ -553,6 +561,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .openSystemMailHandler(let url):
             NSWorkspace.shared.open(url)
+
+        case .openSystemPhoneHandler(let url):
+            openWithSystemPhoneHandler(url)
         }
     }
 
@@ -747,14 +758,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handlePickerSelection(
         entry: BrowserEntry, url: URL, isEmail: Bool, matchedRule: Rule? = nil
     ) {
+        let isPhone = url.scheme?.lowercased() == "tel"
         var finalURL = url
-        finalURL = urlRewriter.applyBrowserRewrites(
-            to: finalURL, browser: entry)
+        if !isEmail && !isPhone {
+            finalURL = urlRewriter.applyBrowserRewrites(
+                to: finalURL, browser: entry)
 
-        if entry.stripUTMParams {
-            finalURL = utmStripper.strip(finalURL)
-        } else if settingsStore.globalUTMStrippingEnabled {
-            finalURL = utmStripper.strip(finalURL)
+            if entry.stripUTMParams {
+                finalURL = utmStripper.strip(finalURL)
+            } else if settingsStore.globalUTMStrippingEnabled {
+                finalURL = utmStripper.strip(finalURL)
+            }
         }
 
         guard let appURL = appURL(for: entry.bundleIdentifier) else {
@@ -762,7 +776,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        browserManager.recordLastUsed(entry, isEmail: isEmail)
+        if isPhone {
+            browserManager.recordLastUsedPhone(entry)
+        } else {
+            browserManager.recordLastUsed(entry, isEmail: isEmail)
+        }
 
         if let domain = finalURL.host?.lowercased() {
             routingSuggestionEngine.recordChoice(
@@ -1095,6 +1113,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             userDataDirectory: first.userDataDirectory,
             customLaunchArgs: first.customLaunchArgs,
             openAsNewInstance: first.openAsNewInstance)
+    }
+
+    private func openWithSystemPhoneHandler(_ url: URL) {
+        let yojamBundleId = Bundle.main.bundleIdentifier
+        guard let appURL = NSWorkspace.shared.urlsForApplications(toOpen: url)
+            .first(where: { Bundle(url: $0)?.bundleIdentifier != yojamBundleId }) else {
+            YojamLogger.shared.log("No non-Yojam phone handler available for \(url.absoluteString)")
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        Task {
+            do {
+                _ = try await NSWorkspace.shared.open(
+                    [url], withApplicationAt: appURL, configuration: config)
+            } catch {
+                YojamLogger.shared.log(
+                    "Failed to open phone URL: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Resolve a browser entry's identifier to an app/executable URL.

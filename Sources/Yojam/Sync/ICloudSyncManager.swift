@@ -140,6 +140,18 @@ final class ICloudSyncManager {
         } catch {
             YojamLogger.shared.log("iCloud push email clients failed: \(error.localizedDescription)")
         }
+        do {
+            let phoneToSync = settingsStore.loadPhoneClients()
+                .filter { !$0.bundleIdentifier.hasPrefix("/") }
+                .map { entry -> BrowserEntry in
+                    var copy = entry
+                    copy.customIconData = nil
+                    return copy
+                }
+            payloads.append(("sync_phoneClients", try encoder.encode(phoneToSync)))
+        } catch {
+            YojamLogger.shared.log("iCloud push phone clients failed: \(error.localizedDescription)")
+        }
 
         // Check total size BEFORE committing anything to iCloud
         let totalBytes = payloads.reduce(0) { $0 + $1.data.count }
@@ -244,6 +256,19 @@ final class ICloudSyncManager {
                 browserManager?.emailClients = merged
             } catch {
                 YojamLogger.shared.log("iCloud pull email clients failed: \(error.localizedDescription)")
+            }
+        }
+
+        if let data = kvStore.data(forKey: "sync_phoneClients") {
+            do {
+                let remote = try decoder.decode([BrowserEntry].self, from: data)
+                    .filter { !$0.bundleIdentifier.hasPrefix("/") }
+                let merged = SyncConflictResolver.mergeBrowserLists(
+                    local: settingsStore.loadPhoneClients(), remote: remote)
+                settingsStore.savePhoneClients(merged)
+                browserManager?.phoneClients = merged
+            } catch {
+                YojamLogger.shared.log("iCloud pull phone clients failed: \(error.localizedDescription)")
             }
         }
 

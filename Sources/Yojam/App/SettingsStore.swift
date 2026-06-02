@@ -93,6 +93,7 @@ final class SettingsStore: ObservableObject {
         static let periodicRescanInterval = "periodicRescanInterval"
         static let browsers = "browsers"
         static let emailClients = "emailClients"
+        static let phoneClients = "phoneClients"
         static let rules = "rules"
         static let globalRewriteRules = "globalRewriteRules"
         static let utmStripList = "utmStripList"
@@ -395,6 +396,27 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    func savePhoneClients(_ clients: [BrowserEntry]) {
+        do {
+            let data = try JSONEncoder().encode(clients)
+            sharedDefaults.set(data, forKey: Keys.phoneClients)
+            objectWillChange.send()
+            routingDataDidChange.send()
+        } catch {
+            YojamLogger.shared.log("Failed to encode phone clients: \(error.localizedDescription)")
+        }
+    }
+
+    func loadPhoneClients() -> [BrowserEntry] {
+        guard let data = sharedDefaults.data(forKey: Keys.phoneClients) else { return [] }
+        do {
+            return try JSONDecoder().decode([BrowserEntry].self, from: data)
+        } catch {
+            YojamLogger.shared.log("Failed to decode phone clients: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     func saveRules(_ rules: [Rule]) {
         do {
             let data = try JSONEncoder().encode(rules)
@@ -520,6 +542,7 @@ final class SettingsStore: ObservableObject {
             periodicRescanInterval: periodicRescanInterval,
             browsers: loadBrowsers(),
             emailClients: loadEmailClients(),
+            phoneClients: loadPhoneClients(),
             // Include built-in overrides so round-trip preserves user edits.
             rules: loadRules(),
             globalRewriteRules: loadGlobalRewriteRules(),
@@ -599,8 +622,16 @@ final class SettingsStore: ObservableObject {
             }
             return e
         }
+        let sanitizedPhoneClients = imported.phoneClients.map { entry -> BrowserEntry in
+            var e = entry
+            if e.bundleIdentifier.hasPrefix("/") || e.customLaunchArgs != nil {
+                e.enabled = false
+            }
+            return e
+        }
         saveBrowsers(sanitizedBrowsers)
         saveEmailClients(sanitizedEmailClients)
+        savePhoneClients(sanitizedPhoneClients)
         // Validate regex patterns and disable imported rules that can execute
         // arbitrary commands. Users can re-enable them manually after review.
         // Rules with absolute-path `targetBundleId` are a code-execution vector
@@ -665,6 +696,7 @@ final class SettingsStore: ObservableObject {
         self.configFilePath = nil
         saveBrowsers([])
         saveEmailClients([])
+        savePhoneClients([])
         saveRules(BuiltInRules.all)
         saveGlobalRewriteRules(BuiltInRewriteRules.all)
         clearDeletedBuiltInRuleIds()
@@ -688,6 +720,7 @@ struct SettingsExport: Codable {
     var periodicRescanInterval: TimeInterval
     var browsers: [BrowserEntry]
     var emailClients: [BrowserEntry]
+    var phoneClients: [BrowserEntry]
     var rules: [Rule]
     var globalRewriteRules: [URLRewriteRule]
     var utmStripList: [String]
@@ -703,7 +736,7 @@ struct SettingsExport: Codable {
         case version, activationMode, defaultSelection, verticalThreshold
         case soundEffects, launchAtLogin, globalUTMStripping, clipboardMonitoring
         case iCloudSync, debugLoggingEnabled
-        case periodicRescanInterval, browsers, emailClients, rules
+        case periodicRescanInterval, browsers, emailClients, phoneClients, rules
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
         case pickerLayout, pickerDirectionOverride
         // Legacy key accepted on decode for migration from v4 exports.
@@ -728,6 +761,7 @@ struct SettingsExport: Codable {
         try c.encode(periodicRescanInterval, forKey: .periodicRescanInterval)
         try c.encode(browsers, forKey: .browsers)
         try c.encode(emailClients, forKey: .emailClients)
+        try c.encode(phoneClients, forKey: .phoneClients)
         try c.encode(rules, forKey: .rules)
         try c.encode(globalRewriteRules, forKey: .globalRewriteRules)
         try c.encode(utmStripList, forKey: .utmStripList)
@@ -746,6 +780,7 @@ struct SettingsExport: Codable {
          clipboardMonitoring: Bool, iCloudSync: Bool,
          debugLoggingEnabled: Bool, periodicRescanInterval: TimeInterval,
          browsers: [BrowserEntry], emailClients: [BrowserEntry],
+         phoneClients: [BrowserEntry] = [],
          rules: [Rule], globalRewriteRules: [URLRewriteRule],
          utmStripList: [String], suppressedClipboardDomains: [String] = [],
          pickerLayout: PickerLayout = .auto,
@@ -769,6 +804,7 @@ struct SettingsExport: Codable {
         self.periodicRescanInterval = periodicRescanInterval
         self.browsers = browsers
         self.emailClients = emailClients
+        self.phoneClients = phoneClients
         self.rules = rules
         self.globalRewriteRules = globalRewriteRules
         self.utmStripList = utmStripList
@@ -800,6 +836,7 @@ struct SettingsExport: Codable {
         periodicRescanInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .periodicRescanInterval) ?? 1800
         browsers = try container.decodeIfPresent([BrowserEntry].self, forKey: .browsers) ?? []
         emailClients = try container.decodeIfPresent([BrowserEntry].self, forKey: .emailClients) ?? []
+        phoneClients = try container.decodeIfPresent([BrowserEntry].self, forKey: .phoneClients) ?? []
         rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
         globalRewriteRules = try container.decodeIfPresent([URLRewriteRule].self, forKey: .globalRewriteRules) ?? []
         utmStripList = try container.decodeIfPresent([String].self, forKey: .utmStripList) ?? UTMStripper.defaultParameters
@@ -824,7 +861,7 @@ struct SettingsExport: Codable {
             .version, .activationMode, .defaultSelection, .verticalThreshold,
             .soundEffects, .launchAtLogin, .globalUTMStripping,
             .clipboardMonitoring, .iCloudSync, .debugLoggingEnabled,
-            .periodicRescanInterval, .browsers, .emailClients, .rules,
+            .periodicRescanInterval, .browsers, .emailClients, .phoneClients, .rules,
             .globalRewriteRules, .utmStripList, .suppressedClipboardDomains,
             .pickerLayout, .pickerDirectionOverride, .recentURLRetention,
             .recentURLRetentionMinutes, .deletedBuiltInRuleIds,

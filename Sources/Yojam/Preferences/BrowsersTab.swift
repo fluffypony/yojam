@@ -13,6 +13,7 @@ struct BrowsersTab: View {
     @State private var cachedProfiles: [String: [BrowserProfile]] = [:]
     @State private var hoveredBrowserId: UUID?
     @State private var draggedEmailId: UUID?
+    @State private var draggedPhoneId: UUID?
 
     private let browserOrderTip = BrowserOrderTip()
     private let customArgsTip = CustomLaunchArgsTip()
@@ -37,6 +38,7 @@ struct BrowsersTab: View {
                             suggestedSection.id("Suggested Browsers")
                         }
                         emailSection.id("Email Clients")
+                        phoneSection.id("Phone Clients")
                     }
                     .padding(.horizontal, 32)
                     .padding(.vertical, 24)
@@ -470,6 +472,72 @@ struct BrowsersTab: View {
         }
     }
 
+    // MARK: - Phone
+
+    private var phoneSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ThemeSectionTitle(text: "Phone Clients")
+            ThemeInlineHelp(text: HelpText.Browsers.phoneClients)
+            if browserManager.phoneClients.isEmpty {
+                ThemePanel {
+                    ThemeEmptyState(
+                        icon: "phone",
+                        title: "No phone clients found",
+                        message: "Yojam will fall back to your system default for tel: links.")
+                }
+            } else {
+                ThemePanel {
+                    ForEach(Array(browserManager.phoneClients.enumerated()), id: \.element.id) { index, client in
+                        ThemePanelRow(isLast: index == browserManager.phoneClients.count - 1) {
+                            Text("\u{22EE}\u{22EE}")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Theme.textSecondary.opacity(0.5))
+                                .help("Drag to reorder")
+                                .onDrag {
+                                    draggedPhoneId = client.id
+                                    return NSItemProvider(object: client.id.uuidString as NSString)
+                                }
+                            Image(nsImage: browserManager.icon(for: client))
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            Text(client.displayName)
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.textPrimary)
+                                .padding(.leading, 8)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(client.isInstalled ? Theme.success : Theme.textSecondary)
+                                    .frame(width: 6, height: 6)
+                                Text(client.isInstalled ? "Installed" : "Not Found")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(client.isInstalled ? Theme.success : Theme.textSecondary)
+                            }
+                            .padding(.trailing, 8)
+                            ThemeToggle(isOn: Binding(
+                                get: {
+                                    browserManager.phoneClients.first(where: { $0.id == client.id })?.enabled ?? client.enabled
+                                },
+                                set: { newValue in
+                                    guard let idx = browserManager.phoneClients.firstIndex(where: { $0.id == client.id }) else { return }
+                                    browserManager.phoneClients[idx].enabled = newValue
+                                    settingsStore.savePhoneClients(browserManager.phoneClients)
+                                }
+                            ))
+                        }
+                        .onDrop(of: [.text], delegate: PhoneDropDelegate(
+                            currentId: client.id,
+                            draggedId: $draggedPhoneId,
+                            browserManager: browserManager,
+                            settingsStore: settingsStore
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Add Custom App / Executable
 
     private func addCustomApp() {
@@ -672,6 +740,41 @@ struct EmailDropDelegate: DropDelegate {
                     fromOffsets: IndexSet(integer: fromIndex),
                     toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
                 settingsStore.saveEmailClients(browserManager.emailClients)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
+    }
+}
+
+struct PhoneDropDelegate: DropDelegate {
+    let currentId: UUID
+    @Binding var draggedId: UUID?
+    let browserManager: BrowserManager
+    let settingsStore: SettingsStore
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedId = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != currentId else { return }
+        guard let fromIndex = browserManager.phoneClients.firstIndex(where: { $0.id == draggedId }),
+              let toIndex = browserManager.phoneClients.firstIndex(where: { $0.id == currentId })
+        else { return }
+        if fromIndex != toIndex {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                browserManager.phoneClients.move(
+                    fromOffsets: IndexSet(integer: fromIndex),
+                    toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+                settingsStore.savePhoneClients(browserManager.phoneClients)
             }
         }
     }

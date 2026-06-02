@@ -25,6 +25,7 @@ final class NativeHostProtocolTests: XCTestCase {
             "https://example.com/path?key=value&other=123",
             "https://example.com/path#fragment",
             "mailto:user@example.com",
+            "tel:+15551234567",
         ]
         for urlString in urls {
             let target = URL(string: urlString)!
@@ -73,7 +74,7 @@ final class NativeHostProtocolTests: XCTestCase {
         // buildRoute succeeds but parse should reject non-http
         if let builtURL = result {
             let command = YojamCommand.parse(builtURL)
-            // Should be nil because ftp is not http/https/mailto
+            // Should be nil because ftp is not http/https/mailto/tel
             XCTAssertNil(command, "Should reject ftp:// target")
         }
     }
@@ -83,26 +84,32 @@ final class NativeHostProtocolTests: XCTestCase {
         let jsURL = URL(string: "javascript:alert(1)")!
         let scheme = jsURL.scheme?.lowercased() ?? ""
         XCTAssertFalse(
-            ["http", "https", "mailto"].contains(scheme),
+            ["http", "https", "mailto", "tel"].contains(scheme),
             "javascript: scheme should not pass validation")
     }
 
     func testAcceptsHTTPS() {
         let url = URL(string: "https://example.com")!
         let scheme = url.scheme?.lowercased() ?? ""
-        XCTAssertTrue(["http", "https", "mailto"].contains(scheme))
+        XCTAssertTrue(["http", "https", "mailto", "tel"].contains(scheme))
     }
 
     func testAcceptsHTTP() {
         let url = URL(string: "http://example.com")!
         let scheme = url.scheme?.lowercased() ?? ""
-        XCTAssertTrue(["http", "https", "mailto"].contains(scheme))
+        XCTAssertTrue(["http", "https", "mailto", "tel"].contains(scheme))
     }
 
     func testAcceptsMailto() {
         let url = URL(string: "mailto:user@example.com")!
         let scheme = url.scheme?.lowercased() ?? ""
-        XCTAssertTrue(["http", "https", "mailto"].contains(scheme))
+        XCTAssertTrue(["http", "https", "mailto", "tel"].contains(scheme))
+    }
+
+    func testAcceptsTel() {
+        let url = URL(string: "tel:+15551234567")!
+        let scheme = url.scheme?.lowercased() ?? ""
+        XCTAssertTrue(["http", "https", "mailto", "tel"].contains(scheme))
     }
 
     // MARK: - Default source sentinel fallback

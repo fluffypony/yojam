@@ -11,6 +11,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
     private func makeConfig(
         browsers: [BrowserEntry] = [],
         emailClients: [BrowserEntry] = [],
+        phoneClients: [BrowserEntry] = [],
         rules: [Rule] = [],
         activationMode: ActivationMode = .always,
         defaultSelection: DefaultSelectionBehavior = .alwaysFirst,
@@ -21,6 +22,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
     ) -> RoutingConfiguration {
         RoutingConfiguration(
             browsers: browsers, emailClients: emailClients,
+            phoneClients: phoneClients,
             rules: rules, globalRewriteRules: [],
             utmStripParameters: utmParams,
             globalUTMStrippingEnabled: globalUTMStripping,
@@ -30,6 +32,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             learnedDomainPreferences: [:],
             lastUsedBrowserId: nil,
             lastUsedEmailClientId: nil,
+            lastUsedPhoneClientId: nil,
             shortlinkResolutionEnabled: false,
             currentMachineIdentifier: currentMachineIdentifier
         )
@@ -41,6 +44,8 @@ final class RoutingServiceDecisionTests: XCTestCase {
         bundleIdentifier: "org.mozilla.firefox", displayName: "Firefox")
     private let mail = BrowserEntry(
         bundleIdentifier: "com.apple.mail", displayName: "Mail")
+    private let faceTime = BrowserEntry(
+        bundleIdentifier: "com.apple.FaceTime", displayName: "FaceTime")
 
     // MARK: - Disabled routing
 
@@ -445,6 +450,85 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
+    // MARK: - Tel handling
+
+    func testTelShowsPhonePicker() {
+        let config = makeConfig(
+            phoneClients: [faceTime], activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+            XCTAssertFalse(isEmail)
+            XCTAssertEqual(finalURL.scheme, "tel")
+            XCTAssertEqual(entries.first?.bundleIdentifier, "com.apple.FaceTime")
+        } else {
+            XCTFail("tel: in always mode should show phone picker")
+        }
+    }
+
+    func testTelNoClientsUsesSystemPhoneHandler() {
+        let config = makeConfig(phoneClients: [], activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openSystemPhoneHandler = decision {} else {
+            XCTFail("tel: with no clients should use system phone handler")
+        }
+    }
+
+    func testTelIgnoresBroadAllURLsBrowserRule() {
+        let broadRule = Rule(
+            name: "All URLs", matchType: .all, pattern: "",
+            targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox")
+        let config = makeConfig(
+            browsers: [firefox],
+            phoneClients: [faceTime],
+            rules: [broadRule],
+            activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+            XCTAssertFalse(isEmail)
+            XCTAssertEqual(finalURL.scheme, "tel")
+            XCTAssertEqual(entries.map(\.bundleIdentifier), ["com.apple.FaceTime"])
+        } else {
+            XCTFail("tel: should use phone clients, not broad browser rules")
+        }
+    }
+
+    func testTelIgnoresForcedBrowserOverride() {
+        let config = makeConfig(
+            browsers: [firefox],
+            phoneClients: [faceTime],
+            activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "tel:+15551234567")!,
+            origin: .urlScheme,
+            forcedBrowserBundleId: "org.mozilla.firefox")
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+            XCTAssertFalse(isEmail)
+            XCTAssertEqual(finalURL.scheme, "tel")
+            XCTAssertEqual(entries.map(\.bundleIdentifier), ["com.apple.FaceTime"])
+        } else {
+            XCTFail("tel: should ignore browser overrides and use phone clients")
+        }
+    }
+
+    func testDisabledRoutingWithTelUsesSystemPhoneHandler() {
+        let config = makeConfig(phoneClients: [faceTime], isEnabled: false)
+        let request = IncomingLinkRequest(
+            url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
+        let decision = RoutingService.decide(request: request, configuration: config)
+        if case .openSystemPhoneHandler = decision {} else {
+            XCTFail("Disabled routing with tel: should use system phone handler")
+        }
+    }
+
     // MARK: - Empty browsers
 
     func testEmptyBrowsersFallsToSystemDefault() {
@@ -502,6 +586,15 @@ final class RoutingServiceDecisionTests: XCTestCase {
         XCTAssertEqual(preview.kind, .showPicker)
         XCTAssertEqual(preview.pickerCandidates?.count, 2)
         XCTAssertEqual(preview.preselectedDisplayName, "Chrome")
+    }
+
+    func testPreviewFromSystemPhoneHandler() {
+        let decision = RouteDecision.openSystemPhoneHandler(
+            URL(string: "tel:+15551234567")!)
+        let preview = RouteDecisionPreview.from(decision)
+        XCTAssertEqual(preview.kind, .openSystemPhoneHandler)
+        XCTAssertTrue(preview.isPhone)
+        XCTAssertFalse(preview.isEmail)
     }
 
     // MARK: - RoutingSnapshotLoader

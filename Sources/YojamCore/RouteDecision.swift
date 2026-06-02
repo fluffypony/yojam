@@ -14,4 +14,7 @@ public enum RouteDecision: Sendable, Equatable {
 
     /// Hand the mailto URL to the system mail handler.
     case openSystemMailHandler(URL)
+
+    /// Hand the tel URL to the system phone handler.
+    case openSystemPhoneHandler(URL)
 }

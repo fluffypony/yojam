@@ -23,6 +23,8 @@ enum DefaultBrowserManager {
                     at: bundleURL, toOpenURLsWithScheme: "https")
                 try await NSWorkspace.shared.setDefaultApplication(
                     at: bundleURL, toOpenURLsWithScheme: "mailto")
+                try await NSWorkspace.shared.setDefaultApplication(
+                    at: bundleURL, toOpenURLsWithScheme: "tel")
                 YojamLogger.shared.log("Registered as default browser (NSWorkspace)")
             } catch {
                 YojamLogger.shared.log("NSWorkspace registration failed: \(error)")
@@ -36,6 +38,7 @@ enum DefaultBrowserManager {
             ("http", LSSetDefaultHandlerForURLScheme("http" as CFString, cfBundleId)),
             ("https", LSSetDefaultHandlerForURLScheme("https" as CFString, cfBundleId)),
             ("mailto", LSSetDefaultHandlerForURLScheme("mailto" as CFString, cfBundleId)),
+            ("tel", LSSetDefaultHandlerForURLScheme("tel" as CFString, cfBundleId)),
             ("yojam", LSSetDefaultHandlerForURLScheme("yojam" as CFString, cfBundleId)),
         ]
         for (scheme, status) in schemeResults where status != noErr {
@@ -68,14 +71,19 @@ enum DefaultBrowserManager {
     static var isDefaultBrowser: Bool {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
 
-        if let appURL = NSWorkspace.shared.urlForApplication(
-            toOpen: URL(string: "https://example.com")!
-        ), let defaultBundle = Bundle(url: appURL),
-           defaultBundle.bundleIdentifier == bundleId {
-            return true
+        let urls = [
+            URL(string: "https://example.com")!,
+            URL(string: "mailto:test@example.com")!,
+            URL(string: "tel:+15551234567")!,
+        ]
+        for url in urls {
+            guard let appURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+                  let defaultBundle = Bundle(url: appURL),
+                  defaultBundle.bundleIdentifier == bundleId else {
+                return false
+            }
         }
-
-        return false
+        return true
     }
 
     /// Check if Yojam is registered as the handler for .webloc files.

@@ -437,6 +437,7 @@ struct AdvancedTab: View {
     private func reloadLiveRoutingData() {
         browserManager.browsers = settingsStore.loadBrowsers()
         browserManager.emailClients = settingsStore.loadEmailClients()
+        browserManager.phoneClients = settingsStore.loadPhoneClients()
         ruleEngine.reloadRules()
     }
 
@@ -536,14 +537,18 @@ struct AdvancedTab: View {
     private func redetectBrowsers() {
         settingsStore.saveBrowsers([])
         settingsStore.saveEmailClients([])
+        settingsStore.savePhoneClients([])
         settingsStore.sharedStore.defaults.removeObject(forKey: "browsers")
         settingsStore.sharedStore.defaults.removeObject(forKey: "emailClients")
+        settingsStore.sharedStore.defaults.removeObject(forKey: "phoneClients")
         browserManager.browsers = []
         browserManager.suggestedBrowsers = []
         browserManager.emailClients = []
+        browserManager.phoneClients = []
         let fresh = BrowserManager(settingsStore: settingsStore)
         browserManager.browsers = fresh.browsers
         browserManager.emailClients = fresh.emailClients
+        browserManager.phoneClients = fresh.phoneClients
         browserManager.suggestedBrowsers = fresh.suggestedBrowsers
     }
 

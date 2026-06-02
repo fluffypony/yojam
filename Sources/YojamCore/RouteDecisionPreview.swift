@@ -6,7 +6,7 @@ import Foundation
 /// like `customIconData`.
 public struct RouteDecisionPreview: Codable, Sendable {
     public enum Kind: String, Codable, Sendable {
-        case openDirect, showPicker, openSystemDefault, openSystemMailHandler
+        case openDirect, showPicker, openSystemDefault, openSystemMailHandler, openSystemPhoneHandler
     }
 
     public let kind: Kind
@@ -17,6 +17,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
     public let reason: String?
     public let privateWindow: Bool
     public let isEmail: Bool
+    public let isPhone: Bool
     public let preselectedDisplayName: String?
     public let pickerCandidates: [PickerCandidate]?
 
@@ -33,6 +34,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
     public init(kind: Kind, summary: String, targetBundleId: String?,
                 targetDisplayName: String?, finalURL: String,
                 reason: String?, privateWindow: Bool, isEmail: Bool,
+                isPhone: Bool = false,
                 preselectedDisplayName: String?,
                 pickerCandidates: [PickerCandidate]?) {
         self.kind = kind
@@ -43,6 +45,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
         self.reason = reason
         self.privateWindow = privateWindow
         self.isEmail = isEmail
+        self.isPhone = isPhone
         self.preselectedDisplayName = preselectedDisplayName
         self.pickerCandidates = pickerCandidates
     }
@@ -51,6 +54,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
         switch decision {
         case .openDirect(let browser, let finalURL, let privateWindow, let reason):
             let isMailto = finalURL.scheme?.lowercased() == "mailto"
+            let isPhone = finalURL.scheme?.lowercased() == "tel"
             return RouteDecisionPreview(
                 kind: .openDirect,
                 summary: "Would open in \(browser.fullDisplayName)",
@@ -60,11 +64,13 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 reason: reason,
                 privateWindow: privateWindow,
                 isEmail: isMailto,
+                isPhone: isPhone,
                 preselectedDisplayName: nil,
                 pickerCandidates: nil
             )
 
         case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
+            let isPhone = finalURL.scheme?.lowercased() == "tel"
             let preselected = entries.indices.contains(preselectedIndex)
                 ? entries[preselectedIndex].fullDisplayName : nil
             let candidates = entries.map {
@@ -81,6 +87,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 reason: reason,
                 privateWindow: false,
                 isEmail: isEmail,
+                isPhone: isPhone,
                 preselectedDisplayName: preselected,
                 pickerCandidates: candidates
             )
@@ -95,6 +102,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 reason: nil,
                 privateWindow: false,
                 isEmail: false,
+                isPhone: false,
                 preselectedDisplayName: nil,
                 pickerCandidates: nil
             )
@@ -109,6 +117,22 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 reason: nil,
                 privateWindow: false,
                 isEmail: true,
+                isPhone: false,
+                preselectedDisplayName: nil,
+                pickerCandidates: nil
+            )
+
+        case .openSystemPhoneHandler(let url):
+            return RouteDecisionPreview(
+                kind: .openSystemPhoneHandler,
+                summary: "Would open via system phone handler",
+                targetBundleId: nil,
+                targetDisplayName: nil,
+                finalURL: url.absoluteString,
+                reason: nil,
+                privateWindow: false,
+                isEmail: false,
+                isPhone: true,
                 preselectedDisplayName: nil,
                 pickerCandidates: nil
             )

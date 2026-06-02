@@ -28,23 +28,32 @@ public enum RoutingService {
             if url.scheme?.lowercased() == "mailto" {
                 return .openSystemMailHandler(url)
             }
+            if url.scheme?.lowercased() == "tel" {
+                return .openSystemPhoneHandler(url)
+            }
             return .openSystemDefault(url)
         }
 
+        let originalScheme = url.scheme?.lowercased()
+        let isMailto = originalScheme == "mailto"
+        let isTel = originalScheme == "tel"
         var processedURL = url
 
-        // Global rewrites.
-        processedURL = applyRewrites(configuration.globalRewriteRules, to: processedURL)
-
-        let isMailto = processedURL.scheme?.lowercased() == "mailto"
-
-        // Global UTM stripping (skip for mailto).
-        if configuration.globalUTMStrippingEnabled && !isMailto {
-            processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
+        // Global rewrites are for web/mail URLs; phone links should stay intact.
+        if !isTel {
+            processedURL = applyRewrites(configuration.globalRewriteRules, to: processedURL)
         }
 
-        // Forced browser from yojam:// browser= parameter.
-        if let forcedBundleId = request.forcedBrowserBundleId,
+        // Global UTM stripping is web-only.
+        if configuration.globalUTMStrippingEnabled && !isMailto && !isTel {
+            processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
+        }
+        let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
+
+        // Forced browser from yojam:// browser= parameter. Phone links stay in
+        // the phone-client flow even if a stale browser override is present.
+        if !isTel,
+           let forcedBundleId = request.forcedBrowserBundleId,
            let entry = configuration.browsers.first(where: {
                $0.bundleIdentifier == forcedBundleId
            }) {
@@ -59,28 +68,39 @@ public enum RoutingService {
 
         // Forced picker.
         if request.forcePicker {
-            let entries = isMailto ? configuration.emailClients : configuration.browsers
+            let entries = pickerEntries(
+                isMailto: isMailto, isTel: isTel, configuration: configuration)
             guard !entries.isEmpty else {
-                return isMailto ? .openSystemMailHandler(processedURL) : .openSystemDefault(processedURL)
+                if isMailto { return .openSystemMailHandler(processedURL) }
+                if isTel { return .openSystemPhoneHandler(processedURL) }
+                return .openSystemDefault(processedURL)
             }
             let preselected = resolveDefaultIndex(
-                entries: entries, url: processedURL, isEmail: isMailto, configuration: configuration)
+                entries: entries, url: processedURL,
+                kind: linkKind(isMailto: isMailto, isTel: isTel),
+                configuration: configuration)
             return .showPicker(entries: entries, preselectedIndex: preselected,
                                finalURL: processedURL, isEmail: isMailto, reason: nil)
         }
 
-        // Rule evaluation.
-        let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
+        // Phone links are routed through the phone-client path, not generic
+        // web rules like "All URLs -> Work Browser".
+        if isTel {
+            return decidePhone(processedURL, shiftHeld: shiftHeld,
+                               forcePrivate: request.forcePrivateWindow,
+                               configuration: configuration)
+        }
 
+        // Rule evaluation.
         if let rule = evaluateRules(configuration.rules, url: processedURL,
                                     sourceAppBundleId: request.sourceAppBundleId,
                                     machineIdentifier: configuration.currentMachineIdentifier) {
             processedURL = applyRewrites(rule.rewriteRules.filter(\.enabled), to: processedURL)
 
             let matchedEntry = matchedBrowserEntry(for: rule, in: configuration.browsers)
-            if rule.stripUTMParams {
+            if !isTel && rule.stripUTMParams {
                 processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
-            } else if let entry = matchedEntry, entry.stripUTMParams {
+            } else if !isTel, let entry = matchedEntry, entry.stripUTMParams {
                 processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
             }
 
@@ -136,7 +156,7 @@ public enum RoutingService {
             let entries = configuration.browsers
             guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
             let preselected = resolveDefaultIndex(
-                entries: entries, url: processedURL, isEmail: false, configuration: configuration)
+                entries: entries, url: processedURL, kind: .browser, configuration: configuration)
             return .showPicker(entries: entries, preselectedIndex: preselected,
                                finalURL: processedURL, isEmail: false, reason: nil)
 
@@ -157,7 +177,7 @@ public enum RoutingService {
             let entries = configuration.browsers
             guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
             let preselected = resolveDefaultIndex(
-                entries: entries, url: processedURL, isEmail: false, configuration: configuration)
+                entries: entries, url: processedURL, kind: .browser, configuration: configuration)
             return .showPicker(entries: entries, preselectedIndex: preselected,
                                finalURL: processedURL, isEmail: false, reason: nil)
 
@@ -166,7 +186,7 @@ public enum RoutingService {
                 let entries = configuration.browsers
                 guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
                 let preselected = resolveDefaultIndex(
-                    entries: entries, url: processedURL, isEmail: false, configuration: configuration)
+                    entries: entries, url: processedURL, kind: .browser, configuration: configuration)
                 return .showPicker(entries: entries, preselectedIndex: preselected,
                                    finalURL: processedURL, isEmail: false, reason: nil)
             }
@@ -187,7 +207,7 @@ public enum RoutingService {
         if configuration.activationMode == .holdShift && shiftHeld {
             guard !clients.isEmpty else { return .openSystemMailHandler(url) }
             let preselected = resolveDefaultIndex(
-                entries: clients, url: url, isEmail: true, configuration: configuration)
+                entries: clients, url: url, kind: .email, configuration: configuration)
             return .showPicker(entries: clients, preselectedIndex: preselected,
                                finalURL: url, isEmail: true, reason: nil)
         }
@@ -210,9 +230,50 @@ public enum RoutingService {
 
         guard !clients.isEmpty else { return .openSystemMailHandler(url) }
         let preselected = resolveDefaultIndex(
-            entries: clients, url: url, isEmail: true, configuration: configuration)
+            entries: clients, url: url, kind: .email, configuration: configuration)
         return .showPicker(entries: clients, preselectedIndex: preselected,
                            finalURL: url, isEmail: true, reason: nil)
+    }
+
+    // MARK: - Tel
+
+    private static func decidePhone(
+        _ url: URL,
+        shiftHeld: Bool,
+        forcePrivate: Bool,
+        configuration: RoutingConfiguration
+    ) -> RouteDecision {
+        let clients = configuration.phoneClients
+
+        if configuration.activationMode == .holdShift && shiftHeld {
+            guard !clients.isEmpty else { return .openSystemPhoneHandler(url) }
+            let preselected = resolveDefaultIndex(
+                entries: clients, url: url, kind: .phone, configuration: configuration)
+            return .showPicker(entries: clients, preselectedIndex: preselected,
+                               finalURL: url, isEmail: false, reason: nil)
+        }
+
+        if configuration.activationMode == .holdShift && !shiftHeld {
+            if let client = clients.first {
+                let priv = forcePrivate || client.openInPrivateWindow
+                return .openDirect(browser: client, finalURL: url,
+                                   privateWindow: priv, reason: "Default phone client")
+            }
+            return .openSystemPhoneHandler(url)
+        }
+
+        if configuration.activationMode != .always, clients.count == 1,
+           let client = clients.first {
+            let priv = forcePrivate || client.openInPrivateWindow
+            return .openDirect(browser: client, finalURL: url,
+                               privateWindow: priv, reason: "Only phone client")
+        }
+
+        guard !clients.isEmpty else { return .openSystemPhoneHandler(url) }
+        let preselected = resolveDefaultIndex(
+            entries: clients, url: url, kind: .phone, configuration: configuration)
+        return .showPicker(entries: clients, preselectedIndex: preselected,
+                           finalURL: url, isEmail: false, reason: nil)
     }
 
     // MARK: - Rule Evaluation
@@ -263,7 +324,7 @@ public enum RoutingService {
         guard let scheme = url.scheme?.lowercased() else { return nil }
         guard url.absoluteString.count <= 32_768 else { return nil }
         switch scheme {
-        case "http", "https", "mailto": return url
+        case "http", "https", "mailto", "tel": return url
         case "file":
             // Local files (HTML/XHTML/HTM) reach here when Yojam is the
             // registered default handler. Require a real file URL with a
@@ -300,8 +361,28 @@ public enum RoutingService {
 
     // MARK: - Default Selection
 
+    private enum LinkKind {
+        case browser, email, phone
+    }
+
+    private static func pickerEntries(
+        isMailto: Bool,
+        isTel: Bool,
+        configuration: RoutingConfiguration
+    ) -> [BrowserEntry] {
+        if isMailto { return configuration.emailClients }
+        if isTel { return configuration.phoneClients }
+        return configuration.browsers
+    }
+
+    private static func linkKind(isMailto: Bool, isTel: Bool) -> LinkKind {
+        if isMailto { return .email }
+        if isTel { return .phone }
+        return .browser
+    }
+
     private static func resolveDefaultIndex(
-        entries: [BrowserEntry], url: URL, isEmail: Bool,
+        entries: [BrowserEntry], url: URL, kind: LinkKind,
         configuration: RoutingConfiguration
     ) -> Int {
         guard !entries.isEmpty else { return 0 }
@@ -309,7 +390,12 @@ public enum RoutingService {
         case .alwaysFirst:
             return 0
         case .lastUsed:
-            let lastId = isEmail ? configuration.lastUsedEmailClientId : configuration.lastUsedBrowserId
+            let lastId: UUID?
+            switch kind {
+            case .browser: lastId = configuration.lastUsedBrowserId
+            case .email: lastId = configuration.lastUsedEmailClientId
+            case .phone: lastId = configuration.lastUsedPhoneClientId
+            }
             if let lastId, let idx = entries.firstIndex(where: { $0.id == lastId }) {
                 return idx
             }

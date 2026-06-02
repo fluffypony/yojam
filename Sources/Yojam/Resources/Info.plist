@@ -78,6 +78,14 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
+			<string>Phone URL</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tel</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
 			<string>Yojam Control</string>
 			<key>CFBundleURLSchemes</key>
 			<array>

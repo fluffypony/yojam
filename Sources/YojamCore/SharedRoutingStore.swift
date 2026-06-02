@@ -45,6 +45,7 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
     public enum Keys {
         public static let browsers = "browsers"
         public static let emailClients = "emailClients"
+        public static let phoneClients = "phoneClients"
         public static let rules = "rules"
         public static let globalRewriteRules = "globalRewriteRules"
         public static let utmStripList = "utmStripList"
@@ -60,6 +61,7 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
         public static let shortlinkResolutionEnabled = "shortlinkResolutionEnabled"
         public static let lastUsedBrowserId = "lastUsedBrowserId"
         public static let lastUsedEmailId = "lastUsedEmailId"
+        public static let lastUsedPhoneId = "lastUsedPhoneId"
         public static let installedBundleIds = "installedBundleIds"
         public static let localMachineIdentifier = "localMachineIdentifier"
         public static let localMachineName = "localMachineName"

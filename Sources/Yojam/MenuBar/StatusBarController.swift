@@ -90,8 +90,9 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
 
         let activeBrowsers = browserManager.browsers.filter(\.enabled).count
         let activeClients = browserManager.emailClients.filter(\.enabled).count
+        let activePhoneClients = browserManager.phoneClients.filter(\.enabled).count
         let statsItem = NSMenuItem(
-            title: "\(activeBrowsers) browser\(activeBrowsers == 1 ? "" : "s"), \(activeClients) mail client\(activeClients == 1 ? "" : "s")",
+            title: "\(activeBrowsers) browser\(activeBrowsers == 1 ? "" : "s"), \(activeClients) mail client\(activeClients == 1 ? "" : "s"), \(activePhoneClients) phone client\(activePhoneClients == 1 ? "" : "s")",
             action: nil, keyEquivalent: "")
         statsItem.isEnabled = false
         menu.addItem(statsItem)

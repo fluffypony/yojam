@@ -88,7 +88,7 @@ while let req = readMessage() {
     case "route":
         guard let targetURL = URL(string: req.url),
               let scheme = targetURL.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme),
+              ["http", "https", "mailto", "tel"].contains(scheme),
               req.url.count <= 32_768
         else {
             writeMessage(HostResponse(ok: false, preview: nil, error: "Invalid URL"))
@@ -131,7 +131,7 @@ while let req = readMessage() {
     case "preview":
         guard let targetURL = URL(string: req.url),
               let scheme = targetURL.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme),
+              ["http", "https", "mailto", "tel"].contains(scheme),
               req.url.count <= 32_768
         else {
             writeMessage(HostResponse(ok: false, preview: nil, error: "Invalid URL"))

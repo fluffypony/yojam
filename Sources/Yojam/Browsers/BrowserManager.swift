@@ -7,6 +7,7 @@ final class BrowserManager: ObservableObject {
     @Published var browsers: [BrowserEntry] = []
     @Published var suggestedBrowsers: [BrowserEntry] = []
     @Published var emailClients: [BrowserEntry] = []
+    @Published var phoneClients: [BrowserEntry] = []
 
     private let settingsStore: SettingsStore
     private let iconResolver = IconResolver.shared
@@ -15,8 +16,10 @@ final class BrowserManager: ObservableObject {
         self.settingsStore = settingsStore
         self.browsers = settingsStore.loadBrowsers()
         self.emailClients = settingsStore.loadEmailClients()
+        self.phoneClients = settingsStore.loadPhoneClients()
         if settingsStore.sharedStore.defaults.data(forKey: "browsers") == nil { performInitialDetection() }
         if settingsStore.sharedStore.defaults.data(forKey: "emailClients") == nil { addDefaultEmailClients() }
+        if settingsStore.sharedStore.defaults.data(forKey: "phoneClients") == nil { addDefaultPhoneClients() }
         deduplicateProfileEntries()
         refreshProfileSuggestions()
     }
@@ -110,6 +113,40 @@ final class BrowserManager: ObservableObject {
         settingsStore.saveEmailClients(emailClients)
     }
 
+    private func addDefaultPhoneClients() {
+        let telHandlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "tel:+15551234567")!)
+        var seenBundleIds = Set<String>()
+        var pos = 0
+        for appURL in telHandlers {
+            guard let bundle = Bundle(url: appURL),
+                  let bundleId = bundle.bundleIdentifier,
+                  !YojamBundleIDs.isOwnedByYojam(bundleId),
+                  !seenBundleIds.contains(bundleId) else { continue }
+            seenBundleIds.insert(bundleId)
+            let name = bundle.infoDictionary?["CFBundleName"] as? String
+                ?? appURL.deletingPathExtension().lastPathComponent
+            phoneClients.append(BrowserEntry(
+                bundleIdentifier: bundleId, displayName: name,
+                position: pos, source: .autoDetected))
+            pos += 1
+        }
+        let knownPhoneClients: [(String, String)] = [
+            ("com.apple.FaceTime", "FaceTime"),
+            ("com.microsoft.teams2", "Teams"),
+        ]
+        for (bundleId, name) in knownPhoneClients {
+            guard !seenBundleIds.contains(bundleId),
+                  NSWorkspace.shared.urlForApplication(
+                      withBundleIdentifier: bundleId) != nil else { continue }
+            phoneClients.append(BrowserEntry(
+                bundleIdentifier: bundleId, displayName: name,
+                position: pos, source: .autoDetected))
+            pos += 1
+        }
+        settingsStore.savePhoneClients(phoneClients)
+    }
+
     // MARK: - CRUD
 
     func addBrowser(_ entry: BrowserEntry) {
@@ -173,6 +210,17 @@ final class BrowserManager: ObservableObject {
     func recordLastUsed(_ entry: BrowserEntry, isEmail: Bool) {
         let key = isEmail ? "lastUsedEmailId" : "lastUsedBrowserId"
         settingsStore.sharedStore.defaults.set(entry.id.uuidString, forKey: key)
+    }
+
+    func lastUsedPhoneId() -> UUID? {
+        guard let idString = settingsStore.sharedStore.defaults.string(
+            forKey: SharedRoutingStore.Keys.lastUsedPhoneId) else { return nil }
+        return UUID(uuidString: idString)
+    }
+
+    func recordLastUsedPhone(_ entry: BrowserEntry) {
+        settingsStore.sharedStore.defaults.set(
+            entry.id.uuidString, forKey: SharedRoutingStore.Keys.lastUsedPhoneId)
     }
 
     /// Regenerate suggested browser entries for profiles not yet in the active list.
@@ -298,6 +346,14 @@ final class BrowserManager: ObservableObject {
         }
         if emailChanged { saveEmailClients() }
 
+        var phoneChanged = false
+        for i in phoneClients.indices where phoneClients[i].bundleIdentifier == bundleId {
+            phoneClients[i].isInstalled = true
+            phoneClients[i].lastSeenAt = Date()
+            phoneChanged = true
+        }
+        if phoneChanged { savePhoneClients() }
+
         if browsersChanged { return }
 
         // ChangeReconciler only calls this for apps from urlsForApplications(toOpen: https://)
@@ -333,10 +389,22 @@ final class BrowserManager: ObservableObject {
         if emailChanged {
             settingsStore.saveEmailClients(emailClients)
         }
+        var phoneChanged = false
+        for i in phoneClients.indices where phoneClients[i].bundleIdentifier == bundleId {
+            phoneClients[i].isInstalled = false
+            phoneChanged = true
+        }
+        if phoneChanged {
+            settingsStore.savePhoneClients(phoneClients)
+        }
     }
 
     func saveEmailClients() {
         settingsStore.saveEmailClients(emailClients)
+    }
+
+    func savePhoneClients() {
+        settingsStore.savePhoneClients(phoneClients)
     }
 
     private func reindex() {

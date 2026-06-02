@@ -25,16 +25,24 @@ public enum YojamCommand: Sendable {
         case "route", "open":
             guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                   let queryItems = components.queryItems,
-                  let urlParam = queryItems.first(where: { $0.name == "url" })?.value,
-                  let targetURL = URL(string: urlParam)
+                  let urlParam = queryItems.first(where: { $0.name == "url" })?.value
             else { return nil }
+            let normalizedURLParam: String
+            if urlParam.lowercased().hasPrefix("tel:") {
+                normalizedURLParam = urlParam
+                    .replacingOccurrences(of: "%2B", with: "+")
+                    .replacingOccurrences(of: "%2b", with: "+")
+            } else {
+                normalizedURLParam = urlParam
+            }
+            guard let targetURL = URL(string: normalizedURLParam) else { return nil }
 
             // Reject recursive yojam:// URLs.
             guard targetURL.scheme?.lowercased() != "yojam" else { return nil }
 
-            // Only route http, https, mailto.
+            // Only route http, https, mailto, tel.
             guard let scheme = targetURL.scheme?.lowercased(),
-                  ["http", "https", "mailto"].contains(scheme)
+                  ["http", "https", "mailto", "tel"].contains(scheme)
             else { return nil }
 
             let rawSource = queryItems.first(where: { $0.name == "source" })?.value

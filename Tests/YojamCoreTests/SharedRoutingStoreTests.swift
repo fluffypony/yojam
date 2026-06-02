@@ -16,6 +16,7 @@ final class SharedRoutingStoreTests: XCTestCase {
     func testKeysAreNotEmpty() {
         XCTAssertFalse(SharedRoutingStore.Keys.browsers.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.emailClients.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.phoneClients.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.rules.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.globalRewriteRules.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.utmStripList.isEmpty)
@@ -34,6 +35,7 @@ final class SharedRoutingStoreTests: XCTestCase {
         let allKeys = [
             SharedRoutingStore.Keys.browsers,
             SharedRoutingStore.Keys.emailClients,
+            SharedRoutingStore.Keys.phoneClients,
             SharedRoutingStore.Keys.rules,
             SharedRoutingStore.Keys.globalRewriteRules,
             SharedRoutingStore.Keys.utmStripList,

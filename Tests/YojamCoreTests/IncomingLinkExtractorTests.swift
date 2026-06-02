@@ -17,6 +17,11 @@ final class IncomingLinkExtractorTests: XCTestCase {
         XCTAssertEqual(IncomingLinkExtractor.normalize(url)?.absoluteString, "mailto:test@example.com")
     }
 
+    func testTelPassThrough() {
+        let url = URL(string: "tel:+15551234567")!
+        XCTAssertEqual(IncomingLinkExtractor.normalize(url)?.absoluteString, "tel:+15551234567")
+    }
+
     func testLocalHTMLPassThrough() {
         // Yojam is registered as the system handler for public.html, so
         // double-clicked HTML files must pass through as file:// URLs.

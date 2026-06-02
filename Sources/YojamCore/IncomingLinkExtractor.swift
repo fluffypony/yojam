@@ -3,7 +3,7 @@ import Foundation
 /// Normalizes incoming file URLs and remote URLs into routable targets.
 /// Handles `.webloc`, `.inetloc`, and `.url` internet-location files
 /// (e.g. from AirDrop), local HTML files from Finder, and pass-through
-/// for remote http/https/mailto URLs.
+/// for remote http/https/mailto/tel URLs.
 public enum IncomingLinkExtractor {
     /// Maximum size for an internet-location file. Guards against pathological
     /// inputs dropped via AirDrop.
@@ -14,7 +14,7 @@ public enum IncomingLinkExtractor {
     public static func normalize(_ incoming: URL) -> URL? {
         // Pass-through for remote URLs.
         if let scheme = incoming.scheme?.lowercased(),
-           ["http", "https", "mailto"].contains(scheme) {
+           ["http", "https", "mailto", "tel"].contains(scheme) {
             return incoming
         }
         // Reject non-file, non-routable remote URLs (e.g. ftp://, data://)
@@ -48,7 +48,7 @@ public enum IncomingLinkExtractor {
               let urlString = plist["URL"] as? String,
               let parsed = URL(string: urlString),
               let scheme = parsed.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme)
+              ["http", "https", "mailto", "tel"].contains(scheme)
         else { return nil }
         return parsed
     }
@@ -77,7 +77,7 @@ public enum IncomingLinkExtractor {
                 let raw = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
                 if let parsed = URL(string: raw),
                    let scheme = parsed.scheme?.lowercased(),
-                   ["http", "https", "mailto"].contains(scheme) {
+                   ["http", "https", "mailto", "tel"].contains(scheme) {
                     return parsed
                 }
             }

@@ -97,6 +97,8 @@ enum SettingsSearchIndex {
                            subtitle: "Auto-detected browsers not yet added"),
         SettingsSearchItem(tab: .browsers, section: "Email Clients", title: "Email Clients",
                            subtitle: "Manage email clients for mailto links email"),
+        SettingsSearchItem(tab: .browsers, section: "Phone Clients", title: "Phone Clients",
+                           subtitle: "Manage phone clients for tel links calls FaceTime Teams"),
 
         // Pipeline
         SettingsSearchItem(tab: .pipeline, section: "URL Tester", title: "URL Tester",
