@@ -257,7 +257,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SelfCleanupInstaller.installOrRefresh()
 
         // Flat-file config sync. Sync on every routing-data change.
-        configFileManager = ConfigFileManager(settingsStore: settingsStore)
+        configFileManager = ConfigFileManager(settingsStore: settingsStore) { [weak self] in
+            guard let self else { return }
+            self.browserManager.browsers = self.settingsStore.loadBrowsers()
+            self.browserManager.emailClients = self.settingsStore.loadEmailClients()
+            self.ruleEngine.reloadRules()
+        }
         configFileManager?.start()
         configSyncSubscription = settingsStore.routingDataDidChange.sink { [weak self] in
             // Debounce writes via a small delay so burst updates coalesce.

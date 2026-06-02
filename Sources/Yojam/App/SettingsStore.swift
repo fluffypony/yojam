@@ -110,6 +110,9 @@ final class SettingsStore: ObservableObject {
         static let deletedBuiltInRuleIds = "deletedBuiltInRuleIds"
         // Last-used editor app for the flat-file config (bundle identifier).
         static let configFileEditorBundleId = "configFileEditorBundleId"
+        // User-selected location for the live JSON config mirror. App-local:
+        // do not include it in SettingsExport, because paths vary per Mac.
+        static let configFilePath = "configFilePath"
         // Bundle path where we last ran NativeMessagingInstaller.reconcileInstalled.
         // Used to skip the reconcile on every launch — writing to other apps'
         // NativeMessagingHosts dirs triggers the macOS "access data from
@@ -234,6 +237,17 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var configFilePath: String? {
+        didSet {
+            if let path = configFilePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !path.isEmpty {
+                defaults.set((path as NSString).expandingTildeInPath, forKey: Keys.configFilePath)
+            } else {
+                defaults.removeObject(forKey: Keys.configFilePath)
+            }
+        }
+    }
+
     /// Transient: set by menu bar actions to scroll PreferencesView to a section after opening.
     @Published var pendingScrollToSection: String?
     /// Typed deep-link route pushed by Quick Start steps.
@@ -284,6 +298,7 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
         self.quickStartVisitedImport = d.bool(forKey: Keys.quickStartVisitedImport)
         self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
+        self.configFilePath = d.string(forKey: Keys.configFilePath)
         self.lastNativeMessagingBundlePath = d.string(forKey: Keys.lastNativeMessagingBundlePath)
 
         // Routing settings from App Group suite
@@ -529,6 +544,23 @@ final class SettingsStore: ObservableObject {
 
     func importJSON(_ data: Data) throws {
         let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
+        try applyImport(imported)
+    }
+
+    func importConfigMirrorJSON(_ data: Data) throws {
+        let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
+        guard imported.isCompleteConfigMirror else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [],
+                    debugDescription: "Not a Yojam settings export"
+                )
+            )
+        }
+        try applyImport(imported)
+    }
+
+    private func applyImport(_ imported: SettingsExport) throws {
         activationMode = imported.activationMode
         defaultSelectionBehavior = imported.defaultSelection
         // §43: Clamp imported values to valid ranges
@@ -630,6 +662,7 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedActivation = false
         self.quickStartVisitedBrowsers = false
         self.quickStartVisitedTester = false
+        self.configFilePath = nil
         saveBrowsers([])
         saveEmailClients([])
         saveRules(BuiltInRules.all)
@@ -641,6 +674,8 @@ final class SettingsStore: ObservableObject {
 
 struct SettingsExport: Codable {
     let version: Int
+    let hasExplicitVersion: Bool
+    let decodedKeys: Set<CodingKeys>
     var activationMode: ActivationMode
     var defaultSelection: DefaultSelectionBehavior
     var verticalThreshold: Int
@@ -664,7 +699,7 @@ struct SettingsExport: Codable {
     var deletedBuiltInRuleIds: [String]
     var learnedDomainPreferences: [String: [String: Int]]
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable, Hashable {
         case version, activationMode, defaultSelection, verticalThreshold
         case soundEffects, launchAtLogin, globalUTMStripping, clipboardMonitoring
         case iCloudSync, debugLoggingEnabled
@@ -720,6 +755,8 @@ struct SettingsExport: Codable {
          deletedBuiltInRuleIds: [String] = [],
          learnedDomainPreferences: [String: [String: Int]] = [:]) {
         self.version = version
+        self.hasExplicitVersion = true
+        self.decodedKeys = Set(CodingKeys.allCases)
         self.activationMode = activationMode
         self.defaultSelection = defaultSelection
         self.verticalThreshold = verticalThreshold
@@ -747,7 +784,10 @@ struct SettingsExport: Codable {
     // §52: Use decodeIfPresent for all fields to tolerate version migration
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 5
+        decodedKeys = Set(container.allKeys)
+        let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version)
+        hasExplicitVersion = decodedVersion != nil
+        version = decodedVersion ?? 5
         activationMode = try container.decodeIfPresent(ActivationMode.self, forKey: .activationMode) ?? .always
         defaultSelection = try container.decodeIfPresent(DefaultSelectionBehavior.self, forKey: .defaultSelection) ?? .alwaysFirst
         verticalThreshold = try container.decodeIfPresent(Int.self, forKey: .verticalThreshold) ?? 8
@@ -777,5 +817,19 @@ struct SettingsExport: Codable {
         recentURLRetentionMinutes = try container.decodeIfPresent(Int.self, forKey: .recentURLRetentionMinutes) ?? 30
         deletedBuiltInRuleIds = try container.decodeIfPresent([String].self, forKey: .deletedBuiltInRuleIds) ?? []
         learnedDomainPreferences = try container.decodeIfPresent([String: [String: Int]].self, forKey: .learnedDomainPreferences) ?? [:]
+    }
+
+    var isCompleteConfigMirror: Bool {
+        let required: Set<CodingKeys> = [
+            .version, .activationMode, .defaultSelection, .verticalThreshold,
+            .soundEffects, .launchAtLogin, .globalUTMStripping,
+            .clipboardMonitoring, .iCloudSync, .debugLoggingEnabled,
+            .periodicRescanInterval, .browsers, .emailClients, .rules,
+            .globalRewriteRules, .utmStripList, .suppressedClipboardDomains,
+            .pickerLayout, .pickerDirectionOverride, .recentURLRetention,
+            .recentURLRetentionMinutes, .deletedBuiltInRuleIds,
+            .learnedDomainPreferences
+        ]
+        return decodedKeys.isSuperset(of: required)
     }
 }

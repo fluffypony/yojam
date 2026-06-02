@@ -1,7 +1,8 @@
+import Combine
 import Foundation
 
 /// Two-way sync between SettingsStore and a flat JSON file at
-/// `~/Library/Application Support/Yojam/config.json`.
+/// the default config path or a user-selected custom path.
 ///
 /// Power users can check this file into dotfiles, edit it in $EDITOR, and
 /// see their changes picked up without restarting Yojam.
@@ -15,23 +16,40 @@ import Foundation
 final class ConfigFileManager {
     /// On-disk location of the flat-file mirror. Exposed so the
     /// Advanced tab can surface the path and hand it to NSWorkspace/Finder.
-    let configPath: URL
+    private(set) var configPath: URL
     private var fsSource: DispatchSourceFileSystemObject?
     private let settingsStore: SettingsStore
+    private let onImport: (() -> Void)?
+    private var pathSubscription: AnyCancellable?
     private var lastSelfWriteAt: Date = .distantPast
+    private var lastSelfWriteData: Data?
     private let selfWriteEpsilon: TimeInterval = 1.0
 
-    /// Canonical on-disk path. Exposed as a static helper so UI code that
-    /// doesn't hold a ConfigFileManager (e.g. AdvancedTab) can display and
-    /// act on the same location without duplicating the constant.
-    static var configPath: URL {
+    /// Default on-disk path for the flat-file mirror.
+    static var defaultConfigPath: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Yojam/config.json")
     }
 
-    init(settingsStore: SettingsStore) {
+    static func configPath(for settingsStore: SettingsStore) -> URL {
+        guard let rawPath = settingsStore.configFilePath?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawPath.isEmpty else {
+            return defaultConfigPath
+        }
+        return URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            .standardizedFileURL
+    }
+
+    init(settingsStore: SettingsStore, onImport: (() -> Void)? = nil) {
         self.settingsStore = settingsStore
-        self.configPath = Self.configPath
+        self.onImport = onImport
+        self.configPath = Self.configPath(for: settingsStore)
+        self.pathSubscription = settingsStore.$configFilePath
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.switchToConfiguredPath()
+            }
     }
 
     deinit {
@@ -42,26 +60,65 @@ final class ConfigFileManager {
         let dir = configPath.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        // Seed the file on first run.
-        if !FileManager.default.fileExists(atPath: configPath.path) {
+        if isUsingCustomPath,
+           FileManager.default.fileExists(atPath: configPath.path) {
+            importExistingConfig()
+        } else if !FileManager.default.fileExists(atPath: configPath.path) {
             writeConfig()
         }
         startWatching()
+    }
+
+    private var isUsingCustomPath: Bool {
+        guard let path = settingsStore.configFilePath?
+            .trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return !path.isEmpty
+    }
+
+    private func switchToConfiguredPath() {
+        let newPath = Self.configPath(for: settingsStore)
+        guard newPath != configPath else { return }
+        fsSource?.cancel()
+        fsSource = nil
+        configPath = newPath
+        writeConfig()
+        startWatching()
+    }
+
+    private func importExistingConfig() {
+        guard let data = try? Data(contentsOf: configPath), !data.isEmpty else {
+            writeConfig()
+            return
+        }
+        do {
+            try settingsStore.importConfigMirrorJSON(data)
+            onImport?()
+            YojamLogger.shared.log("ConfigFileManager: imported config from \(configPath.lastPathComponent)")
+        } catch {
+            YojamLogger.shared.log("ConfigFileManager: startup import invalid (\(error.localizedDescription))")
+        }
     }
 
     // MARK: - Writing
 
     func writeConfig() {
         do {
+            try FileManager.default.createDirectory(
+                at: configPath.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             let data = try settingsStore.exportJSON()
             let tempPath = configPath.appendingPathExtension("tmp")
             try data.write(to: tempPath, options: .atomic)
             if FileManager.default.fileExists(atPath: configPath.path) {
-                _ = try? FileManager.default.replaceItemAt(configPath, withItemAt: tempPath)
+                _ = try FileManager.default.replaceItemAt(configPath, withItemAt: tempPath)
             } else {
                 try FileManager.default.moveItem(at: tempPath, to: configPath)
             }
             lastSelfWriteAt = Date()
+            lastSelfWriteData = data
         } catch {
             YojamLogger.shared.log("ConfigFileManager: write failed: \(error.localizedDescription)")
         }
@@ -103,13 +160,16 @@ final class ConfigFileManager {
             }
             startWatching()
         }
-        // Ignore events we triggered ourselves (write path does atomic rename).
-        if Date().timeIntervalSince(lastSelfWriteAt) < selfWriteEpsilon {
+        guard let data = try? Data(contentsOf: configPath) else { return }
+        // Ignore only our own write content. A remote sync update that lands
+        // inside this time window should still import if the file differs.
+        if Date().timeIntervalSince(lastSelfWriteAt) < selfWriteEpsilon,
+           data == lastSelfWriteData {
             return
         }
-        guard let data = try? Data(contentsOf: configPath) else { return }
         do {
-            try settingsStore.importJSON(data)
+            try settingsStore.importConfigMirrorJSON(data)
+            onImport?()
             YojamLogger.shared.log("ConfigFileManager: imported external edit from \(configPath.lastPathComponent)")
         } catch {
             YojamLogger.shared.log("ConfigFileManager: external edit invalid (\(error.localizedDescription))")

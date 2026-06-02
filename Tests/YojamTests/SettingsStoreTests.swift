@@ -19,10 +19,14 @@ final class SettingsStoreTests: XCTestCase {
         store.soundEffectsEnabled = true
         store.verticalThreshold = 15
         store.globalUTMStrippingEnabled = true
+        store.configFilePath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+            .path
         store.resetToDefaults()
         XCTAssertFalse(store.soundEffectsEnabled)
         XCTAssertEqual(store.verticalThreshold, 8)
         XCTAssertFalse(store.globalUTMStrippingEnabled)
+        XCTAssertNil(store.configFilePath)
     }
 
     @MainActor
@@ -130,6 +134,90 @@ final class SettingsStoreTests: XCTestCase {
         try store.importJSON(exported)
 
         XCTAssertEqual(store.suppressedClipboardDomains, ["example.com", "test.org"])
+    }
+
+    @MainActor
+    func testCustomConfigFilePathPersistsLocally() {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        defer { store.configFilePath = originalPath }
+
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+            .path
+        store.configFilePath = path
+
+        let reloaded = SettingsStore()
+        XCTAssertEqual(reloaded.configFilePath, path)
+    }
+
+    @MainActor
+    func testConfigFileManagerUsesCustomConfigPath() {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        defer { store.configFilePath = originalPath }
+
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        store.configFilePath = path.path
+
+        let manager = ConfigFileManager(settingsStore: store)
+        XCTAssertEqual(manager.configPath, path.standardizedFileURL)
+    }
+
+    @MainActor
+    func testConfigFileManagerImportsExistingConfigOnStart() throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalThreshold = store.verticalThreshold
+        defer {
+            store.configFilePath = originalPath
+            store.verticalThreshold = originalThreshold
+        }
+
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        store.verticalThreshold = 13
+        try store.exportJSON().write(to: path)
+        store.verticalThreshold = 8
+        store.configFilePath = path.path
+
+        let manager = ConfigFileManager(settingsStore: store)
+        manager.start()
+
+        XCTAssertEqual(store.verticalThreshold, 13)
+    }
+
+    @MainActor
+    func testConfigFileManagerNotifiesAfterStartupImport() throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        defer { store.configFilePath = originalPath }
+
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        try store.exportJSON().write(to: path)
+        store.configFilePath = path.path
+
+        var imported = false
+        let manager = ConfigFileManager(settingsStore: store) {
+            imported = true
+        }
+        manager.start()
+
+        XCTAssertTrue(imported)
+    }
+
+    @MainActor
+    func testConfigMirrorImportRequiresExplicitYojamVersion() throws {
+        let store = SettingsStore()
+        let originalThreshold = store.verticalThreshold
+        defer { store.verticalThreshold = originalThreshold }
+        store.verticalThreshold = 14
+
+        XCTAssertThrowsError(try store.importConfigMirrorJSON(Data("{}".utf8)))
+        XCTAssertThrowsError(try store.importConfigMirrorJSON(Data(#"{"version":5}"#.utf8)))
+        XCTAssertEqual(store.verticalThreshold, 14)
     }
 
     @MainActor

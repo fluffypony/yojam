@@ -329,11 +329,20 @@ struct AdvancedTab: View {
                 ThemeButton("Reveal", help: HelpText.Advanced.configFileReveal) {
                     revealConfigInFinder()
                 }
+                ThemeButton("Change\u{2026}", help: HelpText.Advanced.configFileChangeLocation) {
+                    chooseConfigLocation()
+                }
+                if isCustomConfigPath {
+                    ThemeButton("Reset Path", help: HelpText.Advanced.configFileResetLocation) {
+                        resetConfigLocation()
+                    }
+                }
             }
         }
     }
 
-    private var configPath: URL { ConfigFileManager.configPath }
+    private var configPath: URL { ConfigFileManager.configPath(for: settingsStore) }
+    private var isCustomConfigPath: Bool { settingsStore.configFilePath != nil }
 
     private var abbreviatedConfigPath: String {
         (configPath.path as NSString).abbreviatingWithTildeInPath
@@ -389,6 +398,46 @@ struct AdvancedTab: View {
 
     private func revealConfigInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([configPath])
+    }
+
+    private func chooseConfigLocation() {
+        let panel = NSSavePanel()
+        panel.title = "Choose configuration file"
+        panel.prompt = "Use"
+        panel.nameFieldStringValue = configPath.lastPathComponent.isEmpty
+            ? "config.json" : configPath.lastPathComponent
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.directoryURL = configPath.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let selectedURL = panel.url else { return }
+
+        let selected = selectedURL.standardizedFileURL
+        do {
+            try FileManager.default.createDirectory(
+                at: selected.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: selected.path) {
+                let data = try Data(contentsOf: selected)
+                if !data.isEmpty {
+                    try settingsStore.importConfigMirrorJSON(data)
+                    reloadLiveRoutingData()
+                }
+            }
+            settingsStore.configFilePath = selected.path
+        } catch {
+            errorMessage = "Could not use that configuration file: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetConfigLocation() {
+        settingsStore.configFilePath = nil
+    }
+
+    private func reloadLiveRoutingData() {
+        browserManager.browsers = settingsStore.loadBrowsers()
+        browserManager.emailClients = settingsStore.loadEmailClients()
+        ruleEngine.reloadRules()
     }
 
     private func appDisplayName(forBundleId bundleId: String) -> String? {
@@ -477,9 +526,7 @@ struct AdvancedTab: View {
             do {
                 let data = try Data(contentsOf: url)
                 try settingsStore.importJSON(data)
-                browserManager.browsers = settingsStore.loadBrowsers()
-                browserManager.emailClients = settingsStore.loadEmailClients()
-                ruleEngine.reloadRules()
+                reloadLiveRoutingData()
             } catch {
                 errorMessage = "Import failed: \(error.localizedDescription)"
             }
