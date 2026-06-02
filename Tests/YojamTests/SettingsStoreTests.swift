@@ -58,6 +58,22 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadRulesAddsAppNotionBuiltInToOlderSavedRules() {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+
+        let appNotionId = UUID(uuidString: "550e8400-e29b-41d4-a716-44665544001a")!
+        let olderRules = BuiltInRules.all.filter { $0.id != appNotionId }
+        store.saveRules(olderRules)
+
+        let loaded = store.loadRules()
+        let appNotion = loaded.first { $0.id == appNotionId }
+        XCTAssertEqual(appNotion?.pattern, "app.notion.com")
+        XCTAssertEqual(appNotion?.targetBundleId, "notion.id")
+    }
+
+    @MainActor
     func testSaveBrowsersRoundTrip() {
         let store = SettingsStore()
         let original = store.loadBrowsers()

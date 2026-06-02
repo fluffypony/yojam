@@ -136,4 +136,20 @@ final class RuleEngineTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.id), [linear.id, slack.id])
         XCTAssertLessThan(ordered[0].priority, ordered[1].priority)
     }
+
+    @MainActor
+    func testBuiltInNotionRulesCoverBothHosts() {
+        let notionRules = BuiltInRules.all.filter {
+            $0.targetBundleId == "notion.id"
+        }
+        let notionSO = URL(string: "https://www.notion.so/team/page")!
+        let appNotion = URL(string: "https://app.notion.com/workspace/page")!
+
+        XCTAssertTrue(notionRules.contains {
+            RuleMatcher.evaluate(url: notionSO, against: $0).matched
+        })
+        XCTAssertTrue(notionRules.contains {
+            RuleMatcher.evaluate(url: appNotion, against: $0).matched
+        })
+    }
 }
