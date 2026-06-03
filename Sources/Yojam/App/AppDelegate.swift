@@ -252,8 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Belt-and-suspenders: if the user later trashes Yojam.app without
         // using the in-app Uninstall flow, a periodic LaunchAgent sweeps
-        // remaining user state. Re-installing on every launch keeps the
-        // stored bundle path accurate when the app is moved.
+        // remaining user state. This only rewrites/reloads files when the
+        // helper is missing, drifted, or tracking a moved app bundle.
         SelfCleanupInstaller.installOrRefresh()
 
         // Flat-file config sync. Sync on every routing-data change.

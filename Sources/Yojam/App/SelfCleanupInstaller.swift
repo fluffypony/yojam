@@ -43,8 +43,8 @@ enum SelfCleanupInstaller {
             .appendingPathComponent("Library/Application Support/Yojam/cleanup-helper.sh")
     }
 
-    /// Install or refresh the cleanup helper + LaunchAgent so the stored
-    /// bundle path tracks the current running bundle.
+    /// Install or repair the cleanup helper + LaunchAgent so the stored bundle
+    /// path tracks the current running bundle without rewriting unchanged files.
     static func installOrRefresh() {
         let bundleURL = Bundle.main.bundleURL
         guard shouldInstall(forBundle: bundleURL) else {
@@ -58,7 +58,7 @@ enum SelfCleanupInstaller {
         }
 
         do {
-            try writeHelperScript()
+            try writeHelperScriptIfNeeded()
             try? FileManager.default.removeItem(at: legacyHelperScriptURL)
             let wroteNewPlist = try writeLaunchAgentPlist(bundlePath: bundleURL.path)
             if wroteNewPlist {
@@ -88,10 +88,9 @@ enum SelfCleanupInstaller {
                 .appendingPathComponent("Applications").path + "/")
     }
 
-    private static func writeHelperScript() throws {
-        let dir = helperScriptURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let script = #"""
+    private static let helperScriptPermissions = 0o755
+
+    private static let helperScriptContents = #"""
 #!/bin/bash
 # Yojam self-cleanup helper (managed by Yojam.app).
 # Runs periodically via ~/Library/LaunchAgents/org.yojam.cleanup.plist.
@@ -206,9 +205,24 @@ rm -f "$AGENT_PLIST"
 rm -f "$SELF_PATH"
 exit 0
 """#
-        try script.write(to: helperScriptURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: helperScriptURL.path)
+
+    private static func writeHelperScriptIfNeeded() throws {
+        let fileManager = FileManager.default
+        let dir = helperScriptURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let expectedData = Data(helperScriptContents.utf8)
+        let existingData = try? Data(contentsOf: helperScriptURL)
+        if existingData != expectedData {
+            try expectedData.write(to: helperScriptURL, options: .atomic)
+        }
+
+        let attributes = try? fileManager.attributesOfItem(atPath: helperScriptURL.path)
+        let existingPermissions = attributes?[.posixPermissions] as? NSNumber
+        if existingPermissions?.intValue != helperScriptPermissions {
+            try fileManager.setAttributes(
+                [.posixPermissions: helperScriptPermissions], ofItemAtPath: helperScriptURL.path)
+        }
     }
 
     /// Write the LaunchAgent plist. Returns true when the on-disk plist was
