@@ -404,8 +404,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Yojam is the default mail handler and routing is disabled).
         let deduplicationURL: URL
         switch decision {
-        case .openDirect(_, let url, _, _): deduplicationURL = url
-        case .showPicker(_, _, let url, _, _): deduplicationURL = url
+        case .openDirect(_, let url, _, _, _): deduplicationURL = url
+        case .showPicker(_, _, let url, _, _, _, _): deduplicationURL = url
         case .openSystemDefault(let url): deduplicationURL = url
         case .openSystemMailHandler(let url): deduplicationURL = url
         case .openSystemPhoneHandler(let url): deduplicationURL = url
@@ -434,37 +434,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DecisionTrace.shared.log(inputURL: request.url, decision: decision, request: request)
 
         switch decision {
-        case .openDirect(let entry, let finalURL, let privateWindow, _):
+        case .openDirect(let entry, let finalURL, let privateWindow, _, let matchedRule):
 
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
             if let domain = finalURL.host?.lowercased() {
                 routingSuggestionEngine.recordChoice(domain: domain, entryId: entry.id.uuidString)
             }
 
-            // Look up the rule that matched (for firefoxContainer / display targeting).
-            // Match against the ORIGINAL request.url (not finalURL) so rewrites
-            // applied by the matching rule don't cause a different rule to match here.
-            let matchedRule = ruleEngine.evaluate(request.url,
-                                                  sourceAppBundleId: request.sourceAppBundleId)
             let container = matchedRule?.firefoxContainer
                 ?? request.metadata["container"]
             let targetDisplayUUID = matchedRule?.targetDisplayUUID
                 ?? matchedRule?.targetDisplayIndex.flatMap { indexToUUID($0) }
 
-            // Firefox container routing: open via a bridge URL that the Yojam
-            // Firefox extension intercepts in webNavigation.onBeforeNavigate
-            // and re-opens in the requested contextualIdentity. If the
+            // Container routing: open via a bridge URL that the Yojam
+            // WebExtension intercepts in webNavigation.onBeforeNavigate
+            // and re-opens in the requested contextual identity. If the
             // extension is absent the bridge URL fails to resolve (invalid TLD),
             // so there is no silent misroute.
-            let isFirefox = ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
-                             "org.mozilla.nightly"].contains(entry.bundleIdentifier)
-            let effectiveURL: URL
-            if let container, !container.isEmpty, isFirefox,
-               let bridge = Self.firefoxContainerBridgeURL(container: container, target: finalURL) {
-                effectiveURL = bridge
-            } else {
-                effectiveURL = finalURL
-            }
+            let effectiveURL = Self.containerRoutedURL(
+                target: finalURL,
+                container: container,
+                browserBundleId: entry.bundleIdentifier)
 
             guard let resolvedAppURL = appURL(for: entry.bundleIdentifier) else { return }
 
@@ -497,18 +487,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-        case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
+        case .showPicker(
+            let entries,
+            let preselectedIndex,
+            let finalURL,
+            let isEmail,
+            let reason,
+            let matchedRule,
+            let bypassTransformations
+        ):
             let isPhone = finalURL.scheme?.lowercased() == "tel"
             recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
-
-            let pickerMatchedRule: Rule?
-            if reason?.hasPrefix("Matched rule:") == true {
-                pickerMatchedRule = ruleEngine.evaluate(
-                    request.url,
-                    sourceAppBundleId: request.sourceAppBundleId)
-            } else {
-                pickerMatchedRule = nil
-            }
 
             // Compute smart routing reason when none was provided
             var effectiveReason = reason
@@ -536,7 +525,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         entry: entry,
                         url: selectedURL,
                         isEmail: isEmail,
-                        matchedRule: pickerMatchedRule)
+                        matchedRule: matchedRule,
+                        bypassTransformations: bypassTransformations)
                 },
                 onCopy: { [weak self] url in
                     NSPasteboard.general.clearContents()
@@ -573,7 +563,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         event: NSAppleEventDescriptor,
         reply: NSAppleEventDescriptor
     ) {
-        // Capture modifiers immediately to avoid race condition
+        // A GURL Apple event does not reliably preserve the originating
+        // click's modifiers. Sample the current global state immediately;
+        // callers should keep Shift held until Yojam receives the request.
         let modifiers = NSEvent.modifierFlags
         guard let urlString = event.paramDescriptor(
             forKeyword: keyDirectObject)?.stringValue,
@@ -756,20 +748,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handlePickerSelection(
-        entry: BrowserEntry, url: URL, isEmail: Bool, matchedRule: Rule? = nil
+        entry: BrowserEntry,
+        url: URL,
+        isEmail: Bool,
+        matchedRule: Rule? = nil,
+        bypassTransformations: Bool = false
     ) {
         let isPhone = url.scheme?.lowercased() == "tel"
-        var finalURL = url
-        if !isEmail && !isPhone {
-            finalURL = urlRewriter.applyBrowserRewrites(
-                to: finalURL, browser: entry)
-
-            if entry.stripUTMParams {
-                finalURL = utmStripper.strip(finalURL)
-            } else if settingsStore.globalUTMStrippingEnabled {
-                finalURL = utmStripper.strip(finalURL)
-            }
-        }
+        let finalURL = Self.pickerSelectionURL(
+            target: url,
+            browser: entry,
+            isEmail: isEmail,
+            bypassTransformations: bypassTransformations,
+            globalUTMStrippingEnabled: settingsStore.globalUTMStrippingEnabled,
+            applyBrowserRewrites: { [urlRewriter = self.urlRewriter] target, browser in
+                urlRewriter.applyBrowserRewrites(to: target, browser: browser)
+            },
+            stripUTM: { [utmStripper = self.utmStripper] target in
+                utmStripper.strip(target)
+            })
 
         guard let appURL = appURL(for: entry.bundleIdentifier) else {
             YojamLogger.shared.log("Cannot open \(entry.displayName): application not found at \(entry.bundleIdentifier)")
@@ -796,15 +793,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                ?? matchedRule?.targetDisplayIndex.flatMap { indexToUUID($0) })
             : nil
 
-        let isFirefox = ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
-                         "org.mozilla.nightly"].contains(entry.bundleIdentifier)
-        let effectiveURL: URL
-        if let container, !container.isEmpty, isFirefox,
-           let bridge = Self.firefoxContainerBridgeURL(container: container, target: finalURL) {
-            effectiveURL = bridge
-        } else {
-            effectiveURL = finalURL
-        }
+        let effectiveURL = Self.containerRoutedURL(
+            target: finalURL,
+            container: container,
+            browserBundleId: entry.bundleIdentifier)
 
         let effectiveProfile = ruleTargetsThisEntry
             ? (matchedRule?.ruleProfileId ?? entry.profileId)
@@ -836,6 +828,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    nonisolated static func pickerSelectionURL(
+        target: URL,
+        browser: BrowserEntry,
+        isEmail: Bool,
+        bypassTransformations: Bool,
+        globalUTMStrippingEnabled: Bool,
+        applyBrowserRewrites: (URL, BrowserEntry) -> URL,
+        stripUTM: (URL) -> URL
+    ) -> URL {
+        let isPhone = target.scheme?.lowercased() == "tel"
+        guard !bypassTransformations, !isEmail, !isPhone else { return target }
+
+        let rewritten = applyBrowserRewrites(target, browser)
+        if browser.stripUTMParams || globalUTMStrippingEnabled {
+            return stripUTM(rewritten)
+        }
+        return rewritten
+    }
+
     private func rule(_ rule: Rule?, targets entry: BrowserEntry) -> Bool {
         guard let rule else { return false }
         if let targetId = rule.targetBrowserEntryId {
@@ -852,10 +863,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return displays[zeroBased].id
     }
 
-    /// Build the bridge URL used to route a link into a Firefox contextualIdentity.
-    /// The Yojam Firefox extension intercepts this URL in webNavigation.onBeforeNavigate
-    /// and re-opens the target in the named container. See Extensions/shared/background.js.
-    static func firefoxContainerBridgeURL(container: String, target: URL) -> URL? {
+    /// Whether the browser exposes containers through the WebExtension
+    /// contextualIdentities API used by Yojam's bridge.
+    nonisolated static func supportsContainerRouting(browserBundleId: String) -> Bool {
+        switch browserBundleId {
+        case "org.mozilla.firefox",
+             "org.mozilla.firefoxdeveloperedition",
+             "org.mozilla.nightly",
+             "com.kagi.kagimacOS",
+             "com.kagi.kagimacOS.RC":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Return a bridge URL for a named container when the target browser
+    /// supports it, otherwise leave the target URL unchanged.
+    nonisolated static func containerRoutedURL(
+        target: URL,
+        container: String?,
+        browserBundleId: String
+    ) -> URL {
+        guard let container, !container.isEmpty,
+              supportsContainerRouting(browserBundleId: browserBundleId),
+              let bridge = firefoxContainerBridgeURL(container: container, target: target)
+        else {
+            return target
+        }
+        return bridge
+    }
+
+    /// Build the bridge URL used to route a link into a Firefox or Orion
+    /// contextual identity. The historic name is retained for compatibility.
+    /// See Extensions/shared/background.js.
+    nonisolated static func firefoxContainerBridgeURL(container: String, target: URL) -> URL? {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "yojam-container.invalid"

@@ -9,8 +9,8 @@ final class RecentURLsManager {
     private var cleanupTimer: Timer?
     private let sharedDefaults: UserDefaults
 
-    init() {
-        self.sharedDefaults = SharedRoutingStore().defaults
+    init(sharedDefaults: UserDefaults? = nil) {
+        self.sharedDefaults = sharedDefaults ?? SharedRoutingStore().defaults
         loadFromDefaults()
     }
 

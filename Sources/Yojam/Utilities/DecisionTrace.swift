@@ -66,8 +66,8 @@ final class DecisionTrace: @unchecked Sendable {
 
     private func decisionURL(_ d: RouteDecision) -> URL {
         switch d {
-        case .openDirect(_, let url, _, _): url
-        case .showPicker(_, _, let url, _, _): url
+        case .openDirect(_, let url, _, _, _): url
+        case .showPicker(_, _, let url, _, _, _, _): url
         case .openSystemDefault(let url): url
         case .openSystemMailHandler(let url): url
         case .openSystemPhoneHandler(let url): url
@@ -86,15 +86,15 @@ final class DecisionTrace: @unchecked Sendable {
 
     private func decisionTarget(_ d: RouteDecision) -> String? {
         switch d {
-        case .openDirect(let b, _, _, _): b.fullDisplayName
+        case .openDirect(let b, _, _, _, _): b.fullDisplayName
         default: nil
         }
     }
 
     private func decisionReason(_ d: RouteDecision) -> String? {
         switch d {
-        case .openDirect(_, _, _, let r): r
-        case .showPicker(_, _, _, _, let r): r
+        case .openDirect(_, _, _, let r, _): r
+        case .showPicker(_, _, _, _, let r, _, _): r
         default: nil
         }
     }

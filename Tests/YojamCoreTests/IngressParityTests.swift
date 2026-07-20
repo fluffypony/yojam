@@ -215,7 +215,9 @@ final class IngressParityTests: XCTestCase {
         }
 
         // Verify the actual decision type: always mode + 1 browser = showPicker
-        if case .showPicker(let entries, let preselected, let finalURL, let isEmail, _) = first {
+        if case .showPicker(
+            let entries, let preselected, let finalURL, let isEmail, _, _, _
+        ) = first {
             XCTAssertEqual(entries.count, 1)
             XCTAssertEqual(preselected, 0)
             XCTAssertEqual(finalURL, targetURL)
@@ -274,7 +276,7 @@ final class IngressParityTests: XCTestCase {
         }
 
         // Should be openDirect with Chrome in smartFallback mode
-        if case .openDirect(let entry, _, _, let reason) = first {
+        if case .openDirect(let entry, _, _, let reason, _) = first {
             XCTAssertEqual(entry.bundleIdentifier, "com.google.Chrome")
             XCTAssertTrue(reason.contains("Example"))
         } else {
@@ -318,7 +320,7 @@ final class IngressParityTests: XCTestCase {
         }
 
         // Single email client in smartFallback → openDirect
-        if case .openDirect(let entry, _, _, _) = first {
+        if case .openDirect(let entry, _, _, _, _) = first {
             XCTAssertEqual(entry.bundleIdentifier, "com.apple.mail")
         } else {
             XCTFail("Expected openDirect for single mailto client in smartFallback")
@@ -479,7 +481,7 @@ final class IngressParityTests: XCTestCase {
                            "Non-browser rule target decision for \(origins[i]) should be identical")
         }
 
-        if case .openDirect(let entry, _, _, let reason) = first {
+        if case .openDirect(let entry, _, _, let reason, _) = first {
             XCTAssertEqual(entry.bundleIdentifier, "us.zoom.xos")
             XCTAssertTrue(reason.contains("Zoom"))
         } else {
@@ -519,7 +521,7 @@ final class IngressParityTests: XCTestCase {
         let decision = RoutingService.decide(request: request, configuration: config)
 
         // Non-browser targets should always open directly, even in .always mode
-        if case .openDirect(let entry, _, _, _) = decision {
+        if case .openDirect(let entry, _, _, _, _) = decision {
             XCTAssertEqual(entry.bundleIdentifier, "us.zoom.xos")
         } else {
             XCTFail("Expected openDirect for non-browser target in .always mode, got: \(decision)")

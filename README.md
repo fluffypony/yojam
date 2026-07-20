@@ -10,9 +10,9 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 
 ## What it actually does
 
-- **Rules engine:** Route URLs by domain, prefix, regex, source app, or all links from a source. Send work stuff to your corporate Edge profile and personal stuff to Safari. Each rule can override the target browser's defaults: specific profile, private-window on/off, custom launch args, target display, machine scope, or Firefox container.
+- **Rules engine:** Route URLs by domain, prefix, regex, source app, or all links from a source. Send work stuff to your corporate Edge profile and personal stuff to Safari. Each rule can override the target browser's defaults: specific profile, private-window on/off, custom launch args, target display, machine scope, or named Firefox/Orion container.
 - **Profile support:** Targets specific profiles in Chrome, Firefox, Brave, Edge, Vivaldi, and Opera. Work profile for work links, personal for everything else.
-- **Firefox containers:** Rules can route into a named Multi-Account Container (Work, Personal, Banking, etc.) through the bundled Firefox extension. The link gets reopened inside the right container instead of the default context.
+- **Firefox and Orion containers:** Rules can route into a named container (Work, Personal, Banking, etc.) through the Yojam WebExtension. The link gets reopened inside the right contextual identity instead of the default context.
 - **Multi-monitor targeting:** Pin a rule's output to a specific display. Jira on the left screen, Slack-forwarded links on the right, whatever you want.
 - **Tracking garbage removal:** Strips `utm_source`, `fbclid`, `gclid`, and 30+ other tracking parameters before the browser ever sees them. Per-browser or globally.
 - **URL rewriting:** Regex-based find/replace on URLs. Ships with disabled-by-default examples for Twitter→Nitter, Reddit→Old Reddit, Medium→Scribe.
@@ -24,7 +24,7 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 - **Flat-file config:** A live-editable JSON copy of your setup at `~/Library/Application Support/Yojam/config.json`. Edits in the file get picked up by the app in real time, and vice-versa. Good for dotfile repos or scripted changes.
 - **iCloud sync:** Your rules and browser setups sync across all your Macs, with per-rule machine scope for rules that should only run on one Mac.
 - **Shortcuts integration:** "Open URL in Browser" and "Apply URL Rules" intents for automation.
-- **Menu bar only:** No dock icon, no Cmd+Tab entry. Just a menu bar icon with recent URLs and quick access to preferences.
+- **Menu bar only:** No dock icon, no Cmd+Tab entry. Just a menu bar icon with Link History and quick access to preferences.
 
 ## Receiving links
 
@@ -90,8 +90,10 @@ When you click a link anywhere on your Mac, Yojam processes it through a pipelin
 | Mode | What happens |
 |---|---|
 | **Always show picker** | Unmatched links show the browser picker; matching rules still fire immediately. |
-| **Hold Shift to pick** | Links route via rules or your default. Hold Shift to force the picker. |
+| **Hold Shift to pick** | Links route via rules or your default. Keep Shift held until the picker appears to choose instead. |
 | **Smart + Fallback** | Rules fire automatically. Learned domains auto-route. Everything else shows the picker. |
+
+Shift also acts as a one-off escape hatch in the other modes: it skips matching rules and URL rewrites, then shows the picker with the original link. macOS delivers an external URL separately from the originating click, so keep Shift held until Yojam's picker appears.
 
 ## Picker keyboard shortcuts
 
@@ -115,7 +117,7 @@ Beyond picking the target app or browser, each rule can pin:
 
 - **Profile** - e.g. route `github.com` to Chrome specifically in the *Work* profile, while your other Chrome rules use *Personal*.
 - **Private / incognito window** - tri-state (inherit / force on / force off).
-- **Firefox container** - route into a named Multi-Account Container. Needs the Yojam Firefox extension enabled.
+- **Browser container** - route Firefox or Orion into a named container. Needs the Yojam WebExtension enabled in the selected browser.
 - **Target display** - send the browser window to a particular monitor after it opens (requires Accessibility permission).
 - **Custom launch arguments** - pass whatever CLI flags the target needs, with `$URL` as the placeholder.
 - **Machine scope** - keep an iCloud-synced rule active only on the Mac where it was created.
@@ -160,11 +162,15 @@ Ships inside Yojam.app. Enable it in **Safari > Settings > Extensions**.
 
 ### Chrome / Brave / Edge / Vivaldi / Arc
 
-Load from `Extensions/dist/yojam-chrome.zip` (or install from the Chrome Web Store once published). The native messaging host is installed automatically on Yojam's first launch. If something breaks, repair it from **Preferences > Integrations > Reinstall Browser Helpers**.
+Download `yojam-chrome.zip` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), unzip it, then load the extracted folder as an unpacked extension. Until a stable Chrome Web Store ID is published, the unpacked build uses the `yojam://` fallback and Chrome may ask once before handing the link to Yojam. The no-prompt native-messaging path will be enabled for the store build.
 
 ### Firefox
 
-Install the `.xpi` from `Extensions/dist/` (or from AMO once published).
+Firefox release builds require Mozilla-signed extensions, and Yojam is not on AMO yet. The raw `yojam-firefox.xpi` attached to GitHub releases is for Orion and Firefox development builds configured to allow unsigned extensions. A normal Firefox install will need the AMO build once it is published.
+
+### Orion 1.1+
+
+Container routing needs Orion 1.1 or newer and the Firefox build of the Yojam WebExtension. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest). In **Orion > Settings > Advanced**, allow third-party Firefox extensions. Then open **Tools > Extensions > Manage Extensions**, choose **Add Extension**, and install the XPI. See [Orion's WebExtension guide](https://help.kagi.com/orion/browser-extensions/macos-extensions.html) for Orion's current installation and compatibility details.
 
 ### What each extension does
 

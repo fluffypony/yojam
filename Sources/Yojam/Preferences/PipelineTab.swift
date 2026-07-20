@@ -20,6 +20,7 @@ struct PipelineTab: View {
     @State private var showingTrackerList = false
     @State private var errorMessage: String?
     @State private var editingRule: Rule?
+    @State private var editingRewrite: URLRewriteRule?
     @State private var rulePendingDeletion: Rule?
     @State private var isConfirmingRuleDeletion = false
     @State private var draggedRewriteId: UUID?
@@ -81,11 +82,19 @@ struct PipelineTab: View {
         }
         .sheet(isPresented: $showingAddRewrite) {
             AddRewriteSheet(
-                onAdd: { rule in
+                onSave: { rule in
                     rewriteRules.append(rule)
                     settingsStore.saveGlobalRewriteRules(rewriteRules)
                 },
                 onDismiss: { showingAddRewrite = false })
+        }
+        .sheet(item: $editingRewrite) { rule in
+            AddRewriteSheet(
+                onSave: { editedRule in
+                    updateRewrite(editedRule)
+                },
+                onDismiss: { editingRewrite = nil },
+                editing: rule)
         }
         .sheet(isPresented: $showingTrackerList) {
             TrackerParameterSheet(settingsStore: settingsStore, onDismiss: { showingTrackerList = false })
@@ -404,6 +413,9 @@ struct PipelineTab: View {
                 .frame(minWidth: 100, idealWidth: 150, alignment: .leading)
 
             HStack(spacing: 4) {
+                ThemeIconButton(systemName: "pencil", help: "Edit rewrite") {
+                    editingRewrite = rule
+                }
                 ThemeIconButton(systemName: "trash", isDanger: true) {
                     deleteRewrite(rule.id)
                 }
@@ -413,6 +425,10 @@ struct PipelineTab: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .opacity(rule.enabled ? 1 : 0.5)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            editingRewrite = rule
+        }
     }
 
     private func pipelineRuleRow(rule: Rule) -> some View {
@@ -614,6 +630,34 @@ struct PipelineTab: View {
             rewriteRules[idx].lastModifiedAt = Date()
             settingsStore.saveGlobalRewriteRules(rewriteRules)
         }
+    }
+
+    private func updateRewrite(_ editedRule: URLRewriteRule) {
+        rewriteRules = Self.rewriteRulesByApplyingEdit(editedRule, to: rewriteRules)
+        settingsStore.saveGlobalRewriteRules(rewriteRules)
+    }
+
+    static func rewriteRulesByApplyingEdit(
+        _ editedRule: URLRewriteRule,
+        to rules: [URLRewriteRule],
+        modifiedAt: Date = Date()
+    ) -> [URLRewriteRule] {
+        guard let index = rules.firstIndex(where: { $0.id == editedRule.id }) else {
+            return rules
+        }
+
+        let existingRule = rules[index]
+        var updatedRules = rules
+        updatedRules[index] = URLRewriteRule(
+            id: existingRule.id,
+            name: editedRule.name,
+            enabled: existingRule.enabled,
+            matchPattern: editedRule.matchPattern,
+            replacement: editedRule.replacement,
+            isRegex: editedRule.isRegex,
+            scope: existingRule.scope,
+            lastModifiedAt: modifiedAt)
+        return updatedRules
     }
 
     private func deleteRewrite(_ id: UUID) {
@@ -1138,8 +1182,8 @@ struct AddRuleSheet: View {
 
     @ViewBuilder
     private var advancedTargetingFields: some View {
-        if isFirefoxTarget(targetBundleId) {
-            fieldRow("Firefox Container (optional)", helpText: HelpText.Rules.firefoxContainer) {
+        if AppDelegate.supportsContainerRouting(browserBundleId: targetBundleId) {
+            fieldRow("Container (optional)", helpText: HelpText.Rules.firefoxContainer) {
                 ThemeTextField(placeholder: "Work", text: $firefoxContainer)
             }
         }
@@ -1183,11 +1227,6 @@ struct AddRuleSheet: View {
                 }
             }
         }
-    }
-
-    private func isFirefoxTarget(_ bundleId: String) -> Bool {
-        ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
-            .contains(bundleId)
     }
 
     private func loadEditing() {
@@ -1421,8 +1460,9 @@ struct AddRuleSheet: View {
 // MARK: - Add Rewrite Sheet
 
 struct AddRewriteSheet: View {
-    let onAdd: (URLRewriteRule) -> Void
+    let onSave: (URLRewriteRule) -> Void
     let onDismiss: () -> Void
+    var editing: URLRewriteRule?
 
     @State private var name = ""
     @State private var matchPattern = ""
@@ -1432,7 +1472,7 @@ struct AddRewriteSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Add Rewrite Rule")
+                Text(editing == nil ? "Add Rewrite Rule" : "Edit Rewrite Rule")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Theme.textInverse)
                 Spacer()
@@ -1483,12 +1523,13 @@ struct AddRewriteSheet: View {
             HStack {
                 ThemeButton("Cancel") { onDismiss() }
                 Spacer()
-                ThemeButton("Add Rewrite", isPrimary: true) {
+                ThemeButton(editing == nil ? "Add Rewrite" : "Save", isPrimary: true) {
                     let rule = URLRewriteRule(
+                        id: editing?.id ?? UUID(),
                         name: name, matchPattern: matchPattern,
                         replacement: replacement, isRegex: isRegex,
                         scope: .global)
-                    onAdd(rule)
+                    onSave(rule)
                     onDismiss()
                 }
                 .disabled(name.isEmpty || matchPattern.isEmpty
@@ -1501,6 +1542,15 @@ struct AddRewriteSheet: View {
         .frame(minWidth: 480, idealWidth: 480, minHeight: 400, idealHeight: 500, maxHeight: 700)
         .background(Theme.bgApp)
         .preferredColorScheme(.dark)
+        .onAppear { loadEditing() }
+    }
+
+    private func loadEditing() {
+        guard let editing else { return }
+        name = editing.name
+        matchPattern = editing.matchPattern
+        replacement = editing.replacement
+        isRegex = editing.isRegex
     }
 
     private func fieldRow<Content: View>(_ label: String, helpText: String? = nil, @ViewBuilder content: () -> Content) -> some View {

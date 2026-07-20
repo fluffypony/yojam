@@ -37,6 +37,32 @@ public enum RoutingService {
         let originalScheme = url.scheme?.lowercased()
         let isMailto = originalScheme == "mailto"
         let isTel = originalScheme == "tel"
+        let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
+
+        // Shift is an escape hatch for one-off links. Handle it before any
+        // rewrites or rule evaluation so the picker receives the original URL.
+        // This works in every activation mode, not only Hold Shift to Pick.
+        if shiftHeld {
+            let entries = pickerEntries(
+                isMailto: isMailto, isTel: isTel, configuration: configuration)
+            guard !entries.isEmpty else {
+                if isMailto { return .openSystemMailHandler(url) }
+                if isTel { return .openSystemPhoneHandler(url) }
+                return .openSystemDefault(url)
+            }
+            let preselected = resolveDefaultIndex(
+                entries: entries, url: url,
+                kind: linkKind(isMailto: isMailto, isTel: isTel),
+                configuration: configuration)
+            return .showPicker(
+                entries: entries,
+                preselectedIndex: preselected,
+                finalURL: url,
+                isEmail: isMailto,
+                reason: "Shift held: skipped rules and rewrites",
+                bypassTransformations: true)
+        }
+
         var processedURL = url
 
         // Global rewrites are for web/mail URLs; phone links should stay intact.
@@ -48,8 +74,6 @@ public enum RoutingService {
         if configuration.globalUTMStrippingEnabled && !isMailto && !isTel {
             processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
         }
-        let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
-
         // Forced browser from yojam:// browser= parameter. Phone links stay in
         // the phone-client flow even if a stale browser override is present.
         if !isTel,
@@ -126,7 +150,8 @@ public enum RoutingService {
                 let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
                 let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
                 return .openDirect(browser: effectiveEntry, finalURL: finalURL,
-                                   privateWindow: priv, reason: reason)
+                                   privateWindow: priv, reason: reason,
+                                   matchedRule: rule)
             }
 
             if configuration.activationMode == .holdShift && shiftHeld {
@@ -134,13 +159,15 @@ public enum RoutingService {
                 guard !entries.isEmpty else { return .openSystemDefault(processedURL) }
                 let preselected = preselectedRuleTargetIndex(rule: rule, entries: entries) ?? 0
                 return .showPicker(entries: entries, preselectedIndex: preselected,
-                                   finalURL: processedURL, isEmail: false, reason: reason)
+                                   finalURL: processedURL, isEmail: false, reason: reason,
+                                   matchedRule: rule)
             }
 
             let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
             let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
             return .openDirect(browser: effectiveEntry, finalURL: finalURL,
-                               privateWindow: priv, reason: reason)
+                               privateWindow: priv, reason: reason,
+                               matchedRule: rule)
         }
 
         // No rule matched — mailto.

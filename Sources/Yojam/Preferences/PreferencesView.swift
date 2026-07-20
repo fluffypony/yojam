@@ -66,11 +66,11 @@ enum SettingsSearchIndex {
         SettingsSearchItem(tab: .general, section: "Picker", title: "Picker Shortcuts",
                            subtitle: "keyboard shortcuts number keys return escape copy hotkeys"),
 
-        // General > History
-        SettingsSearchItem(tab: .general, section: "History", title: "Recent URLs",
-                           subtitle: "How long to keep recently opened URLs never timed forever auto-delete"),
-        SettingsSearchItem(tab: .general, section: "History", title: "Auto-delete After",
-                           subtitle: "Minutes before recent URLs are automatically removed retention"),
+        // General > Link History
+        SettingsSearchItem(tab: .general, section: "Link History", title: "Link History",
+                           subtitle: "How long to keep recently opened links and URLs never timed forever auto-delete"),
+        SettingsSearchItem(tab: .general, section: "Link History", title: "Auto-delete After",
+                           subtitle: "Minutes before Link History entries are automatically removed retention"),
 
         // General > Services
         SettingsSearchItem(tab: .general, section: "Services", title: "Clipboard Monitoring",

@@ -13,7 +13,7 @@ enum HelpText {
 
         static let activationMode = "Pick when the browser chooser appears. Smart Fallback is nice once you've settled into a routine."
         static let activationAlways = "The browser picker shows up every time you click a link, so you always choose where it opens."
-        static let activationHoldShift = "Links go straight to your default browser. Hold Shift while clicking to bring up the picker instead."
+        static let activationHoldShift = "Links go straight to your default browser. Keep Shift held until Yojam's picker appears to choose instead."
         static let activationSmartFallback = "Yojam learns which browser you pick for each site. It only asks when it hasn't seen the domain before."
 
         static let defaultSelection = "Which browser is pre-highlighted when the picker opens."
@@ -25,8 +25,8 @@ enum HelpText {
         static let verticalThreshold = "With Auto layout, the picker switches to a vertical list once you have more browsers than this number."
         static let invertOrder = "Controls the order browsers appear in the picker. Automatic follows the system UI direction (right-to-left in RTL locales). The other options let you force a specific direction regardless of locale — useful if your go-to browser feels better on the other side."
         static let soundEffects = "Plays a short confirmation sound when you pick a browser. Useful as an auditory confirmation for VoiceOver users."
-        static let recentURLs = "Shows recent links in the menu bar so you can re-open one in a different browser."
-        static let recentURLsAutoDelete = "Clears old entries from the recent URLs list after this long."
+        static let recentURLs = "Link History shows recently opened links in the menu bar so you can re-open one in a different browser."
+        static let recentURLsAutoDelete = "Clears old entries from Link History after this long."
         static let clipboardMonitoring = "When you copy a URL, a small notification pops up so you can route it through Yojam without clicking the link again."
         static let iCloudSync = "Syncs your browser list, rules, and preferences across your Macs. Custom icons and local paths stay on each machine."
     }
@@ -90,7 +90,7 @@ enum HelpText {
     // MARK: - Rules Tab extras
     enum Rules {
         static let builtInEditing = "Built-in rules can now be edited, duplicated, or reset to defaults like user-defined rules. Deleted built-ins won't reappear on next launch; use Restore Default Rules to bring them back."
-        static let firefoxContainer = "Opens matching links in a specific Firefox container (contextualIdentity). Requires the Yojam Firefox extension to be installed and enabled — it intercepts a bridge URL and reopens the link in the named container. Leave blank to use the default context."
+        static let firefoxContainer = "Opens matching links in a named Firefox or Orion container (contextual identity). Requires the Yojam WebExtension to be installed and enabled in the target browser. It intercepts a bridge URL and reopens the link in the named container. Leave blank to use the default context."
         static let displayTargeting = "Optional: move the browser window to a specific display after it opens. Requires Accessibility permission (System Settings > Privacy & Security > Accessibility)."
     }
 

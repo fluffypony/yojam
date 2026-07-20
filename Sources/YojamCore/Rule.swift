@@ -27,7 +27,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     public var lastModifiedAt: Date?
 
     // Structured action fields.
-    /// Firefox container name for container-aware opens (nil = no container).
+    /// Firefox or Orion container name for container-aware opens (nil = no container).
     public var firefoxContainer: String?
     /// Persistent display UUID (CGDisplayCreateUUIDFromDisplayID → string) for per-display targeting.
     public var targetDisplayUUID: String?

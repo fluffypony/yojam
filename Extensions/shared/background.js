@@ -18,8 +18,8 @@ const isSafari =
 let alwaysRoute = false;
 const routedTabs = new Map(); // tabId -> expiry timestamp
 
-// Bridge URL the main app uses when a rule specifies a Firefox container.
-// The app launches Firefox with this URL; the extension intercepts it in
+// Bridge URL the main app uses when a rule specifies a Firefox or Orion container.
+// The app launches the target browser with this URL; the extension intercepts it in
 // webNavigation.onBeforeNavigate (before DNS) and re-opens the target in
 // the requested container. The host intentionally uses the .invalid TLD
 // (RFC 6761) so it never resolves if the extension is absent.
@@ -44,12 +44,18 @@ function isRoutedRecently(tabId) {
   return true;
 }
 
+function showContainerError(tabId) {
+  chrome.tabs.update(tabId, {
+    url: chrome.runtime.getURL("container-error.html"),
+  });
+}
+
 // webNavigation interception (Chrome/Firefox only, not Safari)
 if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
   chrome.webNavigation.onBeforeNavigate.addListener(async (d) => {
     if (d.frameId !== 0) return; // top-frame only
 
-    // Container bridge: app-initiated Firefox container open request.
+    // Container bridge: app-initiated Firefox or Orion container open request.
     if (d.url.startsWith(CONTAINER_BRIDGE_PREFIX)) {
       try {
         const parsed = new URL(d.url);
@@ -57,15 +63,18 @@ if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
         const target = parsed.searchParams.get("u");
         if (container && target) {
           const ok = await openInContainer(target, container);
-          // Close the bridge tab regardless (on failure we'll surface target).
           if (ok) {
             chrome.tabs.remove(d.tabId);
           } else {
-            chrome.tabs.update(d.tabId, { url: target });
+            // Fail closed: never load the target outside its requested
+            // container when the identity is missing or unavailable.
+            showContainerError(d.tabId);
           }
+        } else {
+          showContainerError(d.tabId);
         }
       } catch (_) {
-        /* ignore malformed bridge URLs */
+        showContainerError(d.tabId);
       }
       return;
     }
@@ -128,19 +137,38 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// ---- Firefox Container Support (Firefox only) ----
+// ---- Container Support (Firefox and Orion) ----
 
-// Open a URL in a specific contextualIdentity container. No-op outside Firefox.
+// Open a URL in a specific contextual identity. No-op when the API is unavailable.
 async function openInContainer(url, containerName) {
   if (typeof browser === "undefined" || !browser.contextualIdentities) {
     return false;
   }
+  let containerTabId;
   try {
     const matches = await browser.contextualIdentities.query({ name: containerName });
     if (!matches || matches.length === 0) return false;
-    await browser.tabs.create({ url, cookieStoreId: matches[0].cookieStoreId });
+    // Create the contextual tab before navigating so it can be marked as
+    // already routed. This prevents Always Route from intercepting the new
+    // target tab and replacing it with another yojam:// request.
+    const tab = await browser.tabs.create({
+      url: "about:blank",
+      cookieStoreId: matches[0].cookieStoreId,
+    });
+    if (typeof tab?.id !== "number") return false;
+    containerTabId = tab.id;
+    routedTabs.set(containerTabId, Date.now() + 3000);
+    await browser.tabs.update(containerTabId, { url });
     return true;
   } catch (e) {
+    if (typeof containerTabId === "number") {
+      routedTabs.delete(containerTabId);
+      try {
+        await browser.tabs.remove(containerTabId);
+      } catch (_) {
+        /* the failed tab may already be gone */
+      }
+    }
     return false;
   }
 }

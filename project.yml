@@ -12,8 +12,8 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "1.1.5"
-    CURRENT_PROJECT_VERSION: "9"
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "10"
 
 packages:
   Sparkle:
@@ -184,6 +184,12 @@ targets:
         embed: false
     info:
       path: Sources/YojamSafariExtension/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SafariWebExtensionHandler"
     entitlements:
       path: Sources/YojamSafariExtension/YojamSafariExtension.entitlements
       properties:
@@ -208,8 +214,10 @@ targets:
       - name: Copy Safari Extension Resources
         basedOnDependencyAnalysis: false
         script: |
-          rsync -av --delete "${SRCROOT}/Extensions/shared/" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"
-          cp "${SRCROOT}/Extensions/safari/manifest.json" "${SRCROOT}/Sources/YojamSafariExtension/Resources/"
+          RESOURCE_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${RESOURCE_DIR}"
+          rsync -av --delete "${SRCROOT}/Extensions/shared/" "${RESOURCE_DIR}/"
+          cp "${SRCROOT}/Extensions/safari/manifest.json" "${RESOURCE_DIR}/manifest.json"
 
   YojamNativeHost:
     type: tool

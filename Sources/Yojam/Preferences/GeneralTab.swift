@@ -36,7 +36,7 @@ struct GeneralTab: View {
                         startupSection.id("Startup")
                         activationSection.id("Activation")
                         pickerSection.id("Picker")
-                        historySection.id("History")
+                        historySection.id("Link History")
                         servicesSection.id("Services")
                     }
                     .padding(.horizontal, 32)
@@ -327,15 +327,15 @@ struct GeneralTab: View {
         }
     }
 
-    // MARK: - History
+    // MARK: - Link History
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemeSectionTitle(text: "History")
+            ThemeSectionTitle(text: "Link History")
             ThemePanel {
                 ThemePanelRow(isLast: settingsStore.recentURLRetention != .timed, helpText: HelpText.General.recentURLs) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Recent URLs")
+                        Text("Link History")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
                         Text("Shows recent links in the menu bar so you can re-open one in a different browser.")
@@ -351,7 +351,7 @@ struct GeneralTab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 180)
-                    .accessibilityLabel("Recent URL retention")
+                    .accessibilityLabel("Link History retention")
                 }
                 if settingsStore.recentURLRetention == .timed {
                     ThemePanelRow(isLast: true, helpText: HelpText.General.recentURLsAutoDelete) {
@@ -359,7 +359,7 @@ struct GeneralTab: View {
                             Text("Auto-delete After")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(Theme.textPrimary)
-                            Text("Clears old entries from the recent URLs list after this long.")
+                            Text("Clears old entries from Link History after this long.")
                                 .font(.system(size: 11))
                                 .foregroundColor(Theme.textSecondary)
                         }

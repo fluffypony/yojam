@@ -52,7 +52,7 @@ public struct RouteDecisionPreview: Codable, Sendable {
 
     public static func from(_ decision: RouteDecision) -> RouteDecisionPreview {
         switch decision {
-        case .openDirect(let browser, let finalURL, let privateWindow, let reason):
+        case .openDirect(let browser, let finalURL, let privateWindow, let reason, _):
             let isMailto = finalURL.scheme?.lowercased() == "mailto"
             let isPhone = finalURL.scheme?.lowercased() == "tel"
             return RouteDecisionPreview(
@@ -69,7 +69,9 @@ public struct RouteDecisionPreview: Codable, Sendable {
                 pickerCandidates: nil
             )
 
-        case .showPicker(let entries, let preselectedIndex, let finalURL, let isEmail, let reason):
+        case .showPicker(
+            let entries, let preselectedIndex, let finalURL, let isEmail, let reason, _, _
+        ):
             let isPhone = finalURL.scheme?.lowercased() == "tel"
             let preselected = entries.indices.contains(preselectedIndex)
                 ? entries[preselectedIndex].fullDisplayName : nil

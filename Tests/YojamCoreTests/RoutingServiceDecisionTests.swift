@@ -16,6 +16,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         activationMode: ActivationMode = .always,
         defaultSelection: DefaultSelectionBehavior = .alwaysFirst,
         isEnabled: Bool = true,
+        globalRewriteRules: [URLRewriteRule] = [],
         globalUTMStripping: Bool = false,
         utmParams: Set<String> = [],
         currentMachineIdentifier: String? = nil
@@ -23,7 +24,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         RoutingConfiguration(
             browsers: browsers, emailClients: emailClients,
             phoneClients: phoneClients,
-            rules: rules, globalRewriteRules: [],
+            rules: rules, globalRewriteRules: globalRewriteRules,
             utmStripParameters: utmParams,
             globalUTMStrippingEnabled: globalUTMStripping,
             activationMode: activationMode,
@@ -76,7 +77,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let request = IncomingLinkRequest(
             url: URL(string: "https://example.com")!, origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, _, _, _, _) = decision {
+        if case .showPicker(let entries, _, _, _, _, _, _) = decision {
             XCTAssertEqual(entries.count, 2)
         } else {
             XCTFail("Always mode should show picker")
@@ -118,7 +119,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let request = IncomingLinkRequest(
             url: URL(string: "https://zoom.us/j/123")!, origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, let reason) = decision {
+        if case .openDirect(let browser, _, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "us.zoom.xos")
             XCTAssert(reason.contains("Zoom"))
         } else {
@@ -142,7 +143,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
 
         let decision = RoutingService.decide(request: request, configuration: config)
 
-        if case .openDirect(let browser, let finalURL, _, let reason) = decision {
+        if case .openDirect(let browser, let finalURL, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
             XCTAssertEqual(finalURL, url)
             XCTAssertEqual(reason, "Matched rule: Local HTML")
@@ -160,7 +161,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let request = IncomingLinkRequest(
             url: URL(string: "https://example.com")!, origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, let reason) = decision {
+        if case .openDirect(let browser, _, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
             XCTAssertEqual(reason, "Matched rule: Chrome Work")
         } else {
@@ -168,23 +169,56 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
-    func testHoldShiftStillShowsPickerForMatchedRule() {
+    func testShiftBypassesMatchedRuleAndShowsOriginalURL() {
         let rule = Rule(
             name: "Chrome Work", matchType: .domain, pattern: "example.com",
-            targetBundleId: "com.google.Chrome", targetAppName: "Chrome")
+            targetBundleId: "com.google.Chrome", targetAppName: "Chrome",
+            rewriteRules: [URLRewriteRule(
+                name: "Rule rewrite",
+                matchPattern: "https://example.com",
+                replacement: "https://rewritten.example")])
         let config = makeConfig(
-            browsers: [chrome, firefox], rules: [rule], activationMode: .holdShift)
+            browsers: [chrome, firefox], rules: [rule], activationMode: .smartFallback)
+        let originalURL = URL(string: "https://example.com/original")!
         let request = IncomingLinkRequest(
-            url: URL(string: "https://example.com")!,
+            url: originalURL,
             origin: .defaultHandler,
             modifierFlags: 1 << 17)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, let preselected, _, _, let reason) = decision {
+        if case .showPicker(
+            let entries, let preselected, let finalURL, _, let reason, _, _
+        ) = decision {
             XCTAssertEqual(entries.count, 2)
             XCTAssertEqual(preselected, 0)
-            XCTAssertEqual(reason, "Matched rule: Chrome Work")
+            XCTAssertEqual(finalURL, originalURL)
+            XCTAssertEqual(reason, "Shift held: skipped rules and rewrites")
         } else {
-            XCTFail("Shift in hold-shift mode should force picker")
+            XCTFail("Shift should bypass a matching rule and force the picker")
+        }
+    }
+
+    func testShiftBypassesGlobalRewriteInAlwaysMode() {
+        let originalURL = URL(string: "https://x.com/yojam/status/123")!
+        let rewrite = URLRewriteRule(
+            name: "X to alternate frontend",
+            matchPattern: #"^https://x\.com/(.*)"#,
+            replacement: "https://example.net/$1")
+        let config = makeConfig(
+            browsers: [chrome, firefox],
+            activationMode: .always,
+            globalRewriteRules: [rewrite])
+        let request = IncomingLinkRequest(
+            url: originalURL,
+            origin: .defaultHandler,
+            modifierFlags: 1 << 17)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        if case .showPicker(_, _, let finalURL, _, let reason, _, _) = decision {
+            XCTAssertEqual(finalURL, originalURL)
+            XCTAssertEqual(reason, "Shift held: skipped rules and rewrites")
+        } else {
+            XCTFail("Shift should preserve the original URL before showing the picker")
         }
     }
 
@@ -200,7 +234,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             url: URL(string: "https://anything.example/path")!,
             sourceAppBundleId: "com.tinyspeck.slackmacgap",
             origin: .defaultHandler)
-        if case .openDirect(let browser, _, _, _) =
+        if case .openDirect(let browser, _, _, _, _) =
             RoutingService.decide(request: matching, configuration: config) {
             XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
         } else {
@@ -236,7 +270,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             origin: .defaultHandler)
 
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, let reason) = decision {
+        if case .openDirect(let browser, _, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "com.linear")
             XCTAssertEqual(reason, "Matched rule: Linear")
         } else {
@@ -263,7 +297,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             origin: .defaultHandler)
 
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, let reason) = decision {
+        if case .openDirect(let browser, _, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "org.mozilla.firefox")
             XCTAssertEqual(reason, "Matched rule: All Slack Links")
         } else {
@@ -299,7 +333,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             sourceAppBundleId: "com.automattic.beeper",
             origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, _) = decision {
+        if case .openDirect(let browser, _, _, _, _) = decision {
             XCTAssertEqual(browser.id, personalId)
             XCTAssertEqual(browser.profileId, "Personal")
         } else {
@@ -307,7 +341,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
-    func testMatchedRulePickerPreselectsConfiguredBrowserEntryById() {
+    func testShiftBypassDoesNotPreselectMatchedRuleTarget() {
         let workId = UUID()
         let personalId = UUID()
         let work = BrowserEntry(
@@ -340,11 +374,15 @@ final class RoutingServiceDecisionTests: XCTestCase {
 
         let decision = RoutingService.decide(request: request, configuration: config)
 
-        if case .showPicker(let entries, let preselected, _, _, _) = decision {
-            XCTAssertEqual(entries[preselected].id, personalId)
-            XCTAssertEqual(entries[preselected].profileId, "personal")
+        if case .showPicker(
+            let entries, let preselected, let finalURL, _, let reason, _, _
+        ) = decision {
+            XCTAssertEqual(entries[preselected].id, workId)
+            XCTAssertEqual(entries[preselected].profileId, "work")
+            XCTAssertEqual(finalURL.absoluteString, "https://mail.example.com/inbox")
+            XCTAssertEqual(reason, "Shift held: skipped rules and rewrites")
         } else {
-            XCTFail("Matched rule picker should preselect the configured browser profile")
+            XCTFail("Shift should bypass the rule target and use the normal picker default")
         }
     }
 
@@ -360,7 +398,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             currentMachineIdentifier: "machine-a")
         let request = IncomingLinkRequest(
             url: URL(string: "https://example.com")!, origin: .defaultHandler)
-        if case .openDirect(let browser, _, _, _) =
+        if case .openDirect(let browser, _, _, _, _) =
             RoutingService.decide(request: request, configuration: matchingConfig) {
             XCTAssertEqual(browser.bundleIdentifier, "com.google.Chrome")
         } else {
@@ -402,7 +440,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             url: URL(string: "https://example.com")!, origin: .urlScheme,
             forcedBrowserBundleId: "org.mozilla.firefox")
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .openDirect(let browser, _, _, let reason) = decision {
+        if case .openDirect(let browser, _, _, let reason, _) = decision {
             XCTAssertEqual(browser.bundleIdentifier, "org.mozilla.firefox")
             XCTAssertEqual(reason, "Forced browser")
         } else {
@@ -432,7 +470,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let request = IncomingLinkRequest(
             url: URL(string: "mailto:test@example.com")!, origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, _, _, let isEmail, _) = decision {
+        if case .showPicker(let entries, _, _, let isEmail, _, _, _) = decision {
             XCTAssertTrue(isEmail)
             XCTAssertEqual(entries.count, 1)
         } else {
@@ -458,7 +496,9 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let request = IncomingLinkRequest(
             url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+        if case .showPicker(
+            let entries, _, let finalURL, let isEmail, _, _, _
+        ) = decision {
             XCTAssertFalse(isEmail)
             XCTAssertEqual(finalURL.scheme, "tel")
             XCTAssertEqual(entries.first?.bundleIdentifier, "com.apple.FaceTime")
@@ -490,7 +530,9 @@ final class RoutingServiceDecisionTests: XCTestCase {
             url: URL(string: "tel:+15551234567")!, origin: .defaultHandler)
 
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+        if case .showPicker(
+            let entries, _, let finalURL, let isEmail, _, _, _
+        ) = decision {
             XCTAssertFalse(isEmail)
             XCTAssertEqual(finalURL.scheme, "tel")
             XCTAssertEqual(entries.map(\.bundleIdentifier), ["com.apple.FaceTime"])
@@ -510,7 +552,9 @@ final class RoutingServiceDecisionTests: XCTestCase {
             forcedBrowserBundleId: "org.mozilla.firefox")
 
         let decision = RoutingService.decide(request: request, configuration: config)
-        if case .showPicker(let entries, _, let finalURL, let isEmail, _) = decision {
+        if case .showPicker(
+            let entries, _, let finalURL, let isEmail, _, _, _
+        ) = decision {
             XCTAssertFalse(isEmail)
             XCTAssertEqual(finalURL.scheme, "tel")
             XCTAssertEqual(entries.map(\.bundleIdentifier), ["com.apple.FaceTime"])

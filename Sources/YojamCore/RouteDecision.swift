@@ -4,10 +4,22 @@ import Foundation
 /// the chosen variant via app-only executors (picker, browser launcher, etc.).
 public enum RouteDecision: Sendable, Equatable {
     /// Open the URL directly in a specific browser.
-    case openDirect(browser: BrowserEntry, finalURL: URL, privateWindow: Bool, reason: String)
+    case openDirect(
+        browser: BrowserEntry,
+        finalURL: URL,
+        privateWindow: Bool,
+        reason: String,
+        matchedRule: Rule? = nil)
 
     /// Present the browser picker to the user.
-    case showPicker(entries: [BrowserEntry], preselectedIndex: Int, finalURL: URL, isEmail: Bool, reason: String?)
+    case showPicker(
+        entries: [BrowserEntry],
+        preselectedIndex: Int,
+        finalURL: URL,
+        isEmail: Bool,
+        reason: String?,
+        matchedRule: Rule? = nil,
+        bypassTransformations: Bool = false)
 
     /// Routing is disabled or no browser is available. Open via the system default path.
     case openSystemDefault(URL)

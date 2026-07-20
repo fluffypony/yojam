@@ -41,6 +41,14 @@ EXPORT_OPTIONS="$PROJECT_DIR/ExportOptions.plist"
 
 RS_TEAM_ID="${RS_TEAM_ID:?Set RS_TEAM_ID to your Apple Developer Team ID}"
 KEYCHAIN_PROFILE="${YOJAM_NOTARIZE_PROFILE:-YojamNotarize}"
+SPARKLE_PRIVATE_KEY_FILE="${YOJAM_SPARKLE_PRIVATE_KEY_FILE:-}"
+SPARKLE_KEY_ARGS=()
+if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
+  if [[ "$SPARKLE_PRIVATE_KEY_FILE" != /* ]]; then
+    SPARKLE_PRIVATE_KEY_FILE="$PROJECT_DIR/$SPARKLE_PRIVATE_KEY_FILE"
+  fi
+  SPARKLE_KEY_ARGS=(--ed-key-file "$SPARKLE_PRIVATE_KEY_FILE")
+fi
 
 # Sparkle bin - check common locations
 SPARKLE_BIN=""
@@ -81,13 +89,14 @@ ensure_update_signatures() {
       continue
     fi
 
-    signature=$("$SPARKLE_BIN/sign_update" "$artifact")
+    signature=$("$SPARKLE_BIN/sign_update" "${SPARKLE_KEY_ARGS[@]}" "$artifact")
     signature_value=$(printf '%s\n' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
     length_value=$(printf '%s\n' "$signature" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
 
     [ -n "$signature_value" ] || fail "Could not parse Sparkle signature for $artifact_name"
     [ -n "$length_value" ] || fail "Could not parse Sparkle length for $artifact_name"
-    "$SPARKLE_BIN/sign_update" --verify "$artifact" "$signature_value"
+    "$SPARKLE_BIN/sign_update" --verify "${SPARKLE_KEY_ARGS[@]}" \
+      "$artifact" "$signature_value"
 
     ARTIFACT_URL="$artifact_url" \
     ARTIFACT_LENGTH="$length_value" \
@@ -119,7 +128,8 @@ ensure_update_signatures() {
 
     signature_value=$(printf '%s\n' "$enclosure" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
     [ -n "$signature_value" ] || fail "Appcast enclosure for $artifact_name is missing sparkle:edSignature"
-    "$SPARKLE_BIN/sign_update" --verify "$local_path" "$signature_value" \
+    "$SPARKLE_BIN/sign_update" --verify "${SPARKLE_KEY_ARGS[@]}" \
+      "$local_path" "$signature_value" \
       || fail "Sparkle signature verification failed for $artifact_name"
   done < <(/usr/bin/perl -ne 'while (/(<enclosure\b[^>]*\burl="([^"]+\.(?:dmg|delta))"[^>]*\/>)/g) { print "$2\t$1\n" }' "$appcast")
 
@@ -155,6 +165,8 @@ else
 fi
 
 [ -f "$SPARKLE_BIN/generate_keys" ] || fail "Sparkle generate_keys not found in $SPARKLE_BIN"
+[ -z "$SPARKLE_PRIVATE_KEY_FILE" ] || [ -f "$SPARKLE_PRIVATE_KEY_FILE" ] \
+  || fail "Sparkle private key file not found"
 CONFIGURED_SPARKLE_PUBLIC_KEY=$(grep 'SUPublicEDKey:' "$PROJECT_DIR/project.yml" | head -1 | awk '{print $2}' | tr -d '"')
 KEYCHAIN_SPARKLE_PUBLIC_KEY=$("$SPARKLE_BIN/generate_keys" -p)
 [ -n "$CONFIGURED_SPARKLE_PUBLIC_KEY" ] || fail "SUPublicEDKey not found in project.yml"
@@ -162,6 +174,19 @@ if [ "$CONFIGURED_SPARKLE_PUBLIC_KEY" != "$KEYCHAIN_SPARKLE_PUBLIC_KEY" ]; then
   fail "Sparkle key mismatch: project.yml has $CONFIGURED_SPARKLE_PUBLIC_KEY but keychain has $KEYCHAIN_SPARKLE_PUBLIC_KEY"
 fi
 ok "Sparkle key matches project.yml"
+if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
+  ok "Sparkle signing will use the explicit private key file"
+fi
+
+for manifest in \
+  "$PROJECT_DIR/Extensions/chrome/manifest.json" \
+  "$PROJECT_DIR/Extensions/firefox/manifest.json" \
+  "$PROJECT_DIR/Extensions/safari/manifest.json"; do
+  EXTENSION_VERSION=$(plutil -extract version raw -o - "$manifest")
+  [ "$EXTENSION_VERSION" = "$MARKETING_VERSION" ] \
+    || fail "$(basename "$(dirname "$manifest")") extension version $EXTENSION_VERSION does not match $MARKETING_VERSION"
+done
+ok "Browser extension versions match the app"
 
 # Check notarization credentials exist (dry run)
 if [ "$SKIP_NOTARIZE" = false ]; then
@@ -258,7 +283,7 @@ fi
 
 info "Signing for Sparkle"
 if [ -n "$SPARKLE_BIN" ]; then
-  SIGNATURE=$("$SPARKLE_BIN/sign_update" "$DMG_PATH")
+  SIGNATURE=$("$SPARKLE_BIN/sign_update" "${SPARKLE_KEY_ARGS[@]}" "$DMG_PATH")
   ok "EdDSA signature generated"
   echo ""
   echo "    Add this to appcast.xml <enclosure>:"
@@ -279,7 +304,7 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   # --download-url-prefix: enclosures must point at yoj.am/releases/ (where
   # the DMGs/deltas actually live). Without it, generate_appcast infers the
   # prefix from each bundle's SUFeedURL host (yoj.am/) and emits 404 URLs.
-  "$SPARKLE_BIN/generate_appcast" "$RELEASES_DIR" \
+  "$SPARKLE_BIN/generate_appcast" "${SPARKLE_KEY_ARGS[@]}" "$RELEASES_DIR" \
     --download-url-prefix "$DOWNLOAD_URL_PREFIX"
   if [ -f "$RELEASES_DIR/appcast.xml" ]; then
     ok "appcast.xml generated at $RELEASES_DIR/appcast.xml"
@@ -292,6 +317,16 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
     echo "    ⚠ generate_appcast ran but no appcast.xml found"
   fi
 fi
+
+# ---- Standalone browser extensions ----
+
+info "Building browser extension packages"
+"$PROJECT_DIR/Extensions/build.sh"
+[ -f "$PROJECT_DIR/Extensions/dist/yojam-chrome.zip" ] \
+  || fail "Chrome extension package was not created"
+[ -f "$PROJECT_DIR/Extensions/dist/yojam-firefox.xpi" ] \
+  || fail "Firefox extension package was not created"
+ok "Browser extension packages created"
 
 # ---- Homebrew cask ----
 #
@@ -371,7 +406,9 @@ echo "  │     yoj.am/releases/                      │"
 echo "  │  2. Upload appcast.xml to yoj.am/         │"
 echo "  │  3. Update Homebrew/homebrew-cask at      │"
 echo "  │     Casks/y/yojam.rb, then open a PR      │"
-echo "  │  4. Verify: open old version, check for   │"
+echo "  │  4. Attach the DMG, Chrome ZIP, and       │"
+echo "  │     Firefox XPI to the GitHub release     │"
+echo "  │  5. Verify: open old version, check for   │"
 echo "  │     updates, confirm it finds the new one │"
 echo "  └──────────────────────────────────────────┘"
 echo ""

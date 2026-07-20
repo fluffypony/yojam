@@ -3,6 +3,11 @@ import SwiftUI
 
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation {
+    struct LinkHistoryMenuEntry: Equatable {
+        let title: String
+        let url: URL
+    }
+
     private var statusItem: NSStatusItem!
     private let browserManager: BrowserManager
     private let recentURLsManager: RecentURLsManager
@@ -73,18 +78,25 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
 
         if !recentURLsManager.recentURLs.isEmpty {
             let header = NSMenuItem(
-                title: "Recent URLs", action: nil, keyEquivalent: "")
+                title: "Link History", action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
             for url in recentURLsManager.recentURLs.prefix(10) {
+                let entry = Self.linkHistoryMenuEntry(for: url)
                 let item = NSMenuItem(
-                    title: "  \(url.host ?? url.absoluteString)",
+                    title: "  \(entry.title)",
                     action: #selector(reopenURL(_:)),
                     keyEquivalent: "")
                 item.target = self
-                item.representedObject = url
+                item.representedObject = entry.url
                 menu.addItem(item)
             }
+            let clearHistoryItem = NSMenuItem(
+                title: "Clear Link History",
+                action: #selector(clearLinkHistoryClicked),
+                keyEquivalent: "")
+            clearHistoryItem.target = self
+            menu.addItem(clearHistoryItem)
             menu.addItem(.separator())
         }
 
@@ -140,6 +152,25 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
 
     @objc private func reopenURL(_ sender: NSMenuItem) {
         if let url = sender.representedObject as? URL { onReopen(url) }
+    }
+
+    @objc private func clearLinkHistoryClicked() {
+        recentURLsManager.clear()
+    }
+
+    static func linkHistoryMenuEntry(for url: URL) -> LinkHistoryMenuEntry {
+        guard let host = url.host else {
+            return LinkHistoryMenuEntry(title: url.absoluteString, url: url)
+        }
+
+        var title = host
+        if let port = url.port {
+            title += ":\(port)"
+        }
+        if !url.path.isEmpty && url.path != "/" {
+            title += url.path
+        }
+        return LinkHistoryMenuEntry(title: title, url: url)
     }
 
     @objc private func quickStartClicked() { onShowQuickStart() }
