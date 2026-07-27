@@ -102,12 +102,40 @@ echo "Checking Sparkle framework..."
   exit 1
 }
 
+APP_INFO="$APP/Contents/Info.plist"
+SHARE_INFO="$SHARE_EXTENSION/Contents/Info.plist"
+SAFARI_INFO="$SAFARI_EXTENSION/Contents/Info.plist"
+APP_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP_INFO")
+APP_BUILD=$(plutil -extract CFBundleVersion raw -o - "$APP_INFO")
+
+check_bundle_version() {
+  local info_plist="$1"
+  local label="$2"
+  local version
+  local build
+
+  version=$(plutil -extract CFBundleShortVersionString raw -o - "$info_plist")
+  build=$(plutil -extract CFBundleVersion raw -o - "$info_plist")
+
+  [ "$APP_VERSION" = "$version" ] || {
+    echo "FAIL: $label version $version does not match app version $APP_VERSION"
+    exit 1
+  }
+  [ "$APP_BUILD" = "$build" ] || {
+    echo "FAIL: $label build $build does not match app build $APP_BUILD"
+    exit 1
+  }
+}
+
+echo "Checking embedded extension versions..."
+check_bundle_version "$SHARE_INFO" "Share extension"
+check_bundle_version "$SAFARI_INFO" "Safari extension"
+
 echo "Checking Safari Web Extension..."
 [ -d "$SAFARI_EXTENSION" ] || {
   echo "FAIL: YojamSafariExtension.appex not found in bundle"
   exit 1
 }
-SAFARI_INFO="$SAFARI_EXTENSION/Contents/Info.plist"
 [ "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$SAFARI_INFO")" \
   = "com.apple.Safari.web-extension" ] || {
   echo "FAIL: Safari extension point is missing or invalid"
@@ -128,12 +156,6 @@ for resource in \
   }
 done
 
-APP_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist")
-EXTENSION_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$SAFARI_INFO")
-[ "$APP_VERSION" = "$EXTENSION_VERSION" ] || {
-  echo "FAIL: Safari extension version $EXTENSION_VERSION does not match app version $APP_VERSION"
-  exit 1
-}
 MANIFEST_VERSION=$(plutil -extract version raw -o - "$SAFARI_RESOURCES/manifest.json")
 [ "$APP_VERSION" = "$MANIFEST_VERSION" ] || {
   echo "FAIL: Safari manifest version $MANIFEST_VERSION does not match app version $APP_VERSION"
