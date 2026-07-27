@@ -9,11 +9,16 @@ final class Debouncer: @unchecked Sendable {
         self.delay = delay; self.queue = queue
     }
 
-    deinit { workItem?.cancel() }
+    deinit { cancel() }
 
     func debounce(action: @escaping () -> Void) {
-        workItem?.cancel()
+        cancel()
         let item = DispatchWorkItem(block: action); workItem = item
         queue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    func cancel() {
+        workItem?.cancel()
+        workItem = nil
     }
 }

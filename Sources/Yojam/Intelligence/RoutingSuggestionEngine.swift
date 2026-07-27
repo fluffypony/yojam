@@ -6,17 +6,18 @@ final class RoutingSuggestionEngine: ObservableObject {
     @Published private var domainPreferences: [String: [String: Int]] = [:]
     private let minimumConfidence = 3
     private let sharedDefaults: UserDefaults
+    private let onPersistedChange: @MainActor () -> Void
     // P4: Debounce UserDefaults writes to avoid per-click I/O
-    private let saveDebouncer = Debouncer(delay: 2.0)
+    private let saveDebouncer: Debouncer
 
-    init() {
+    init(
+        saveDelay: TimeInterval = 2.0,
+        onPersistedChange: @escaping @MainActor () -> Void = {}
+    ) {
+        self.onPersistedChange = onPersistedChange
         self.sharedDefaults = SharedRoutingStore().defaults
-        if let data = sharedDefaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
-           let decoded = try? JSONDecoder().decode(
-               [String: [String: Int]].self, from: data
-           ) {
-            domainPreferences = decoded
-        }
+        self.saveDebouncer = Debouncer(delay: saveDelay)
+        reloadFromDefaults()
     }
 
     // Uses entry ID (UUID string) to distinguish profiles (§13.1)
@@ -92,13 +93,32 @@ final class RoutingSuggestionEngine: ObservableObject {
 
     func clearAll() { domainPreferences = [:]; save() }
 
+    /// Refresh after an imported settings file replaces the shared defaults.
+    /// Cancel first so an older local choice cannot overwrite the import when
+    /// its delayed save fires.
+    func reloadFromDefaults() {
+        saveDebouncer.cancel()
+        guard let data = sharedDefaults.data(
+            forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
+              let decoded = try? JSONDecoder().decode(
+                [String: [String: Int]].self, from: data) else {
+            domainPreferences = [:]
+            return
+        }
+        domainPreferences = decoded
+    }
+
     private func debouncedSave() {
         saveDebouncer.debounce { [weak self] in self?.save() }
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(domainPreferences) {
+            guard sharedDefaults.data(
+                forKey: SharedRoutingStore.Keys.learnedDomainPreferences
+            ) != data else { return }
             sharedDefaults.set(data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
+            onPersistedChange()
         }
     }
 }

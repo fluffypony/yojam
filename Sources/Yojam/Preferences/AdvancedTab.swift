@@ -439,6 +439,7 @@ struct AdvancedTab: View {
         browserManager.emailClients = settingsStore.loadEmailClients()
         browserManager.phoneClients = settingsStore.loadPhoneClients()
         ruleEngine.reloadRules()
+        routingSuggestionEngine.reloadFromDefaults()
     }
 
     private func appDisplayName(forBundleId bundleId: String) -> String? {

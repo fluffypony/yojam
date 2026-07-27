@@ -22,7 +22,7 @@ final class ConfigFileManager {
     private let settingsStore: SettingsStore
     private let onImport: (() -> Void)?
     private var pathSubscription: AnyCancellable?
-    private var routingSubscription: AnyCancellable?
+    private var configSubscription: AnyCancellable?
     private var pendingWrite: DispatchWorkItem?
     private var lastObservedData: Data?
     private var isApplyingExternalChange = false
@@ -70,7 +70,8 @@ final class ConfigFileManager {
             .sink { [weak self] rawPath in
                 self?.switchToConfiguredPath(rawPath)
             }
-        self.routingSubscription = settingsStore.routingDataDidChange
+        self.configSubscription = settingsStore.routingDataDidChange
+            .merge(with: settingsStore.configMirrorDataDidChange)
             .sink { [weak self] in
                 self?.scheduleWrite()
             }

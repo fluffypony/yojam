@@ -150,6 +150,7 @@ final class SettingsStore: ObservableObject {
                     try SMAppService.mainApp.unregister()
                 }
                 defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+                configMirrorDataDidChange.send()
             } catch {
                 YojamLogger.shared.log("SMAppService \(launchAtLogin ? "register" : "unregister") failed: \(error)")
                 isRevertingLaunchAtLogin = true
@@ -162,34 +163,61 @@ final class SettingsStore: ObservableObject {
         didSet { sharedDefaults.set(globalUTMStrippingEnabled, forKey: Keys.globalUTMStripping); routingDataDidChange.send() }
     }
     @Published var clipboardMonitoringEnabled: Bool {
-        didSet { defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring) }
+        didSet {
+            defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var iCloudSyncEnabled: Bool {
-        didSet { defaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSync) }
+        didSet {
+            defaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSync)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var debugLoggingEnabled: Bool {
-        didSet { defaults.set(debugLoggingEnabled, forKey: Keys.debugLogging) }
+        didSet {
+            defaults.set(debugLoggingEnabled, forKey: Keys.debugLogging)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var periodicRescanInterval: TimeInterval {
-        didSet { defaults.set(periodicRescanInterval, forKey: Keys.periodicRescanInterval) }
+        didSet {
+            defaults.set(periodicRescanInterval, forKey: Keys.periodicRescanInterval)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var utmStripList: [String] {
         didSet { sharedDefaults.set(utmStripList, forKey: Keys.utmStripList); routingDataDidChange.send() }
     }
     @Published var suppressedClipboardDomains: [String] {
-        didSet { defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains) }
+        didSet {
+            defaults.set(suppressedClipboardDomains, forKey: Keys.suppressedClipboardDomains)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var pickerLayout: PickerLayout {
-        didSet { sharedDefaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout) }
+        didSet {
+            sharedDefaults.set(pickerLayout.rawValue, forKey: Keys.pickerLayout)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var pickerDirectionOverride: PickerDirectionOverride {
-        didSet { sharedDefaults.set(pickerDirectionOverride.rawValue, forKey: Keys.pickerDirectionOverride) }
+        didSet {
+            sharedDefaults.set(pickerDirectionOverride.rawValue, forKey: Keys.pickerDirectionOverride)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var recentURLRetention: RecentURLRetention {
-        didSet { sharedDefaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention) }
+        didSet {
+            sharedDefaults.set(recentURLRetention.rawValue, forKey: Keys.recentURLRetention)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var recentURLRetentionMinutes: Int {
-        didSet { sharedDefaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes) }
+        didSet {
+            sharedDefaults.set(recentURLRetentionMinutes, forKey: Keys.recentURLRetentionMinutes)
+            configMirrorDataDidChange.send()
+        }
     }
     @Published var shortlinkResolutionEnabled: Bool {
         didSet { sharedDefaults.set(shortlinkResolutionEnabled, forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled) }
@@ -260,6 +288,10 @@ final class SettingsStore: ObservableObject {
     // B-ICLOUD-BROAD: Dedicated publisher for routing-data changes only,
     // so iCloud sync doesn't re-encode on unrelated UI field changes.
     let routingDataDidChange = PassthroughSubject<Void, Never>()
+
+    /// Changes used only by the live JSON mirror. ConfigFileManager merges
+    /// this with routingDataDidChange, while iCloud sync remains routing-only.
+    let configMirrorDataDidChange = PassthroughSubject<Void, Never>()
 
     // P2: Cached decoded results to avoid re-deserializing JSON on every routing call
     private var cachedRules: [Rule]?
@@ -345,12 +377,15 @@ final class SettingsStore: ObservableObject {
 
     func addDeletedBuiltInRuleId(_ id: UUID) {
         var ids = deletedBuiltInRuleIds()
-        ids.insert(id)
+        guard ids.insert(id).inserted else { return }
         sharedDefaults.set(ids.map(\.uuidString), forKey: Keys.deletedBuiltInRuleIds)
+        configMirrorDataDidChange.send()
     }
 
     func clearDeletedBuiltInRuleIds() {
+        guard !deletedBuiltInRuleIds().isEmpty else { return }
         sharedDefaults.removeObject(forKey: Keys.deletedBuiltInRuleIds)
+        configMirrorDataDidChange.send()
     }
 
     // MARK: - Complex Data Persistence
@@ -737,6 +772,7 @@ final class SettingsStore: ObservableObject {
                 sharedDefaults.set(
                     importedDeletedIds.map(\.uuidString),
                     forKey: Keys.deletedBuiltInRuleIds)
+                configMirrorDataDidChange.send()
             }
         }
         // Security: disable imported entries with path-based identifiers or
@@ -819,6 +855,7 @@ final class SettingsStore: ObservableObject {
            let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
             sharedDefaults.set(
                 data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
+            configMirrorDataDidChange.send()
         }
     }
 

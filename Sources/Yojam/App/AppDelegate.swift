@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let urlRewriter: URLRewriter
     let utmStripper: UTMStripper
     let recentURLsManager = RecentURLsManager()
-    let routingSuggestionEngine = RoutingSuggestionEngine()
+    let routingSuggestionEngine: RoutingSuggestionEngine
 
     // MARK: - Auto Update (Sparkle)
     let updaterController = SPUStandardUpdaterController(
@@ -61,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ruleEngine = RuleEngine(settingsStore: store)
         urlRewriter = URLRewriter(settingsStore: store)
         utmStripper = UTMStripper(settingsStore: store)
+        routingSuggestionEngine = RoutingSuggestionEngine {
+            store.configMirrorDataDidChange.send()
+        }
         super.init()
     }
 
@@ -256,13 +259,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // helper is missing, drifted, or tracking a moved app bundle.
         SelfCleanupInstaller.installOrRefresh()
 
-        // Flat-file config sync. Sync on every routing-data change.
+        // Flat-file config sync. Mirror every exported settings change.
         configFileManager = ConfigFileManager(settingsStore: settingsStore) { [weak self] in
             guard let self else { return }
             self.browserManager.browsers = self.settingsStore.loadBrowsers()
             self.browserManager.emailClients = self.settingsStore.loadEmailClients()
             self.browserManager.phoneClients = self.settingsStore.loadPhoneClients()
             self.ruleEngine.reloadRules()
+            self.routingSuggestionEngine.reloadFromDefaults()
         }
         configFileManager?.start()
 

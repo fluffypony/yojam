@@ -361,6 +361,155 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testLearnedPreferenceImportEmitsConfigChange() throws {
+        let store = SettingsStore()
+        let defaults = store.sharedStore.defaults
+        let key = SharedRoutingStore.Keys.learnedDomainPreferences
+        let originalData = defaults.data(forKey: key)
+        var imported = try JSONDecoder().decode(
+            SettingsExport.self, from: store.exportJSON())
+        let domain = "imported-\(UUID().uuidString).invalid"
+        imported.learnedDomainPreferences[domain] = ["browser-a": 3]
+        var configNotificationCount = 0
+        var routingNotificationCount = 0
+        let configCancellable = store.configMirrorDataDidChange.sink {
+            configNotificationCount += 1
+        }
+        let routingCancellable = store.routingDataDidChange.sink {
+            routingNotificationCount += 1
+        }
+        defer {
+            configCancellable.cancel()
+            routingCancellable.cancel()
+            if let originalData {
+                defaults.set(originalData, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        try store.importJSON(try JSONEncoder().encode(imported))
+
+        XCTAssertEqual(configNotificationCount, 1)
+        XCTAssertEqual(routingNotificationCount, 0)
+    }
+
+    @MainActor
+    func testMirrorOnlySettingsEmitConfigChangesWithoutRoutingChanges() {
+        let store = SettingsStore()
+        let originalClipboardMonitoring = store.clipboardMonitoringEnabled
+        let originalICloudSync = store.iCloudSyncEnabled
+        let originalDebugLogging = store.debugLoggingEnabled
+        let originalRescanInterval = store.periodicRescanInterval
+        let originalSuppressedDomains = store.suppressedClipboardDomains
+        let originalPickerLayout = store.pickerLayout
+        let originalPickerDirection = store.pickerDirectionOverride
+        let originalRetention = store.recentURLRetention
+        let originalRetentionMinutes = store.recentURLRetentionMinutes
+
+        var configNotificationCount = 0
+        var routingNotificationCount = 0
+        let configCancellable = store.configMirrorDataDidChange.sink {
+            configNotificationCount += 1
+        }
+        let routingCancellable = store.routingDataDidChange.sink {
+            routingNotificationCount += 1
+        }
+        defer {
+            configCancellable.cancel()
+            routingCancellable.cancel()
+            store.clipboardMonitoringEnabled = originalClipboardMonitoring
+            store.iCloudSyncEnabled = originalICloudSync
+            store.debugLoggingEnabled = originalDebugLogging
+            store.periodicRescanInterval = originalRescanInterval
+            store.suppressedClipboardDomains = originalSuppressedDomains
+            store.pickerLayout = originalPickerLayout
+            store.pickerDirectionOverride = originalPickerDirection
+            store.recentURLRetention = originalRetention
+            store.recentURLRetentionMinutes = originalRetentionMinutes
+        }
+
+        store.clipboardMonitoringEnabled.toggle()
+        store.iCloudSyncEnabled.toggle()
+        store.debugLoggingEnabled.toggle()
+        store.periodicRescanInterval += 1
+        store.suppressedClipboardDomains.append("mirror-event-\(UUID().uuidString).invalid")
+        store.pickerLayout = originalPickerLayout == .auto ? .smallHorizontal : .auto
+        store.pickerDirectionOverride = originalPickerDirection == .system ? .ltr : .system
+        store.recentURLRetention = originalRetention == .never ? .forever : .never
+        store.recentURLRetentionMinutes = originalRetentionMinutes == 1 ? 2 : 1
+
+        XCTAssertEqual(configNotificationCount, 9)
+        XCTAssertEqual(routingNotificationCount, 0)
+    }
+
+    @MainActor
+    func testDeletedBuiltInRuleIdsEmitOnlyWhenTheyChange() {
+        let store = SettingsStore()
+        let originalDeletedIds = store.deletedBuiltInRuleIds()
+        let newId = UUID()
+        var configNotificationCount = 0
+        var routingNotificationCount = 0
+        let configCancellable = store.configMirrorDataDidChange.sink {
+            configNotificationCount += 1
+        }
+        let routingCancellable = store.routingDataDidChange.sink {
+            routingNotificationCount += 1
+        }
+        defer {
+            configCancellable.cancel()
+            routingCancellable.cancel()
+            store.clearDeletedBuiltInRuleIds()
+            for id in originalDeletedIds {
+                store.addDeletedBuiltInRuleId(id)
+            }
+        }
+
+        store.addDeletedBuiltInRuleId(newId)
+        store.addDeletedBuiltInRuleId(newId)
+        store.clearDeletedBuiltInRuleIds()
+        store.clearDeletedBuiltInRuleIds()
+
+        XCTAssertEqual(configNotificationCount, 2)
+        XCTAssertEqual(routingNotificationCount, 0)
+    }
+
+    @MainActor
+    func testConfigFileManagerWritesMirrorOnlySettingChange() async throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalDebugLogging = store.debugLoggingEnabled
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        store.configFilePath = path.path
+        var writeCount = 0
+        let wroteChange = expectation(description: "mirror-only config write")
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0.05,
+            onWrite: {
+                writeCount += 1
+                if writeCount == 2 { wroteChange.fulfill() }
+            })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            store.debugLoggingEnabled = originalDebugLogging
+            try? FileManager.default.removeItem(at: path)
+        }
+        manager?.start()
+        XCTAssertEqual(writeCount, 1)
+
+        store.debugLoggingEnabled.toggle()
+
+        await fulfillment(of: [wroteChange], timeout: 1)
+        let written = try JSONDecoder().decode(
+            SettingsExport.self, from: Data(contentsOf: path))
+        XCTAssertEqual(written.debugLoggingEnabled, store.debugLoggingEnabled)
+        XCTAssertEqual(writeCount, 2)
+    }
+
+    @MainActor
     func testConfigFileManagerSkipsByteIdenticalWrite() throws {
         let store = SettingsStore()
         let originalPath = store.configFilePath
