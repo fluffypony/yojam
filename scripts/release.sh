@@ -175,6 +175,9 @@ if [ "$CONFIGURED_SPARKLE_PUBLIC_KEY" != "$KEYCHAIN_SPARKLE_PUBLIC_KEY" ]; then
 fi
 ok "Sparkle key matches project.yml"
 if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
+  xcrun swift "$SCRIPT_DIR/verify-sparkle-key.swift" \
+    "$SPARKLE_PRIVATE_KEY_FILE" "$CONFIGURED_SPARKLE_PUBLIC_KEY" \
+    || fail "Explicit Sparkle private key does not match project.yml"
   ok "Sparkle signing will use the explicit private key file"
 fi
 
@@ -243,6 +246,16 @@ BUNDLE_VALIDATOR="$SCRIPT_DIR/validate-bundle.sh"
   || fail "validate-bundle.sh is missing or not executable"
 "$BUNDLE_VALIDATOR" "$APP_PATH"
 ok "Bundle validation passed"
+
+EXPORTED_MARKETING_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - \
+  "$APP_PATH/Contents/Info.plist")
+EXPORTED_BUILD_NUMBER=$(plutil -extract CFBundleVersion raw -o - \
+  "$APP_PATH/Contents/Info.plist")
+[ "$EXPORTED_MARKETING_VERSION" = "$MARKETING_VERSION" ] \
+  || fail "Exported app version $EXPORTED_MARKETING_VERSION does not match $MARKETING_VERSION"
+[ "$EXPORTED_BUILD_NUMBER" = "$BUILD_NUMBER" ] \
+  || fail "Exported app build $EXPORTED_BUILD_NUMBER does not match $BUILD_NUMBER"
+ok "Exported app is v${MARKETING_VERSION} (build ${BUILD_NUMBER})"
 
 # Verify code signature
 codesign --verify --deep --strict "$APP_PATH" 2>/dev/null
