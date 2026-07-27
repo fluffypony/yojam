@@ -238,12 +238,11 @@ ok "Exported to $EXPORT_PATH"
 # ---- Validate bundle ----
 
 info "Validating bundle"
-if [ -x "$SCRIPT_DIR/validate-bundle.sh" ]; then
-  "$SCRIPT_DIR/validate-bundle.sh" "$APP_PATH"
-  ok "Bundle validation passed"
-else
-  echo "    ⚠ validate-bundle.sh not found, skipping"
-fi
+BUNDLE_VALIDATOR="$SCRIPT_DIR/validate-bundle.sh"
+[ -x "$BUNDLE_VALIDATOR" ] \
+  || fail "validate-bundle.sh is missing or not executable"
+"$BUNDLE_VALIDATOR" "$APP_PATH"
+ok "Bundle validation passed"
 
 # Verify code signature
 codesign --verify --deep --strict "$APP_PATH" 2>/dev/null

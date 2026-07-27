@@ -130,6 +130,7 @@ targets:
         INFOPLIST_FILE: Sources/Yojam/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Sources/Yojam/Resources/Yojam.entitlements
         CODE_SIGN_STYLE: Automatic
+        REGISTER_APP_GROUPS: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app
         PRODUCT_NAME: Yojam
         GENERATE_INFOPLIST_FILE: NO
@@ -163,6 +164,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.ShareExtension
         PRODUCT_NAME: YojamShareExtension
         CODE_SIGN_STYLE: Automatic
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
@@ -204,6 +206,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.SafariExtension
         PRODUCT_NAME: YojamSafariExtension
         CODE_SIGN_STYLE: Automatic
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
