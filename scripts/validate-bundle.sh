@@ -14,11 +14,6 @@ echo "Checking LSUIElement..."
 plutil -extract LSUIElement xml1 -o - "$APP/Contents/Info.plist" | grep -q "true" \
   || { echo "FAIL: LSUIElement not set"; exit 1; }
 
-# Check entitlements
-echo "Checking entitlements..."
-codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "ubiquity-kvstore-identifier" \
-  || { echo "FAIL: iCloud KVS entitlement missing"; exit 1; }
-
 echo "Checking automation entitlement..."
 codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "automation.apple-events" || {
   echo "FAIL: Apple Events entitlement missing"
@@ -57,6 +52,49 @@ require_app_group() {
   esac
 }
 
+require_profile_string_authorisation() {
+  local signed_plist="$1"
+  local profile_plist="$2"
+  local entitlement="$3"
+  local label="$4"
+  local signed_value
+  local profile_value
+  local profile_prefix
+
+  if ! signed_value=$(
+    /usr/libexec/PlistBuddy \
+      -c "Print :${entitlement}" "$signed_plist" 2>/dev/null
+  ); then
+    echo "FAIL: Signed entitlements for $label have no $entitlement entitlement"
+    exit 1
+  fi
+  if [ -z "$signed_value" ] || [[ "$signed_value" == *"*"* ]]; then
+    echo "FAIL: Signed entitlements for $label have an invalid $entitlement value"
+    exit 1
+  fi
+
+  if ! profile_value=$(
+    /usr/libexec/PlistBuddy \
+      -c "Print :Entitlements:${entitlement}" "$profile_plist" 2>/dev/null
+  ); then
+    echo "FAIL: Provisioning profile for $label has no $entitlement entitlement"
+    exit 1
+  fi
+
+  if [[ "$profile_value" == *"*"* ]]; then
+    profile_prefix="${profile_value%\*}"
+    if [ -z "$profile_prefix" ] \
+      || [[ "$profile_prefix" == *"*"* ]] \
+      || [[ "$signed_value" != "$profile_prefix"* ]]; then
+      echo "FAIL: Provisioning profile for $label does not authorise signed $entitlement value"
+      exit 1
+    fi
+  elif [ "$profile_value" != "$signed_value" ]; then
+    echo "FAIL: Provisioning profile for $label does not authorise signed $entitlement value"
+    exit 1
+  fi
+}
+
 SHARE_EXTENSION="$APP/Contents/PlugIns/YojamShareExtension.appex"
 SAFARI_EXTENSION="$APP/Contents/PlugIns/YojamSafariExtension.appex"
 PROFILE_BUNDLES=("$APP" "$SHARE_EXTENSION" "$SAFARI_EXTENSION")
@@ -93,8 +131,17 @@ for BUNDLE in "${PROFILE_BUNDLES[@]}"; do
     "$DECODED_PROFILE" \
     "Entitlements:com.apple.security.application-groups" \
     "Provisioning profile for $BUNDLE"
+
+  if [ "$BUNDLE" = "$APP" ]; then
+    require_profile_string_authorisation \
+      "$SIGNED_ENTITLEMENTS" \
+      "$DECODED_PROFILE" \
+      "com.apple.developer.ubiquity-kvstore-identifier" \
+      "$BUNDLE"
+  fi
 done
 echo "Validated $REQUIRED_APP_GROUP in $PROFILE_COUNT provisioning profiles"
+echo "Validated iCloud KVS provisioning profile authorisation"
 
 echo "Checking Sparkle framework..."
 [ -d "$APP/Contents/Frameworks/Sparkle.framework" ] || {
