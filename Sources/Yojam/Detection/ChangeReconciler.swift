@@ -4,7 +4,6 @@ import YojamCore
 @MainActor
 final class ChangeReconciler {
     private let browserManager: BrowserManager
-    private let ruleEngine: RuleEngine
     // §9: Track browser and email client IDs independently to prevent
     // removing an app that's both a browser and email client from flipping
     // isInstalled=false on both when removed from only one list.
@@ -18,12 +17,14 @@ final class ChangeReconciler {
     // when the app binary hasn't changed on disk.
     private var appInfoCache: [URL: (bundleId: String, mtime: Date)] = [:]
 
-    init(browserManager: BrowserManager, ruleEngine: RuleEngine) {
+    init(browserManager: BrowserManager) {
         self.browserManager = browserManager
-        self.ruleEngine = ruleEngine
-        knownBrowserIds = Set(browserManager.browsers.map(\.bundleIdentifier))
-        knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
-        knownPhoneIds = Set(browserManager.phoneClients.map(\.bundleIdentifier))
+        knownBrowserIds = Set(
+            browserManager.browsers.filter(\.isInstalled).map(\.bundleIdentifier))
+        knownEmailIds = Set(
+            browserManager.emailClients.filter(\.isInstalled).map(\.bundleIdentifier))
+        knownPhoneIds = Set(
+            browserManager.phoneClients.filter(\.isInstalled).map(\.bundleIdentifier))
     }
 
     // P11: Resolve bundleId from appURL using mtime cache to skip redundant reads
@@ -48,9 +49,15 @@ final class ChangeReconciler {
 
         for appURL in httpHandlers {
             guard let bundleId = cachedBundleId(for: appURL),
-                  bundleId != Bundle.main.bundleIdentifier,
-                  !knownBrowserIds.contains(bundleId) else { continue }
-            appDiscovered(bundleId: bundleId, appURL: appURL)
+                  bundleId != Bundle.main.bundleIdentifier else { continue }
+            let needsLocalStateRepair = browserManager.browsers.contains {
+                $0.bundleIdentifier == bundleId && !$0.isInstalled
+            }
+            if !knownBrowserIds.contains(bundleId) {
+                appDiscovered(bundleId: bundleId, appURL: appURL)
+            } else if needsLocalStateRepair {
+                browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
+            }
         }
 
         // mailto: handler discovery
@@ -129,8 +136,10 @@ final class ChangeReconciler {
             if FileManager.default.isExecutableFile(atPath: bundleId) {
                 currentIds.insert(bundleId)
             } else {
+                knownBrowserIds.remove(bundleId)
+                knownEmailIds.remove(bundleId)
+                knownPhoneIds.remove(bundleId)
                 browserManager.handleAppRemoved(bundleId: bundleId)
-                ruleEngine.disableRulesForApp(bundleId)
             }
         }
 
@@ -155,8 +164,9 @@ final class ChangeReconciler {
                             // Still installed — already in knownBrowserIds
                         } else {
                             self.knownBrowserIds.remove(bundleId)
+                            self.knownEmailIds.remove(bundleId)
+                            self.knownPhoneIds.remove(bundleId)
                             self.browserManager.handleAppRemoved(bundleId: bundleId)
-                            self.ruleEngine.disableRulesForApp(bundleId)
                         }
                     }
                     // Re-persist after deferred resolution
@@ -183,8 +193,10 @@ final class ChangeReconciler {
         knownBrowserIds = currentIds.intersection(
             knownBrowserIds.union(Set(httpHandlers.compactMap { cachedBundleId(for: $0) }))
         )
-        knownEmailIds = Set(browserManager.emailClients.map(\.bundleIdentifier))
-        knownPhoneIds = Set(browserManager.phoneClients.map(\.bundleIdentifier))
+        knownEmailIds = Set(
+            browserManager.emailClients.filter(\.isInstalled).map(\.bundleIdentifier))
+        knownPhoneIds = Set(
+            browserManager.phoneClients.filter(\.isInstalled).map(\.bundleIdentifier))
 
         // Persist installed bundle IDs for CLI/native-host preview filtering
         let allInstalled = Array(knownBundleIds)
@@ -196,7 +208,6 @@ final class ChangeReconciler {
         guard bundleId != Bundle.main.bundleIdentifier,
               !knownBrowserIds.contains(bundleId) else { return }
         browserManager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
-        ruleEngine.enableRulesForApp(bundleId)
         knownBrowserIds.insert(bundleId)
     }
 }

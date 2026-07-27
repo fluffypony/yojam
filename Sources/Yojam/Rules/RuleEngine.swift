@@ -14,7 +14,7 @@ final class RuleEngine: ObservableObject {
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
         self.rules = settingsStore.loadRules()
-        autoDisableUninstalledRules()
+        migrateAvailabilityDerivedBuiltInState()
     }
 
     private var sortedEnabledRules: [Rule] {
@@ -66,20 +66,6 @@ final class RuleEngine: ObservableObject {
             sourceApp: sourceApp,
             machineIdentifier: settingsStore.sharedStore.localMachineIdentifier
         )
-    }
-
-    func enableRulesForApp(_ bundleId: String) {
-        for i in rules.indices where rules[i].targetBundleId == bundleId && rules[i].isBuiltIn {
-            rules[i].enabled = true
-        }
-        save()
-    }
-
-    func disableRulesForApp(_ bundleId: String) {
-        for i in rules.indices where rules[i].targetBundleId == bundleId && rules[i].isBuiltIn {
-            rules[i].enabled = false
-        }
-        save()
     }
 
     func addRule(_ rule: Rule) {
@@ -148,6 +134,11 @@ final class RuleEngine: ObservableObject {
         var reset = original
         reset.enabled = rules[idx].enabled
         reset.priority = rules[idx].priority
+        let modifiedAt = Date()
+        reset.lastModifiedAt = modifiedAt
+        if !normalizedMachineScope(rules[idx].machineScopeIdentifiers).isEmpty {
+            reset.machineScopeModifiedAt = modifiedAt
+        }
         rules[idx] = reset
         save()
     }
@@ -184,21 +175,24 @@ final class RuleEngine: ObservableObject {
         save()
     }
 
-    func reloadRules() { rules = settingsStore.loadRules() }
+    func reloadRules() {
+        rules = settingsStore.loadRules()
+        migrateAvailabilityDerivedBuiltInState()
+    }
 
-    private func autoDisableUninstalledRules() {
-        var installedCache: [String: Bool] = [:]
-        for i in rules.indices where rules[i].isBuiltIn {
-            let bundleId = rules[i].targetBundleId
-            if installedCache[bundleId] == nil {
-                installedCache[bundleId] = NSWorkspace.shared.urlForApplication(
-                    withBundleIdentifier: bundleId) != nil
-            }
-            if installedCache[bundleId] == false {
-                rules[i].enabled = false
-            }
+    /// Older releases used `enabled` as local installation state for built-in
+    /// rules. A real user toggle has a modification timestamp, so only repair
+    /// unstamped disables and then keep `enabled` as portable user intent.
+    private func migrateAvailabilityDerivedBuiltInState() {
+        var changed = false
+        for index in rules.indices
+            where rules[index].isBuiltIn
+                && !rules[index].enabled
+                && rules[index].lastModifiedAt == nil {
+            rules[index].enabled = true
+            changed = true
         }
-        save()
+        if changed { save() }
     }
 
     private func save() {

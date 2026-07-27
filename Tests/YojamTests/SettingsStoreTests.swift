@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import Yojam
 import YojamCore
 
@@ -250,6 +251,473 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.importConfigMirrorJSON(Data("{}".utf8)))
         XCTAssertThrowsError(try store.importConfigMirrorJSON(Data(#"{"version":5}"#.utf8)))
         XCTAssertEqual(store.verticalThreshold, 14)
+    }
+
+    @MainActor
+    func testPortableConfigMirrorIgnoresMachineLocalBrowserState() throws {
+        let store = SettingsStore()
+        let originalBrowsers = store.loadBrowsers()
+        defer { store.saveBrowsers(originalBrowsers) }
+
+        let id = UUID()
+        let modifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        var entry = BrowserEntry(
+            id: id,
+            bundleIdentifier: "com.example.browser",
+            displayName: "Example",
+            isInstalled: false,
+            lastSeenAt: Date(timeIntervalSince1970: 100),
+            lastModifiedAt: modifiedAt)
+        store.saveBrowsers([entry])
+        let first = try store.exportConfigMirrorJSON()
+
+        entry.isInstalled = true
+        entry.lastSeenAt = Date(timeIntervalSince1970: 200)
+        store.saveBrowsers([entry])
+        let second = try store.exportConfigMirrorJSON()
+
+        XCTAssertEqual(first, second)
+        let decoded = try JSONDecoder().decode(SettingsExport.self, from: second)
+        XCTAssertTrue(try XCTUnwrap(decoded.browsers.first).isInstalled)
+        XCTAssertNil(decoded.browsers.first?.lastSeenAt)
+        XCTAssertEqual(decoded.browsers.first?.lastModifiedAt, modifiedAt)
+    }
+
+    @MainActor
+    func testConfigMirrorImportPreservesLocalBrowserState() throws {
+        let store = SettingsStore()
+        let originalBrowsers = store.loadBrowsers()
+        defer { store.saveBrowsers(originalBrowsers) }
+
+        let id = UUID()
+        let localLastSeen = Date(timeIntervalSince1970: 300)
+        let local = BrowserEntry(
+            id: id,
+            bundleIdentifier: "com.example.browser",
+            displayName: "Before",
+            isInstalled: false,
+            lastSeenAt: localLastSeen,
+            lastModifiedAt: Date(timeIntervalSince1970: 100))
+        store.saveBrowsers([local])
+
+        var imported = try JSONDecoder().decode(
+            SettingsExport.self, from: store.exportJSON())
+        imported.browsers[0].displayName = "After"
+        imported.browsers[0].isInstalled = true
+        imported.browsers[0].lastSeenAt = Date(timeIntervalSince1970: 400)
+        imported.browsers[0].lastModifiedAt = Date(timeIntervalSince1970: 500)
+
+        try store.importConfigMirrorJSON(try JSONEncoder().encode(imported))
+
+        let result = try XCTUnwrap(store.loadBrowsers().first)
+        XCTAssertEqual(result.displayName, "After")
+        XCTAssertFalse(result.isInstalled)
+        XCTAssertEqual(result.lastSeenAt, localLastSeen)
+        XCTAssertEqual(result.lastModifiedAt, Date(timeIntervalSince1970: 500))
+    }
+
+    @MainActor
+    func testConfigMirrorImportRechecksRetargetedBrowserState() throws {
+        let store = SettingsStore()
+        let originalBrowsers = store.loadBrowsers()
+        defer { store.saveBrowsers(originalBrowsers) }
+
+        let id = UUID()
+        let local = BrowserEntry(
+            id: id,
+            bundleIdentifier: "/bin/echo",
+            displayName: "Installed",
+            isInstalled: true,
+            lastSeenAt: Date(timeIntervalSince1970: 300))
+        store.saveBrowsers([local])
+
+        var imported = try JSONDecoder().decode(
+            SettingsExport.self, from: store.exportJSON())
+        imported.browsers[0].bundleIdentifier =
+            "/definitely/not/an/installed/yojam-test-browser"
+        imported.browsers[0].displayName = "Missing"
+
+        try store.importConfigMirrorJSON(try JSONEncoder().encode(imported))
+
+        let result = try XCTUnwrap(store.loadBrowsers().first)
+        XCTAssertEqual(result.displayName, "Missing")
+        XCTAssertFalse(result.isInstalled)
+        XCTAssertNil(result.lastSeenAt)
+    }
+
+    @MainActor
+    func testIdenticalConfigMirrorImportEmitsNoRoutingChanges() throws {
+        let store = SettingsStore()
+        let data = try store.exportConfigMirrorJSON()
+        var notificationCount = 0
+        let cancellable = store.routingDataDidChange.sink {
+            notificationCount += 1
+        }
+        defer { cancellable.cancel() }
+
+        try store.importConfigMirrorJSON(data)
+
+        XCTAssertEqual(notificationCount, 0)
+    }
+
+    @MainActor
+    func testConfigFileManagerSkipsByteIdenticalWrite() throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        store.configFilePath = path.path
+        var writeCount = 0
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0,
+            onWrite: { writeCount += 1 })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            try? FileManager.default.removeItem(at: path)
+        }
+
+        manager?.writeConfig()
+        let firstAttributes = try FileManager.default.attributesOfItem(atPath: path.path)
+        manager?.writeConfig()
+        let secondAttributes = try FileManager.default.attributesOfItem(atPath: path.path)
+
+        XCTAssertEqual(writeCount, 1)
+        XCTAssertEqual(
+            firstAttributes[.systemFileNumber] as? NSNumber,
+            secondAttributes[.systemFileNumber] as? NSNumber)
+        XCTAssertEqual(
+            firstAttributes[.modificationDate] as? Date,
+            secondAttributes[.modificationDate] as? Date)
+    }
+
+    @MainActor
+    func testConfigFileManagerPreservesInvalidExistingMirror() throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        let invalidData = Data("{\n".utf8)
+        try invalidData.write(to: path, options: .atomic)
+        store.configFilePath = path.path
+        var writeCount = 0
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0,
+            onWrite: { writeCount += 1 })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            try? FileManager.default.removeItem(at: path)
+        }
+
+        manager?.start()
+
+        XCTAssertEqual(try Data(contentsOf: path), invalidData)
+        XCTAssertEqual(writeCount, 0)
+    }
+
+    @MainActor
+    func testStartupImportMigratesAvailabilityDerivedBuiltInDisable() throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalRules = store.loadRules()
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        defer {
+            store.configFilePath = originalPath
+            store.saveRules(originalRules)
+            try? FileManager.default.removeItem(at: path)
+        }
+
+        let builtInId = BuiltInRules.all[0].id
+        store.saveRules(BuiltInRules.all)
+        let engine = RuleEngine(settingsStore: store)
+        var mirror = try JSONDecoder().decode(
+            SettingsExport.self, from: store.exportConfigMirrorJSON())
+        let mirrorIndex = try XCTUnwrap(
+            mirror.rules.firstIndex { $0.id == builtInId })
+        mirror.rules[mirrorIndex].enabled = false
+        mirror.rules[mirrorIndex].lastModifiedAt = nil
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(mirror).write(to: path, options: .atomic)
+        store.configFilePath = path.path
+        let manager = ConfigFileManager(settingsStore: store) {
+            engine.reloadRules()
+        }
+
+        manager.start()
+
+        XCTAssertTrue(try XCTUnwrap(
+            engine.rules.first { $0.id == builtInId }).enabled)
+        let canonicalMirror = try JSONDecoder().decode(
+            SettingsExport.self, from: Data(contentsOf: path))
+        XCTAssertTrue(try XCTUnwrap(
+            canonicalMirror.rules.first { $0.id == builtInId }).enabled)
+    }
+
+    @MainActor
+    func testPortableConfigMirrorSortsDeletedBuiltInRuleIds() throws {
+        let store = SettingsStore()
+        let originalDeletedIds = store.deletedBuiltInRuleIds()
+        defer {
+            store.clearDeletedBuiltInRuleIds()
+            for id in originalDeletedIds {
+                store.addDeletedBuiltInRuleId(id)
+            }
+        }
+        store.clearDeletedBuiltInRuleIds()
+        let deletedIds = BuiltInRules.all.prefix(2).map(\.id)
+        for id in deletedIds {
+            store.addDeletedBuiltInRuleId(id)
+        }
+
+        let exported = try JSONDecoder().decode(
+            SettingsExport.self, from: store.exportConfigMirrorJSON())
+
+        XCTAssertEqual(
+            exported.deletedBuiltInRuleIds,
+            deletedIds.map(\.uuidString).sorted())
+    }
+
+    @MainActor
+    func testConfigFileManagerDebouncesBurstIntoOneWrite() async throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalThreshold = store.verticalThreshold
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        store.configFilePath = path.path
+        var writeCount = 0
+        let wroteBurst = expectation(description: "debounced config write")
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0.05,
+            onWrite: {
+                writeCount += 1
+                if writeCount == 2 { wroteBurst.fulfill() }
+            })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            store.verticalThreshold = originalThreshold
+            try? FileManager.default.removeItem(at: path)
+        }
+        manager?.start()
+        XCTAssertEqual(writeCount, 1)
+
+        store.verticalThreshold = 9
+        store.verticalThreshold = 10
+        store.verticalThreshold = 11
+
+        await fulfillment(of: [wroteBurst], timeout: 1)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(writeCount, 2)
+    }
+
+    @MainActor
+    func testExternalConfigImportIsNotWrittenBack() async throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalThreshold = store.verticalThreshold
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        let initialData = try store.exportConfigMirrorJSON()
+        try initialData.write(to: path, options: .atomic)
+        store.configFilePath = path.path
+
+        var importCount = 0
+        var writeCount = 0
+        let importedExternalChange = expectation(description: "external config import")
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0.05,
+            onImport: {
+                importCount += 1
+                if importCount == 2 { importedExternalChange.fulfill() }
+            },
+            onWrite: { writeCount += 1 })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            store.verticalThreshold = originalThreshold
+            try? FileManager.default.removeItem(at: path)
+        }
+        manager?.start()
+        XCTAssertEqual(importCount, 1)
+        XCTAssertEqual(writeCount, 0)
+
+        var external = try JSONDecoder().decode(SettingsExport.self, from: initialData)
+        external.verticalThreshold = 12
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(external).write(to: path, options: .atomic)
+
+        await fulfillment(of: [importedExternalChange], timeout: 2)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(store.verticalThreshold, 12)
+        XCTAssertEqual(writeCount, 0)
+    }
+
+    @MainActor
+    func testRapidExternalReplacementsImportLatestMirror() async throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalThreshold = store.verticalThreshold
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
+        let initialData = try store.exportConfigMirrorJSON()
+        try initialData.write(to: path, options: .atomic)
+        store.configFilePath = path.path
+        let importedLatest = expectation(description: "latest config replacement imported")
+        var writeCount = 0
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0.05,
+            onImport: {
+                if store.verticalThreshold == 13 {
+                    importedLatest.fulfill()
+                }
+            },
+            onWrite: { writeCount += 1 })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            store.verticalThreshold = originalThreshold
+            try? FileManager.default.removeItem(at: path)
+        }
+        manager?.start()
+
+        var first = try JSONDecoder().decode(
+            SettingsExport.self, from: initialData)
+        first.verticalThreshold = 12
+        var latest = first
+        latest.verticalThreshold = 13
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(first).write(to: path, options: .atomic)
+        try encoder.encode(latest).write(to: path, options: .atomic)
+
+        await fulfillment(of: [importedLatest], timeout: 2)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(store.verticalThreshold, 13)
+        XCTAssertEqual(writeCount, 0)
+    }
+
+    @MainActor
+    func testConfigFileManagerSwitchesToPublishedCustomPath() async throws {
+        let store = SettingsStore()
+        let originalPath = store.configFilePath
+        let originalThreshold = store.verticalThreshold
+        let firstPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-first.json")
+        let secondPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yojam-\(UUID().uuidString)-second.json")
+        let initialData = try store.exportConfigMirrorJSON()
+        try initialData.write(to: firstPath, options: .atomic)
+        var secondExport = try JSONDecoder().decode(
+            SettingsExport.self, from: initialData)
+        secondExport.verticalThreshold = 13
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(secondExport).write(to: secondPath, options: .atomic)
+        store.configFilePath = firstPath.path
+        let wroteNewPath = expectation(description: "new config path written")
+        var manager: ConfigFileManager? = ConfigFileManager(
+            settingsStore: store,
+            writeDelay: 0.05,
+            onWrite: {
+                if store.verticalThreshold == 14 {
+                    wroteNewPath.fulfill()
+                }
+            })
+        defer {
+            manager = nil
+            store.configFilePath = originalPath
+            store.verticalThreshold = originalThreshold
+            try? FileManager.default.removeItem(at: firstPath)
+            try? FileManager.default.removeItem(at: secondPath)
+        }
+        manager?.start()
+
+        store.configFilePath = secondPath.path
+
+        XCTAssertEqual(manager?.configPath, secondPath.standardizedFileURL)
+        XCTAssertEqual(store.verticalThreshold, 13)
+        XCTAssertEqual(try Data(contentsOf: firstPath), initialData)
+
+        store.verticalThreshold = 14
+        await fulfillment(of: [wroteNewPath], timeout: 2)
+        let written = try JSONDecoder().decode(
+            SettingsExport.self, from: Data(contentsOf: secondPath))
+        XCTAssertEqual(written.verticalThreshold, 14)
+        XCTAssertEqual(try Data(contentsOf: firstPath), initialData)
+    }
+
+    @MainActor
+    func testRepeatedMissingEmailClientRemovalDoesNotResave() {
+        let store = SettingsStore()
+        let originalBrowsers = store.loadBrowsers()
+        let originalEmailClients = store.loadEmailClients()
+        let originalPhoneClients = store.loadPhoneClients()
+        defer {
+            store.saveBrowsers(originalBrowsers)
+            store.saveEmailClients(originalEmailClients)
+            store.savePhoneClients(originalPhoneClients)
+        }
+
+        let bundleId = "com.example.missing-mail"
+        store.saveBrowsers([])
+        store.saveEmailClients([
+            BrowserEntry(
+                bundleIdentifier: bundleId,
+                displayName: "Missing Mail",
+                isInstalled: true)
+        ])
+        store.savePhoneClients([])
+        let manager = BrowserManager(settingsStore: store)
+        var notificationCount = 0
+        let cancellable = store.routingDataDidChange.sink {
+            notificationCount += 1
+        }
+        defer { cancellable.cancel() }
+
+        XCTAssertTrue(manager.handleAppRemoved(bundleId: bundleId))
+        let firstRemovalNotifications = notificationCount
+        XCTAssertEqual(firstRemovalNotifications, 1)
+        XCTAssertFalse(manager.handleAppRemoved(bundleId: bundleId))
+        XCTAssertEqual(notificationCount, firstRemovalNotifications)
+    }
+
+    @MainActor
+    func testRepeatedInstalledBrowserEventDoesNotResaveOrSuggestDuplicate() {
+        let store = SettingsStore()
+        let originalBrowsers = store.loadBrowsers()
+        defer { store.saveBrowsers(originalBrowsers) }
+        let bundleId = "com.example.installed-browser"
+        store.saveBrowsers([
+            BrowserEntry(
+                bundleIdentifier: bundleId,
+                displayName: "Installed Browser",
+                isInstalled: false)
+        ])
+        let manager = BrowserManager(settingsStore: store)
+        var notificationCount = 0
+        let cancellable = store.routingDataDidChange.sink {
+            notificationCount += 1
+        }
+        defer { cancellable.cancel() }
+        let appURL = URL(fileURLWithPath: "/Applications/Installed Browser.app")
+
+        manager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
+        let firstInstallationNotifications = notificationCount
+        manager.handleAppInstalled(bundleId: bundleId, appURL: appURL)
+
+        XCTAssertEqual(firstInstallationNotifications, 1)
+        XCTAssertEqual(notificationCount, firstInstallationNotifications)
+        XCTAssertTrue(manager.suggestedBrowsers.isEmpty)
     }
 
     @MainActor

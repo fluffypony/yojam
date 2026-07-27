@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import ServiceManagement
@@ -528,7 +529,23 @@ final class SettingsStore: ObservableObject {
     // MARK: - Import / Export
 
     func exportJSON() throws -> Data {
-        let export = SettingsExport(
+        try encodeExport(makeSettingsExport())
+    }
+
+    /// The live config mirror is shared between Macs, so installation state
+    /// must not depend on whichever Mac wrote the file last. Keep full-fidelity
+    /// JSON for manual backups, while normalising runtime-only browser fields
+    /// in the continuously synced mirror.
+    func exportConfigMirrorJSON() throws -> Data {
+        var export = makeSettingsExport()
+        export.browsers = export.browsers.map(Self.portableBrowserEntry)
+        export.emailClients = export.emailClients.map(Self.portableBrowserEntry)
+        export.phoneClients = export.phoneClients.map(Self.portableBrowserEntry)
+        return try encodeExport(export)
+    }
+
+    private func makeSettingsExport() -> SettingsExport {
+        SettingsExport(
             version: 5,
             activationMode: activationMode,
             defaultSelection: defaultSelectionBehavior,
@@ -552,7 +569,9 @@ final class SettingsStore: ObservableObject {
             pickerDirectionOverride: pickerDirectionOverride,
             recentURLRetention: recentURLRetention,
             recentURLRetentionMinutes: recentURLRetentionMinutes,
-            deletedBuiltInRuleIds: Array(deletedBuiltInRuleIds()).map(\.uuidString),
+            deletedBuiltInRuleIds: deletedBuiltInRuleIds()
+                .map(\.uuidString)
+                .sorted(),
             learnedDomainPreferences: {
                 guard let data = sharedDefaults.data(forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
                       let decoded = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
@@ -560,9 +579,22 @@ final class SettingsStore: ObservableObject {
                 return decoded
             }()
         )
+    }
+
+    private func encodeExport(_ export: SettingsExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(export)
+    }
+
+    static func portableBrowserEntry(_ entry: BrowserEntry) -> BrowserEntry {
+        var copy = entry
+        // `isInstalled` is retained with a stable value for compatibility
+        // with 1.2.0 decoders. Newer clients ignore it when importing a live
+        // mirror and resolve availability on the local Mac instead.
+        copy.isInstalled = true
+        copy.lastSeenAt = nil
+        return copy
     }
 
     func importJSON(_ data: Data) throws {
@@ -571,7 +603,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func importConfigMirrorJSON(_ data: Data) throws {
-        let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
+        var imported = try JSONDecoder().decode(SettingsExport.self, from: data)
         guard imported.isCompleteConfigMirror else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -580,31 +612,132 @@ final class SettingsStore: ObservableObject {
                 )
             )
         }
+        imported.browsers = preservingLocalBrowserState(
+            in: imported.browsers, local: loadBrowsers())
+        imported.emailClients = preservingLocalBrowserState(
+            in: imported.emailClients, local: loadEmailClients())
+        imported.phoneClients = preservingLocalBrowserState(
+            in: imported.phoneClients, local: loadPhoneClients())
         try applyImport(imported)
     }
 
+    /// Preserve state that describes this Mac, not the shared configuration.
+    /// UUID is authoritative; the identity fallback handles older files whose
+    /// entry IDs were regenerated while retaining the same app/profile row.
+    func preservingLocalBrowserState(
+        in incoming: [BrowserEntry], local: [BrowserEntry]
+    ) -> [BrowserEntry] {
+        var localById: [UUID: BrowserEntry] = [:]
+        for entry in local where localById[entry.id] == nil {
+            localById[entry.id] = entry
+        }
+        return incoming.map { entry in
+            let matchingIdEntry = localById[entry.id].flatMap { candidate in
+                Self.sameAppTarget(candidate, entry) ? candidate : nil
+            }
+            let localEntry = matchingIdEntry
+                ?? local.first(where: { Self.sameBrowserIdentity($0, entry) })
+            var copy = entry
+            if let localEntry {
+                copy.isInstalled = localEntry.isInstalled
+                copy.lastSeenAt = localEntry.lastSeenAt
+            } else {
+                copy.isInstalled = Self.isInstalledOnThisMac(entry)
+                copy.lastSeenAt = copy.isInstalled ? Date() : nil
+            }
+            return copy
+        }
+    }
+
+    private static func sameBrowserIdentity(
+        _ lhs: BrowserEntry, _ rhs: BrowserEntry
+    ) -> Bool {
+        lhs.bundleIdentifier.caseInsensitiveCompare(rhs.bundleIdentifier) == .orderedSame
+            && normalizedIdentityValue(lhs.profileId) == normalizedIdentityValue(rhs.profileId)
+            && normalizedIdentityValue(lhs.userDataDirectory)
+                == normalizedIdentityValue(rhs.userDataDirectory)
+            && normalizedIdentityValue(lhs.customLaunchArgs)
+                == normalizedIdentityValue(rhs.customLaunchArgs)
+            && lhs.openInPrivateWindow == rhs.openInPrivateWindow
+            && lhs.openAsNewInstance == rhs.openAsNewInstance
+    }
+
+    private static func sameAppTarget(
+        _ lhs: BrowserEntry, _ rhs: BrowserEntry
+    ) -> Bool {
+        lhs.bundleIdentifier.caseInsensitiveCompare(rhs.bundleIdentifier) == .orderedSame
+    }
+
+    private static func normalizedIdentityValue(_ value: String?) -> String {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed as NSString).expandingTildeInPath
+    }
+
+    private static func isInstalledOnThisMac(_ entry: BrowserEntry) -> Bool {
+        if entry.bundleIdentifier.hasPrefix("/") {
+            return FileManager.default.isExecutableFile(atPath: entry.bundleIdentifier)
+        }
+        return NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: entry.bundleIdentifier) != nil
+    }
+
     private func applyImport(_ imported: SettingsExport) throws {
-        activationMode = imported.activationMode
-        defaultSelectionBehavior = imported.defaultSelection
+        if activationMode != imported.activationMode {
+            activationMode = imported.activationMode
+        }
+        if defaultSelectionBehavior != imported.defaultSelection {
+            defaultSelectionBehavior = imported.defaultSelection
+        }
         // §43: Clamp imported values to valid ranges
-        verticalThreshold = max(4, min(imported.verticalThreshold, 20))
-        soundEffectsEnabled = imported.soundEffects
-        launchAtLogin = imported.launchAtLogin
-        globalUTMStrippingEnabled = imported.globalUTMStripping
-        clipboardMonitoringEnabled = imported.clipboardMonitoring
-        iCloudSyncEnabled = imported.iCloudSync
-        debugLoggingEnabled = imported.debugLoggingEnabled
-        periodicRescanInterval = max(60, min(imported.periodicRescanInterval, 86400))
-        pickerLayout = imported.pickerLayout
-        pickerDirectionOverride = imported.pickerDirectionOverride
-        recentURLRetention = imported.recentURLRetention
-        recentURLRetentionMinutes = max(1, min(imported.recentURLRetentionMinutes, 1440))
+        let importedVerticalThreshold = max(4, min(imported.verticalThreshold, 20))
+        if verticalThreshold != importedVerticalThreshold {
+            verticalThreshold = importedVerticalThreshold
+        }
+        if soundEffectsEnabled != imported.soundEffects {
+            soundEffectsEnabled = imported.soundEffects
+        }
+        if launchAtLogin != imported.launchAtLogin {
+            launchAtLogin = imported.launchAtLogin
+        }
+        if globalUTMStrippingEnabled != imported.globalUTMStripping {
+            globalUTMStrippingEnabled = imported.globalUTMStripping
+        }
+        if clipboardMonitoringEnabled != imported.clipboardMonitoring {
+            clipboardMonitoringEnabled = imported.clipboardMonitoring
+        }
+        if iCloudSyncEnabled != imported.iCloudSync {
+            iCloudSyncEnabled = imported.iCloudSync
+        }
+        if debugLoggingEnabled != imported.debugLoggingEnabled {
+            debugLoggingEnabled = imported.debugLoggingEnabled
+        }
+        let importedRescanInterval = max(60, min(imported.periodicRescanInterval, 86400))
+        if periodicRescanInterval != importedRescanInterval {
+            periodicRescanInterval = importedRescanInterval
+        }
+        if pickerLayout != imported.pickerLayout {
+            pickerLayout = imported.pickerLayout
+        }
+        if pickerDirectionOverride != imported.pickerDirectionOverride {
+            pickerDirectionOverride = imported.pickerDirectionOverride
+        }
+        if recentURLRetention != imported.recentURLRetention {
+            recentURLRetention = imported.recentURLRetention
+        }
+        let importedRetentionMinutes = max(1, min(imported.recentURLRetentionMinutes, 1440))
+        if recentURLRetentionMinutes != importedRetentionMinutes {
+            recentURLRetentionMinutes = importedRetentionMinutes
+        }
         // Restore user-deleted built-in tombstones from the export payload.
         let importedDeletedIds = Set(imported.deletedBuiltInRuleIds.compactMap { UUID(uuidString: $0) })
-        if importedDeletedIds.isEmpty {
-            clearDeletedBuiltInRuleIds()
-        } else {
-            sharedDefaults.set(importedDeletedIds.map(\.uuidString), forKey: Keys.deletedBuiltInRuleIds)
+        if deletedBuiltInRuleIds() != importedDeletedIds {
+            if importedDeletedIds.isEmpty {
+                clearDeletedBuiltInRuleIds()
+            } else {
+                sharedDefaults.set(
+                    importedDeletedIds.map(\.uuidString),
+                    forKey: Keys.deletedBuiltInRuleIds)
+            }
         }
         // Security: disable imported entries with path-based identifiers or
         // customLaunchArgs — these are code-execution vectors via social engineering.
@@ -629,9 +762,15 @@ final class SettingsStore: ObservableObject {
             }
             return e
         }
-        saveBrowsers(sanitizedBrowsers)
-        saveEmailClients(sanitizedEmailClients)
-        savePhoneClients(sanitizedPhoneClients)
+        if loadBrowsers() != sanitizedBrowsers {
+            saveBrowsers(sanitizedBrowsers)
+        }
+        if loadEmailClients() != sanitizedEmailClients {
+            saveEmailClients(sanitizedEmailClients)
+        }
+        if loadPhoneClients() != sanitizedPhoneClients {
+            savePhoneClients(sanitizedPhoneClients)
+        }
         // Validate regex patterns and disable imported rules that can execute
         // arbitrary commands. Users can re-enable them manually after review.
         // Rules with absolute-path `targetBundleId` are a code-execution vector
@@ -651,15 +790,35 @@ final class SettingsStore: ObservableObject {
         }
         // Save imported rules verbatim; loadRules() will insert fresh built-ins
         // for any UUIDs that are missing and not tombstoned.
-        saveRules(validatedImportedRules)
-        saveGlobalRewriteRules(imported.globalRewriteRules)
-        utmStripList = imported.utmStripList
+        if loadRules() != validatedImportedRules {
+            saveRules(validatedImportedRules)
+        }
+        if loadGlobalRewriteRules() != imported.globalRewriteRules {
+            saveGlobalRewriteRules(imported.globalRewriteRules)
+        }
+        if utmStripList != imported.utmStripList {
+            utmStripList = imported.utmStripList
+        }
         // Clamp to prevent clipboard-check O(n) blow-up
-        suppressedClipboardDomains = Array(imported.suppressedClipboardDomains.prefix(1000))
+        let importedSuppressedDomains = Array(imported.suppressedClipboardDomains.prefix(1000))
+        if suppressedClipboardDomains != importedSuppressedDomains {
+            suppressedClipboardDomains = importedSuppressedDomains
+        }
         // Always restore learned domain preferences, even when empty, so
         // importing a config with `{}` clears stale state.
-        if let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
-            sharedDefaults.set(data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
+        let currentLearnedPreferences: [String: [String: Int]] = {
+            guard let data = sharedDefaults.data(
+                forKey: SharedRoutingStore.Keys.learnedDomainPreferences),
+                  let decoded = try? JSONDecoder().decode(
+                    [String: [String: Int]].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }()
+        if currentLearnedPreferences != imported.learnedDomainPreferences,
+           let data = try? JSONEncoder().encode(imported.learnedDomainPreferences) {
+            sharedDefaults.set(
+                data, forKey: SharedRoutingStore.Keys.learnedDomainPreferences)
         }
     }
 

@@ -10,8 +10,9 @@ import Foundation
 /// Not intended as the canonical source of truth — App Group `UserDefaults`
 /// remains authoritative for performance (extensions read it directly). The
 /// file is a human-editable mirror. Writes from the app are debounced and
-/// atomic; external edits are detected via `DispatchSource.FileSystemObject`
-/// with a small debounce to ignore our own writes.
+/// atomic; external edits are detected via `DispatchSource.FileSystemObject`.
+/// Repeated events are ignored by comparing their content with the last data
+/// written or imported.
 @MainActor
 final class ConfigFileManager {
     /// On-disk location of the flat-file mirror. Exposed so the
@@ -21,9 +22,12 @@ final class ConfigFileManager {
     private let settingsStore: SettingsStore
     private let onImport: (() -> Void)?
     private var pathSubscription: AnyCancellable?
-    private var lastSelfWriteAt: Date = .distantPast
-    private var lastSelfWriteData: Data?
-    private let selfWriteEpsilon: TimeInterval = 1.0
+    private var routingSubscription: AnyCancellable?
+    private var pendingWrite: DispatchWorkItem?
+    private var lastObservedData: Data?
+    private var isApplyingExternalChange = false
+    private let writeDelay: TimeInterval
+    private let onWrite: (() -> Void)?
 
     /// Default on-disk path for the flat-file mirror.
     static var defaultConfigPath: URL {
@@ -32,7 +36,11 @@ final class ConfigFileManager {
     }
 
     static func configPath(for settingsStore: SettingsStore) -> URL {
-        guard let rawPath = settingsStore.configFilePath?
+        configPath(forRawPath: settingsStore.configFilePath)
+    }
+
+    private static func configPath(forRawPath rawPath: String?) -> URL {
+        guard let rawPath = rawPath?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !rawPath.isEmpty else {
             return defaultConfigPath
@@ -41,14 +49,30 @@ final class ConfigFileManager {
             .standardizedFileURL
     }
 
-    init(settingsStore: SettingsStore, onImport: (() -> Void)? = nil) {
+    private static func isCustomPath(_ rawPath: String?) -> Bool {
+        guard let rawPath else { return false }
+        return !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    init(
+        settingsStore: SettingsStore,
+        writeDelay: TimeInterval = 0.3,
+        onImport: (() -> Void)? = nil,
+        onWrite: (() -> Void)? = nil
+    ) {
         self.settingsStore = settingsStore
+        self.writeDelay = writeDelay
         self.onImport = onImport
+        self.onWrite = onWrite
         self.configPath = Self.configPath(for: settingsStore)
         self.pathSubscription = settingsStore.$configFilePath
             .dropFirst()
-            .sink { [weak self] _ in
-                self?.switchToConfiguredPath()
+            .sink { [weak self] rawPath in
+                self?.switchToConfiguredPath(rawPath)
+            }
+        self.routingSubscription = settingsStore.routingDataDidChange
+            .sink { [weak self] in
+                self?.scheduleWrite()
             }
     }
 
@@ -62,7 +86,12 @@ final class ConfigFileManager {
 
         if isUsingCustomPath,
            FileManager.default.fileExists(atPath: configPath.path) {
-            importExistingConfig()
+            if importExistingConfig() {
+                // One canonical write migrates 1.2.0 mirrors away from local
+                // installation timestamps. Byte comparison keeps this a no-op
+                // once every writer is using the portable representation.
+                writeConfig()
+            }
         } else if !FileManager.default.fileExists(atPath: configPath.path) {
             writeConfig()
         }
@@ -77,31 +106,61 @@ final class ConfigFileManager {
         return !path.isEmpty
     }
 
-    private func switchToConfiguredPath() {
-        let newPath = Self.configPath(for: settingsStore)
+    private func switchToConfiguredPath(_ rawPath: String?) {
+        let newPath = Self.configPath(forRawPath: rawPath)
         guard newPath != configPath else { return }
         fsSource?.cancel()
         fsSource = nil
+        pendingWrite?.cancel()
+        pendingWrite = nil
         configPath = newPath
-        writeConfig()
+        if Self.isCustomPath(rawPath),
+           FileManager.default.fileExists(atPath: configPath.path) {
+            // Preserve invalid or partially downloaded content instead of
+            // replacing it with this Mac's current settings.
+            if importExistingConfig() {
+                writeConfig()
+            }
+        } else {
+            writeConfig()
+        }
         startWatching()
     }
 
-    private func importExistingConfig() {
+    @discardableResult
+    private func importExistingConfig() -> Bool {
         guard let data = try? Data(contentsOf: configPath), !data.isEmpty else {
-            writeConfig()
-            return
+            return false
         }
         do {
+            isApplyingExternalChange = true
+            defer { isApplyingExternalChange = false }
             try settingsStore.importConfigMirrorJSON(data)
+            lastObservedData = data
             onImport?()
             YojamLogger.shared.log("ConfigFileManager: imported config from \(configPath.lastPathComponent)")
+            return true
         } catch {
             YojamLogger.shared.log("ConfigFileManager: startup import invalid (\(error.localizedDescription))")
+            return false
         }
     }
 
     // MARK: - Writing
+
+    func scheduleWrite() {
+        guard !isApplyingExternalChange else { return }
+        pendingWrite?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingWrite = nil
+            self.writeConfig()
+        }
+        pendingWrite = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + writeDelay,
+            execute: work)
+    }
 
     func writeConfig() {
         do {
@@ -109,7 +168,11 @@ final class ConfigFileManager {
                 at: configPath.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let data = try settingsStore.exportJSON()
+            let data = try settingsStore.exportConfigMirrorJSON()
+            if let existing = try? Data(contentsOf: configPath), existing == data {
+                lastObservedData = data
+                return
+            }
             let tempPath = configPath.appendingPathExtension("tmp")
             try data.write(to: tempPath, options: .atomic)
             if FileManager.default.fileExists(atPath: configPath.path) {
@@ -117,8 +180,8 @@ final class ConfigFileManager {
             } else {
                 try FileManager.default.moveItem(at: tempPath, to: configPath)
             }
-            lastSelfWriteAt = Date()
-            lastSelfWriteData = data
+            lastObservedData = data
+            onWrite?()
         } catch {
             YojamLogger.shared.log("ConfigFileManager: write failed: \(error.localizedDescription)")
         }
@@ -148,27 +211,27 @@ final class ConfigFileManager {
     }
 
     private func handleExternalChange() {
-        // Always re-arm the watcher regardless of success/failure: the old fd
-        // no longer points at the current inode after any write/rename/delete.
-        // defer ensures we re-arm even if the file was deleted (recreating the
-        // watcher will re-seed on the next writeConfig call).
-        defer {
-            // If the file exists, re-arm on the fresh inode. If it was deleted,
-            // seed it again so downstream edits still get picked up.
-            if !FileManager.default.fileExists(atPath: configPath.path) {
-                writeConfig()
-            }
-            startWatching()
+        // Re-arm on the current inode before reading. If a file provider
+        // replaced the file while this event was queued, the read sees the
+        // newest contents and any later replacement is observed by the new fd.
+        fsSource?.cancel()
+        fsSource = nil
+        if !FileManager.default.fileExists(atPath: configPath.path) {
+            writeConfig()
         }
+        startWatching()
+
         guard let data = try? Data(contentsOf: configPath) else { return }
-        // Ignore only our own write content. A remote sync update that lands
-        // inside this time window should still import if the file differs.
-        if Date().timeIntervalSince(lastSelfWriteAt) < selfWriteEpsilon,
-           data == lastSelfWriteData {
-            return
-        }
+        // Ignore content we have already applied, regardless of how long a
+        // file provider took to deliver or replay the inode replacement.
+        guard data != lastObservedData else { return }
         do {
+            pendingWrite?.cancel()
+            pendingWrite = nil
+            isApplyingExternalChange = true
+            defer { isApplyingExternalChange = false }
             try settingsStore.importConfigMirrorJSON(data)
+            lastObservedData = data
             onImport?()
             YojamLogger.shared.log("ConfigFileManager: imported external edit from \(configPath.lastPathComponent)")
         } catch {

@@ -44,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardMonitor: ClipboardMonitor?
     private var iCloudSyncManager: ICloudSyncManager?
     var configFileManager: ConfigFileManager?
-    private var configSyncSubscription: AnyCancellable?
 
     // MARK: - State
     private var cancellables = Set<AnyCancellable>()
@@ -105,8 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         // Detection layer
-        changeReconciler = ChangeReconciler(
-            browserManager: browserManager, ruleEngine: ruleEngine)
+        changeReconciler = ChangeReconciler(browserManager: browserManager)
         appInstallMonitor = AppInstallMonitor(
             reconciler: changeReconciler)
         workspaceObserver = WorkspaceObserver(
@@ -265,12 +263,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.ruleEngine.reloadRules()
         }
         configFileManager?.start()
-        configSyncSubscription = settingsStore.routingDataDidChange.sink { [weak self] in
-            // Debounce writes via a small delay so burst updates coalesce.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.configFileManager?.writeConfig()
-            }
-        }
 
         drainPendingLaunchRequests()
     }

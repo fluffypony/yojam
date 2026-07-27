@@ -197,9 +197,11 @@ final class ICloudSyncManager {
             do {
                 let remote = try decoder.decode([BrowserEntry].self, from: data)
                     .filter { !$0.bundleIdentifier.hasPrefix("/") }
+                let local = settingsStore.loadBrowsers()
                 let mergeResult = SyncConflictResolver.mergeBrowserListsWithAliases(
-                    local: settingsStore.loadBrowsers(), remote: remote)
-                let merged = mergeResult.entries
+                    local: local, remote: remote)
+                let merged = settingsStore.preservingLocalBrowserState(
+                    in: mergeResult.entries, local: local)
                 browserIdAliases.merge(mergeResult.idAliases) { current, _ in current }
                 settingsStore.saveBrowsers(merged)
                 // §4: Update live in-memory state
@@ -250,8 +252,11 @@ final class ICloudSyncManager {
             do {
                 let remote = try decoder.decode([BrowserEntry].self, from: data)
                     .filter { !$0.bundleIdentifier.hasPrefix("/") }
-                let merged = SyncConflictResolver.mergeBrowserLists(
-                    local: settingsStore.loadEmailClients(), remote: remote)
+                let local = settingsStore.loadEmailClients()
+                let merged = settingsStore.preservingLocalBrowserState(
+                    in: SyncConflictResolver.mergeBrowserLists(
+                        local: local, remote: remote),
+                    local: local)
                 settingsStore.saveEmailClients(merged)
                 browserManager?.emailClients = merged
             } catch {
@@ -263,8 +268,11 @@ final class ICloudSyncManager {
             do {
                 let remote = try decoder.decode([BrowserEntry].self, from: data)
                     .filter { !$0.bundleIdentifier.hasPrefix("/") }
-                let merged = SyncConflictResolver.mergeBrowserLists(
-                    local: settingsStore.loadPhoneClients(), remote: remote)
+                let local = settingsStore.loadPhoneClients()
+                let merged = settingsStore.preservingLocalBrowserState(
+                    in: SyncConflictResolver.mergeBrowserLists(
+                        local: local, remote: remote),
+                    local: local)
                 settingsStore.savePhoneClients(merged)
                 browserManager?.phoneClients = merged
             } catch {

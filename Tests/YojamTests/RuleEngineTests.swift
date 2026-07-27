@@ -4,6 +4,79 @@ import YojamCore
 
 final class RuleEngineTests: XCTestCase {
     @MainActor
+    func testUnavailableBuiltInRuleKeepsPortableEnabledState() {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        let rule = Rule(
+            name: "Unavailable",
+            enabled: true,
+            matchType: .all,
+            pattern: "",
+            targetBundleId: "com.example.definitely-not-installed.yojam-test",
+            targetAppName: "Unavailable",
+            isBuiltIn: true)
+        store.saveRules([rule])
+
+        let engine = RuleEngine(settingsStore: store)
+
+        XCTAssertTrue(engine.rules.first(where: { $0.id == rule.id })?.enabled == true)
+    }
+
+    @MainActor
+    func testRuleEngineMigratesOnlyUnstampedBuiltInDisable() {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        let userModifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let availabilityDerived = Rule(
+            name: "Derived",
+            enabled: false,
+            matchType: .all,
+            pattern: "",
+            targetBundleId: "com.example.derived",
+            targetAppName: "Derived",
+            isBuiltIn: true)
+        let userDisabled = Rule(
+            name: "User disabled",
+            enabled: false,
+            matchType: .all,
+            pattern: "",
+            targetBundleId: "com.example.user-disabled",
+            targetAppName: "User disabled",
+            isBuiltIn: true,
+            lastModifiedAt: userModifiedAt)
+        store.saveRules([availabilityDerived, userDisabled])
+
+        let engine = RuleEngine(settingsStore: store)
+
+        XCTAssertTrue(engine.rules.first {
+            $0.id == availabilityDerived.id
+        }?.enabled == true)
+        let preserved = engine.rules.first { $0.id == userDisabled.id }
+        XCTAssertFalse(preserved?.enabled == true)
+        XCTAssertEqual(preserved?.lastModifiedAt, userModifiedAt)
+    }
+
+    @MainActor
+    func testResetBuiltInPreservesDisabledStateAcrossReload() throws {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        store.saveRules(BuiltInRules.all)
+        let engine = RuleEngine(settingsStore: store)
+        let id = BuiltInRules.all[0].id
+
+        engine.toggleRule(id)
+        engine.resetBuiltInRule(id)
+        engine.reloadRules()
+
+        let reset = try XCTUnwrap(engine.rules.first { $0.id == id })
+        XCTAssertFalse(reset.enabled)
+        XCTAssertNotNil(reset.lastModifiedAt)
+    }
+
+    @MainActor
     func testDomainMatch() {
         let rule = Rule(
             name: "Test", matchType: .domain, pattern: "example.com",

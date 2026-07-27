@@ -329,8 +329,12 @@ final class BrowserManager: ObservableObject {
     func handleAppInstalled(bundleId: String, appURL: URL) {
         iconResolver.invalidateCache(for: bundleId)
         // Update all matching browser entries (multiple profiles share a bundle ID)
+        let hasMatchingBrowser = browsers.contains {
+            $0.bundleIdentifier == bundleId
+        }
         var browsersChanged = false
-        for i in browsers.indices where browsers[i].bundleIdentifier == bundleId {
+        for i in browsers.indices
+            where browsers[i].bundleIdentifier == bundleId && !browsers[i].isInstalled {
             browsers[i].isInstalled = true
             browsers[i].lastSeenAt = Date()
             browsersChanged = true
@@ -339,7 +343,8 @@ final class BrowserManager: ObservableObject {
 
         // Also update email client entries
         var emailChanged = false
-        for i in emailClients.indices where emailClients[i].bundleIdentifier == bundleId {
+        for i in emailClients.indices
+            where emailClients[i].bundleIdentifier == bundleId && !emailClients[i].isInstalled {
             emailClients[i].isInstalled = true
             emailClients[i].lastSeenAt = Date()
             emailChanged = true
@@ -347,14 +352,15 @@ final class BrowserManager: ObservableObject {
         if emailChanged { saveEmailClients() }
 
         var phoneChanged = false
-        for i in phoneClients.indices where phoneClients[i].bundleIdentifier == bundleId {
+        for i in phoneClients.indices
+            where phoneClients[i].bundleIdentifier == bundleId && !phoneClients[i].isInstalled {
             phoneClients[i].isInstalled = true
             phoneClients[i].lastSeenAt = Date()
             phoneChanged = true
         }
         if phoneChanged { savePhoneClients() }
 
-        if browsersChanged { return }
+        if hasMatchingBrowser { return }
 
         // ChangeReconciler only calls this for apps from urlsForApplications(toOpen: https://)
         // so the redundant CFBundleURLTypes HTTP check is unnecessary and can reject
@@ -374,15 +380,20 @@ final class BrowserManager: ObservableObject {
         }
     }
 
-    func handleAppRemoved(bundleId: String) {
+    @discardableResult
+    func handleAppRemoved(bundleId: String) -> Bool {
         // Update all matching browser entries
-        for i in browsers.indices where browsers[i].bundleIdentifier == bundleId {
+        var browsersChanged = false
+        for i in browsers.indices
+            where browsers[i].bundleIdentifier == bundleId && browsers[i].isInstalled {
             browsers[i].isInstalled = false
+            browsersChanged = true
         }
-        save()
+        if browsersChanged { save() }
         // Also update email clients
         var emailChanged = false
-        for i in emailClients.indices where emailClients[i].bundleIdentifier == bundleId {
+        for i in emailClients.indices
+            where emailClients[i].bundleIdentifier == bundleId && emailClients[i].isInstalled {
             emailClients[i].isInstalled = false
             emailChanged = true
         }
@@ -390,13 +401,15 @@ final class BrowserManager: ObservableObject {
             settingsStore.saveEmailClients(emailClients)
         }
         var phoneChanged = false
-        for i in phoneClients.indices where phoneClients[i].bundleIdentifier == bundleId {
+        for i in phoneClients.indices
+            where phoneClients[i].bundleIdentifier == bundleId && phoneClients[i].isInstalled {
             phoneClients[i].isInstalled = false
             phoneChanged = true
         }
         if phoneChanged {
             settingsStore.savePhoneClients(phoneClients)
         }
+        return browsersChanged || emailChanged || phoneChanged
     }
 
     func saveEmailClients() {
