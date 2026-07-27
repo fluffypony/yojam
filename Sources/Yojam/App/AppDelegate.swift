@@ -62,14 +62,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         urlRewriter = URLRewriter(settingsStore: store)
         utmStripper = UTMStripper(settingsStore: store)
         super.init()
-        NSApp.servicesProvider = self
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        let application = notification.object as? NSApplication ?? NSApplication.shared
+        application.servicesProvider = self
+
         // Prevent Yojam from appearing in Cmd+Tab and the Dock.
         // Two-step: .prohibited first to avoid a brief Dock icon flash,
         // then .accessory in didFinishLaunching so we can show windows.
-        NSApp.setActivationPolicy(.prohibited)
+        application.setActivationPolicy(.prohibited)
 
         // Register URL handler early so cold-launch URLs aren't lost.
         // URLs arriving before didFinishLaunching are queued in pendingRequests.
