@@ -43,15 +43,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Optional subsystems
     private var clipboardMonitor: ClipboardMonitor?
     private var iCloudSyncManager: ICloudSyncManager?
+    private var authenticationSessionHandler: AuthenticationSessionHandler?
     var configFileManager: ConfigFileManager?
 
     // MARK: - State
     private var cancellables = Set<AnyCancellable>()
     private var recentlyRoutedURLs: [String: Date] = [:]
+    private var activeAuthenticationSessionIDs = Set<UUID>()
+    private var pickerAuthenticationSessionID: UUID?
     private let deduplicationWindow: TimeInterval = 0.5
     private var pendingRequests: [IncomingLinkRequest] = []
     private var pendingFirstLaunchPreferencesWorkItem: DispatchWorkItem?
     private var isFinishedLaunching = false
+    private var wasLaunchedByAuthenticationServices = false
     // P14: Scheduled cleanup instead of per-click filter+copy
     private var dedupCleanupTimer: Timer?
 
@@ -83,6 +87,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             andSelector: #selector(handleGetURL(event:reply:)),
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL))
+
+        // AuthenticationServices can deliver a request during cold launch.
+        // Install this handler before the run loop accepts those requests.
+        let authenticationSessionHandler = AuthenticationSessionHandler(
+            onRequest: { [weak self] id, request in
+                self?.beginAuthenticationSession(id: id, request: request)
+            },
+            onCancel: { [weak self] id in
+                self?.cancelAuthenticationSession(id: id)
+            })
+        self.authenticationSessionHandler = authenticationSessionHandler
+        wasLaunchedByAuthenticationServices = authenticationSessionHandler.install()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -217,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // First launch
         let isFirst = settingsStore.isFirstLaunch
-        if isFirst {
+        if isFirst && !wasLaunchedByAuthenticationServices {
             DefaultBrowserManager.promptSetDefault()
             settingsStore.isFirstLaunch = false
             // Auto-open Preferences so the user sees the Quick Start card
@@ -236,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The preferences Window scene may auto-open at launch. Close it
         // on launches where we don't explicitly want it visible, including
         // Finder document opens that queue pending routing requests.
-        if !isFirst || !pendingRequests.isEmpty {
+        if !isFirst || !pendingRequests.isEmpty || wasLaunchedByAuthenticationServices {
             closeAutoOpenedPreferencesWindow(retryCount: pendingRequests.isEmpty ? 3 : 8)
         }
 
@@ -292,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Single entry point for all ingress paths. Queues requests during cold
     /// launch, then routes them once subsystems are ready.
     private func enqueueOrHandle(_ request: IncomingLinkRequest) {
+        guard authenticationSessionIsActive(for: request) else { return }
         prepareForExternalRoutingRequest()
 
         guard isFinishedLaunching else {
@@ -338,6 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Process an incoming link request through the routing pipeline.
     /// Calls `RoutingService.decide()` from YojamCore and executes the result.
     private func handleIncomingRequest(_ request: IncomingLinkRequest) {
+        guard authenticationSessionIsActive(for: request) else { return }
         let config = buildRoutingConfiguration()
         let decision = RoutingService.decide(request: request, configuration: config)
         executeRouteDecision(decision, request: request)
@@ -408,11 +426,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .openSystemMailHandler(let url): deduplicationURL = url
         case .openSystemPhoneHandler(let url): deduplicationURL = url
         }
-        let urlKey = deduplicationURL.absoluteString
+        let urlKey = Self.routingDeduplicationKey(
+            url: deduplicationURL,
+            request: request)
         let now = Date()
         if let lastRouted = recentlyRoutedURLs[urlKey],
            now.timeIntervalSince(lastRouted) < deduplicationWindow { return }
         recentlyRoutedURLs[urlKey] = now
+
+        let requestAuthenticationSessionID = authenticationSessionID(for: request)
+        var keepAuthenticationSessionForPicker = false
+        defer {
+            if !keepAuthenticationSessionForPicker,
+               let requestAuthenticationSessionID {
+                finishAuthenticationSessionRouting(id: requestAuthenticationSessionID)
+            }
+        }
+
         // P14: Schedule periodic cleanup instead of filtering on every route
         if dedupCleanupTimer == nil {
             dedupCleanupTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -511,14 +541,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 else { openInDefaultBrowser(finalURL) }
                 return
             }
+            keepAuthenticationSessionForPicker = true
             let clampedIndex = min(max(preselectedIndex, 0), entries.count - 1)
             pickerPanel?.close()
+            pickerAuthenticationSessionID = requestAuthenticationSessionID
             pickerPanel = PickerPanel(
                 url: finalURL, entries: entries,
                 preselectedIndex: clampedIndex,
                 settingsStore: settingsStore,
                 matchReason: effectiveReason,
                 onSelect: { [weak self] entry, selectedURL in
+                    if let requestAuthenticationSessionID,
+                       self?.pickerAuthenticationSessionID == requestAuthenticationSessionID {
+                        self?.pickerAuthenticationSessionID = nil
+                        self?.finishAuthenticationSessionRouting(
+                            id: requestAuthenticationSessionID)
+                    }
                     self?.handlePickerSelection(
                         entry: entry,
                         url: selectedURL,
@@ -532,8 +570,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.clipboardMonitor?.updateExpectedChangeCount()
                 },
                 onDismiss: { [weak self] panel in
-                    guard self?.pickerPanel === panel else { return }
-                    self?.pickerPanel = nil
+                    guard let self, self.pickerPanel === panel else { return }
+                    let cancelledSessionID = self.pickerAuthenticationSessionID
+                    self.pickerPanel = nil
+                    self.pickerAuthenticationSessionID = nil
+                    if let cancelledSessionID {
+                        self.cancelAuthenticationSessionFromPicker(
+                            id: cancelledSessionID)
+                    }
                     if NSApp.activationPolicy() == .regular {
                         let prefsOpen = NSApp.windows.contains { window in
                             window.identifier == AppDelegate.settingsWindowIdentifier
@@ -553,6 +597,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .openSystemPhoneHandler(let url):
             openWithSystemPhoneHandler(url)
         }
+    }
+
+    private func beginAuthenticationSession(id: UUID, request: IncomingLinkRequest) {
+        activeAuthenticationSessionIDs.insert(id)
+        enqueueOrHandle(request)
+    }
+
+    private func cancelAuthenticationSession(id: UUID) {
+        activeAuthenticationSessionIDs.remove(id)
+        pendingRequests.removeAll { authenticationSessionID(for: $0) == id }
+
+        if pickerAuthenticationSessionID == id {
+            pickerAuthenticationSessionID = nil
+            pickerPanel?.close()
+            pickerPanel = nil
+        }
+    }
+
+    private func cancelAuthenticationSessionFromPicker(id: UUID) {
+        authenticationSessionHandler?.cancelSourceRequest(id: id)
+        cancelAuthenticationSession(id: id)
+    }
+
+    private func finishAuthenticationSessionRouting(id: UUID) {
+        activeAuthenticationSessionIDs.remove(id)
+        authenticationSessionHandler?.discardSourceRequest(id: id)
+    }
+
+    private func authenticationSessionIsActive(for request: IncomingLinkRequest) -> Bool {
+        guard request.origin == .authenticationSession else { return true }
+        guard let id = authenticationSessionID(for: request) else { return false }
+        return activeAuthenticationSessionIDs.contains(id)
+    }
+
+    static func routingDeduplicationKey(
+        url: URL,
+        request: IncomingLinkRequest
+    ) -> String {
+        guard request.origin == .authenticationSession,
+              let id = request.metadata[AuthenticationSessionHandler.requestIDMetadataKey]
+        else { return url.absoluteString }
+
+        return "\(url.absoluteString)\u{0}authentication-session:\(id)"
+    }
+
+    private func authenticationSessionID(for request: IncomingLinkRequest) -> UUID? {
+        guard request.origin == .authenticationSession,
+              let rawID = request.metadata[AuthenticationSessionHandler.requestIDMetadataKey]
+        else { return nil }
+        return UUID(uuidString: rawID)
     }
 
     // MARK: - URL Handling (Apple Events)

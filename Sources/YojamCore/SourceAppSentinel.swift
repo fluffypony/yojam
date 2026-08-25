@@ -7,6 +7,7 @@ import Foundation
 ///   Source App = "com.yojam.source.handoff" → always open in Work profile
 public enum SourceAppSentinel {
     public static let handoff          = "com.yojam.source.handoff"
+    public static let authenticationSession = "com.yojam.source.authentication-session"
     public static let airdrop          = "com.yojam.source.airdrop"
     public static let shareExtension   = "com.yojam.source.share-extension"
     public static let servicesMenu     = "com.yojam.source.service"
@@ -18,7 +19,7 @@ public enum SourceAppSentinel {
 
     /// All sentinel values, for display in the Rules UI help text.
     public static let all: [String] = [
-        handoff, airdrop, shareExtension, servicesMenu,
+        handoff, authenticationSession, airdrop, shareExtension, servicesMenu,
         safariExtension, chromeExtension, firefoxExtension,
         urlScheme, cli
     ]

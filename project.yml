@@ -92,6 +92,8 @@ targets:
         NSAppleEventsUsageDescription: "Yojam needs to send Apple Events to open private browsing windows in Safari and Orion."
         NSUserActivityTypes:
           - NSUserActivityTypeBrowsingWeb
+        ASWebAuthenticationSessionWebBrowserSupportCapabilities:
+          IsSupported: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: HTML Document
             CFBundleTypeRole: Viewer

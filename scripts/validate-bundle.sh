@@ -14,6 +14,11 @@ echo "Checking LSUIElement..."
 plutil -extract LSUIElement xml1 -o - "$APP/Contents/Info.plist" | grep -q "true" \
   || { echo "FAIL: LSUIElement not set"; exit 1; }
 
+echo "Checking AuthenticationServices support..."
+[ "$(plutil -extract ASWebAuthenticationSessionWebBrowserSupportCapabilities.IsSupported \
+  raw -o - "$APP/Contents/Info.plist")" = "true" ] \
+  || { echo "FAIL: Web authentication session support is missing"; exit 1; }
+
 echo "Checking automation entitlement..."
 codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "automation.apple-events" || {
   echo "FAIL: Apple Events entitlement missing"

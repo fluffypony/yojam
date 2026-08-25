@@ -13,6 +13,7 @@ final class IngressParityTests: XCTestCase {
     func testAllOriginsPreserveTargetURL() {
         let origins: [(IngressOrigin, String?)] = [
             (.defaultHandler, nil),
+            (.authenticationSession, SourceAppSentinel.authenticationSession),
             (.handoff, SourceAppSentinel.handoff),
             (.airdrop, SourceAppSentinel.airdrop),
             (.shareExtension, SourceAppSentinel.shareExtension),
@@ -84,7 +85,7 @@ final class IngressParityTests: XCTestCase {
 
     func testDefaultForceFlags() {
         let origins: [IngressOrigin] = [
-            .defaultHandler, .handoff, .airdrop, .shareExtension,
+            .defaultHandler, .authenticationSession, .handoff, .airdrop, .shareExtension,
             .safariExtension, .chromeExtension, .firefoxExtension,
             .servicesMenu, .urlScheme, .intent, .fileOpen, .clipboard,
         ]
@@ -183,6 +184,7 @@ final class IngressParityTests: XCTestCase {
         // All origins with their typical sentinels
         let origins: [(IngressOrigin, String?)] = [
             (.defaultHandler, nil),
+            (.authenticationSession, SourceAppSentinel.authenticationSession),
             (.handoff, SourceAppSentinel.handoff),
             (.airdrop, SourceAppSentinel.airdrop),
             (.shareExtension, SourceAppSentinel.shareExtension),

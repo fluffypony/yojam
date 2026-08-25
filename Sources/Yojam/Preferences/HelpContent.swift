@@ -109,7 +109,7 @@ enum HelpText {
 
     // MARK: - Source App Sentinels
     enum Sentinels {
-        static let ruleSourceHelp = "For links from Handoff, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic bundle IDs. You can target these in rules:\n\n\u{2022} com.yojam.source.handoff\n\u{2022} com.yojam.source.airdrop\n\u{2022} com.yojam.source.share-extension\n\u{2022} com.yojam.source.service\n\u{2022} com.yojam.source.safari-extension\n\u{2022} com.yojam.source.chrome-extension\n\u{2022} com.yojam.source.firefox-extension\n\u{2022} com.yojam.source.url-scheme"
+        static let ruleSourceHelp = "For links from Handoff, sign-in sessions, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic bundle IDs. You can target these in rules:\n\n\u{2022} com.yojam.source.handoff\n\u{2022} com.yojam.source.authentication-session\n\u{2022} com.yojam.source.airdrop\n\u{2022} com.yojam.source.share-extension\n\u{2022} com.yojam.source.service\n\u{2022} com.yojam.source.safari-extension\n\u{2022} com.yojam.source.chrome-extension\n\u{2022} com.yojam.source.firefox-extension\n\u{2022} com.yojam.source.url-scheme"
     }
 
     // MARK: - Picker

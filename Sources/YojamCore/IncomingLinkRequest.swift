@@ -1,8 +1,8 @@
 import Foundation
 
 /// A normalized, ingress-agnostic representation of an inbound link.
-/// Every entry point — Apple Event, Handoff, AirDrop, Share Extension,
-/// browser extension, Services menu, yojam:// scheme — produces one of
+/// Every entry point, including Apple Events, authentication sessions,
+/// Handoff, extensions, Services, and the yojam:// scheme, produces one of
 /// these before handing off to the routing pipeline.
 public struct IncomingLinkRequest: Sendable {
     public let url: URL

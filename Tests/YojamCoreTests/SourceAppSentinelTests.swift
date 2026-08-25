@@ -17,6 +17,9 @@ final class SourceAppSentinelTests: XCTestCase {
 
     func testSentinelValues() {
         XCTAssertEqual(SourceAppSentinel.handoff, "com.yojam.source.handoff")
+        XCTAssertEqual(
+            SourceAppSentinel.authenticationSession,
+            "com.yojam.source.authentication-session")
         XCTAssertEqual(SourceAppSentinel.airdrop, "com.yojam.source.airdrop")
         XCTAssertEqual(SourceAppSentinel.shareExtension, "com.yojam.source.share-extension")
         XCTAssertEqual(SourceAppSentinel.servicesMenu, "com.yojam.source.service")

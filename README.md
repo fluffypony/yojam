@@ -31,6 +31,7 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 Yojam picks up links from every source macOS can offer:
 
 - Clicks in any app that opens `http`/`https` URLs (the default-browser path).
+- Sign-in windows from apps that use `ASWebAuthenticationSession`, such as Slack and Claude.
 - Finder double-clicks on `.html`, `.xhtml`, `.webloc`, `.inetloc`, and `.url` files.
 - **Handoff** — pages you continue from another Apple device.
 - **AirDrop** — links arrive as `.webloc` files, which Yojam unwraps transparently.
@@ -40,6 +41,8 @@ Yojam picks up links from every source macOS can offer:
 - The `yojam://` URL scheme, for Shortcuts, Raycast, Alfred, shell scripts, and any other automation.
 
 Every one of these goes through the same rule engine, tracker scrubber, and rewrite pipeline as a direct click. There is no second-class handling.
+
+Yojam forwards the first URL from a web authentication session to your chosen browser. It cannot see later navigation inside that browser or send the callback to the source app. An app that depends only on the session callback can keep waiting after you finish in the browser. Apps with a separate callback URL handler can still finish the sign-in. Yojam does not claim ephemeral-session support because the chosen browser keeps its cookies and profile state.
 
 ## Installing
 
@@ -132,6 +135,7 @@ For ingress paths that don't have a real originating app, Yojam uses synthetic b
 | Sentinel | Ingress path |
 |---|---|
 | `com.yojam.source.handoff` | Handoff from another Apple device |
+| `com.yojam.source.authentication-session` | App sign-in session |
 | `com.yojam.source.airdrop` | AirDropped .webloc files |
 | `com.yojam.source.share-extension` | Share menu |
 | `com.yojam.source.service` | Services menu |
