@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "__MSG_extensionDescription__",
   "default_locale": "en",
   "permissions": ["activeTab", "contextMenus", "nativeMessaging", "webNavigation", "storage", "contextualIdentities", "cookies"],
