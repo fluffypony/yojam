@@ -166,6 +166,17 @@ info "Preflight checks"
 command -v xcodebuild >/dev/null  || fail "xcodebuild not found"
 command -v create-dmg >/dev/null  || fail "create-dmg not found (brew install create-dmg)"
 command -v xcrun >/dev/null       || fail "xcrun not found"
+command -v codesign >/dev/null    || fail "codesign not found"
+
+DMG_SIGNING_IDENTITY=$(
+  /usr/bin/security find-identity -v -p codesigning \
+    | /usr/bin/sed -n \
+      "s/^.*\"\(Developer ID Application: .* (${RS_TEAM_ID})\)\"$/\1/p" \
+    | /usr/bin/awk 'NR == 1 { print }'
+)
+[ -n "$DMG_SIGNING_IDENTITY" ] \
+  || fail "Developer ID Application identity for team $RS_TEAM_ID not found in the keychain"
+ok "Developer ID Application identity found"
 
 if [ -z "$SPARKLE_BIN" ]; then
   fail "Sparkle bin not found - cannot generate signed updates"
@@ -293,6 +304,15 @@ create-dmg \
   "$APP_PATH"
 ok "$DMG_NAME created"
 
+# ---- Sign DMG ----
+
+info "Signing DMG with Developer ID"
+codesign --force --timestamp \
+  --sign "$DMG_SIGNING_IDENTITY" \
+  "$DMG_PATH"
+codesign --verify --strict --verbose=2 "$DMG_PATH"
+ok "DMG signature valid"
+
 # ---- Notarize ----
 
 if [ "$SKIP_NOTARIZE" = false ]; then
@@ -305,6 +325,11 @@ if [ "$SKIP_NOTARIZE" = false ]; then
   info "Stapling"
   xcrun stapler staple "$DMG_PATH"
   ok "Ticket stapled"
+
+  spctl -a -vv -t open \
+    --context context:primary-signature \
+    "$DMG_PATH"
+  ok "Gatekeeper accepted the signed DMG"
 else
   info "Skipping notarization (--skip-notarize)"
 fi

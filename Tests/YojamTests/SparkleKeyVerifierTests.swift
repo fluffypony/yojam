@@ -51,6 +51,20 @@ final class SparkleKeyVerifierTests: XCTestCase {
         XCTAssertTrue(releaseScript.contains("EXPORTED_BUILD_NUMBER"))
     }
 
+    func testReleaseScriptSignsDMGBeforeNotarization() throws {
+        let releaseScript = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("scripts/release.sh"),
+            encoding: .utf8)
+        let signingStep = try XCTUnwrap(
+            releaseScript.range(of: "# ---- Sign DMG ----"))
+        let notarizationStep = try XCTUnwrap(
+            releaseScript.range(of: "# ---- Notarize ----"))
+
+        XCTAssertLessThan(signingStep.lowerBound, notarizationStep.lowerBound)
+        XCTAssertTrue(releaseScript.contains("codesign --force --timestamp"))
+        XCTAssertTrue(releaseScript.contains("context:primary-signature"))
+    }
+
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
