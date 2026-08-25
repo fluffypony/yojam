@@ -42,12 +42,10 @@ EXPORT_OPTIONS="$PROJECT_DIR/ExportOptions.plist"
 RS_TEAM_ID="${RS_TEAM_ID:?Set RS_TEAM_ID to your Apple Developer Team ID}"
 KEYCHAIN_PROFILE="${YOJAM_NOTARIZE_PROFILE:-YojamNotarize}"
 SPARKLE_PRIVATE_KEY_FILE="${YOJAM_SPARKLE_PRIVATE_KEY_FILE:-}"
-SPARKLE_KEY_ARGS=()
 if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
   if [[ "$SPARKLE_PRIVATE_KEY_FILE" != /* ]]; then
     SPARKLE_PRIVATE_KEY_FILE="$PROJECT_DIR/$SPARKLE_PRIVATE_KEY_FILE"
   fi
-  SPARKLE_KEY_ARGS=(--ed-key-file "$SPARKLE_PRIVATE_KEY_FILE")
 fi
 
 # Sparkle bin - check common locations
@@ -69,6 +67,16 @@ info()  { step=$((step + 1)); printf "\n\033[1;34m[%d] %s\033[0m\n" "$step" "$1"
 ok()    { printf "    \033[32m✓ %s\033[0m\n" "$1"; }
 fail()  { printf "    \033[31m✗ %s\033[0m\n" "$1"; exit 1; }
 
+sparkle_command() {
+  local command="$1"
+  shift
+  if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
+    "$SPARKLE_BIN/$command" --ed-key-file "$SPARKLE_PRIVATE_KEY_FILE" "$@"
+  else
+    "$SPARKLE_BIN/$command" "$@"
+  fi
+}
+
 ensure_update_signatures() {
   local appcast="$1"
   local releases_dir="$2"
@@ -89,13 +97,13 @@ ensure_update_signatures() {
       continue
     fi
 
-    signature=$("$SPARKLE_BIN/sign_update" "${SPARKLE_KEY_ARGS[@]}" "$artifact")
+    signature=$(sparkle_command sign_update "$artifact")
     signature_value=$(printf '%s\n' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
     length_value=$(printf '%s\n' "$signature" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
 
     [ -n "$signature_value" ] || fail "Could not parse Sparkle signature for $artifact_name"
     [ -n "$length_value" ] || fail "Could not parse Sparkle length for $artifact_name"
-    "$SPARKLE_BIN/sign_update" --verify "${SPARKLE_KEY_ARGS[@]}" \
+    sparkle_command sign_update --verify \
       "$artifact" "$signature_value"
 
     ARTIFACT_URL="$artifact_url" \
@@ -128,7 +136,7 @@ ensure_update_signatures() {
 
     signature_value=$(printf '%s\n' "$enclosure" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
     [ -n "$signature_value" ] || fail "Appcast enclosure for $artifact_name is missing sparkle:edSignature"
-    "$SPARKLE_BIN/sign_update" --verify "${SPARKLE_KEY_ARGS[@]}" \
+    sparkle_command sign_update --verify \
       "$local_path" "$signature_value" \
       || fail "Sparkle signature verification failed for $artifact_name"
   done < <(/usr/bin/perl -ne 'while (/(<enclosure\b[^>]*\burl="([^"]+\.(?:dmg|delta))"[^>]*\/>)/g) { print "$2\t$1\n" }' "$appcast")
@@ -295,7 +303,7 @@ fi
 
 info "Signing for Sparkle"
 if [ -n "$SPARKLE_BIN" ]; then
-  SIGNATURE=$("$SPARKLE_BIN/sign_update" "${SPARKLE_KEY_ARGS[@]}" "$DMG_PATH")
+  SIGNATURE=$(sparkle_command sign_update "$DMG_PATH")
   ok "EdDSA signature generated"
   echo ""
   echo "    Add this to appcast.xml <enclosure>:"
@@ -316,7 +324,7 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
   # --download-url-prefix: enclosures must point at yoj.am/releases/ (where
   # the DMGs/deltas actually live). Without it, generate_appcast infers the
   # prefix from each bundle's SUFeedURL host (yoj.am/) and emits 404 URLs.
-  "$SPARKLE_BIN/generate_appcast" "${SPARKLE_KEY_ARGS[@]}" "$RELEASES_DIR" \
+  sparkle_command generate_appcast "$RELEASES_DIR" \
     --download-url-prefix "$DOWNLOAD_URL_PREFIX"
   if [ -f "$RELEASES_DIR/appcast.xml" ]; then
     ok "appcast.xml generated at $RELEASES_DIR/appcast.xml"
