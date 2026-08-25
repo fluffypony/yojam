@@ -154,6 +154,17 @@ echo "Checking Sparkle framework..."
   exit 1
 }
 
+echo "Checking third-party resources..."
+for resource in \
+  babel-parser-7.28.4.js BabelParser-LICENSE.txt \
+  SwiftURL-LICENSE.txt SwiftURL-NOTICE.txt; do
+  find "$APP/Contents/Resources" -type f -name "$resource" -print -quit \
+    | grep -q . || {
+      echo "FAIL: Third-party resource missing: $resource"
+      exit 1
+    }
+done
+
 APP_INFO="$APP/Contents/Info.plist"
 SHARE_INFO="$SHARE_EXTENSION/Contents/Info.plist"
 SAFARI_INFO="$SAFARI_EXTENSION/Contents/Info.plist"

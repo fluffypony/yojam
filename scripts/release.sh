@@ -161,6 +161,7 @@ echo ""
 info "Preflight checks"
 
 [ -f "$PROJECT_DIR/project.yml" ] || fail "project.yml not found - run from repo root"
+[ -f "$PROJECT_DIR/Package.resolved" ] || fail "Package.resolved not found"
 [ -f "$EXPORT_OPTIONS" ]          || fail "ExportOptions.plist not found (see release guide)"
 command -v xcodebuild >/dev/null  || fail "xcodebuild not found"
 command -v create-dmg >/dev/null  || fail "create-dmg not found (brew install create-dmg)"
@@ -211,6 +212,14 @@ ok "All checks passed"
 info "Generating Xcode project"
 cd "$PROJECT_DIR"
 xcodegen generate
+XCODE_PACKAGE_LOCK="$PROJECT_DIR/Yojam.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+mkdir -p "$(dirname "$XCODE_PACKAGE_LOCK")"
+cp "$PROJECT_DIR/Package.resolved" "$XCODE_PACKAGE_LOCK"
+xcodebuild -resolvePackageDependencies \
+  -project Yojam.xcodeproj \
+  -scheme Yojam \
+  -onlyUsePackageVersionsFromResolvedFile \
+  -quiet
 ok "project.yml -> Yojam.xcodeproj"
 
 # ---- Archive ----
@@ -224,6 +233,7 @@ if [ "$SKIP_ARCHIVE" = false ]; then
     -project Yojam.xcodeproj \
     -scheme Yojam \
     -archivePath "$ARCHIVE_PATH" \
+    -onlyUsePackageVersionsFromResolvedFile \
     DEVELOPMENT_TEAM="${RS_TEAM_ID}" \
     -allowProvisioningUpdates \
     -quiet
@@ -331,7 +341,7 @@ if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
     ensure_update_signatures "$RELEASES_DIR/appcast.xml" "$RELEASES_DIR" "$DOWNLOAD_URL_PREFIX"
     DELTA_COUNT=$(find "$RELEASES_DIR" -maxdepth 1 -name "*.delta" | wc -l | tr -d ' ')
     if [ "$DELTA_COUNT" -gt 0 ]; then
-      ok "$DELTA_COUNT delta file(s) in $RELEASES_DIR — upload alongside DMGs"
+      ok "$DELTA_COUNT delta file(s) in $RELEASES_DIR; upload alongside DMGs"
     fi
   else
     echo "    ⚠ generate_appcast ran but no appcast.xml found"
@@ -348,73 +358,6 @@ info "Building browser extension packages"
   || fail "Firefox extension package was not created"
 ok "Browser extension packages created"
 
-# ---- Homebrew cask ----
-#
-# Print a ready-to-submit cask block for Homebrew/homebrew-cask, pinned to the
-# version + sha256 of the just-built DMG. The canonical cask path is
-# Casks/y/yojam.rb.
-
-info "Rendering Homebrew cask block"
-DMG_SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
-
-CASK_CONTENT=$(cat <<EOF
-cask "yojam" do
-  version "${MARKETING_VERSION}"
-  sha256 "${DMG_SHA256}"
-
-  url "https://yoj.am/releases/Yojam-#{version}.dmg"
-  name "Yojam"
-  desc "Open links in selected browser, profiles, or apps"
-  homepage "https://yoj.am/"
-
-  livecheck do
-    url "https://yoj.am/appcast.xml"
-    strategy :sparkle, &:short_version
-  end
-
-  auto_updates true
-  depends_on macos: :sonoma
-
-  app "Yojam.app"
-
-  uninstall launchctl: "org.yojam.cleanup",
-            quit:      [
-              "com.yojam.app",
-              "com.yojam.app.NativeHost",
-              "com.yojam.app.SafariExtension",
-              "com.yojam.app.ShareExtension",
-            ]
-
-  zap trash: [
-    "~/.config/yojam",
-    "~/Library/Application Scripts/group.org.yojam.shared",
-    "~/Library/Application Support/*/*/NativeMessagingHosts/org.yojam.host.json",
-    "~/Library/Application Support/*/NativeMessagingHosts/org.yojam.host.json",
-    "~/Library/Application Support/com.yojam.app",
-    "~/Library/Application Support/Yojam",
-    "~/Library/Caches/com.yojam.app*",
-    "~/Library/Group Containers/group.org.yojam.shared",
-    "~/Library/HTTPStorages/com.yojam.app",
-    "~/Library/HTTPStorages/com.yojam.app.binarycookies",
-    "~/Library/LaunchAgents/org.yojam.cleanup.plist",
-    "~/Library/Logs/Yojam",
-    "~/Library/Preferences/com.yojam.app.*",
-    "~/Library/Saved Application State/com.yojam.app.savedState",
-    "~/Library/WebKit/com.yojam.app",
-  ]
-end
-EOF
-)
-
-ok "Cask rendered for v${MARKETING_VERSION} (sha256 ${DMG_SHA256:0:12}...)"
-
-echo ""
-echo "  ── Homebrew cask (paste into Homebrew/homebrew-cask Casks/y/yojam.rb) ──"
-echo ""
-printf '%s\n' "$CASK_CONTENT" | sed 's/^/  /'
-echo ""
-echo "  ──────────────────────────────────────────────────────────"
-
 # ---- Summary ----
 
 echo ""
@@ -428,8 +371,7 @@ echo "  │  Next steps:                              │"
 echo "  │  1. Upload DMG + any *.delta files to     │"
 echo "  │     yoj.am/releases/                      │"
 echo "  │  2. Upload appcast.xml to yoj.am/         │"
-echo "  │  3. Update Homebrew/homebrew-cask at      │"
-echo "  │     Casks/y/yojam.rb, then open a PR      │"
+echo "  │  3. Run: brew bump --open-pr yojam       │"
 echo "  │  4. Attach the DMG, Chrome ZIP, and       │"
 echo "  │     Firefox XPI to the GitHub release     │"
 echo "  │  5. Verify: open old version, check for   │"
