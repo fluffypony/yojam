@@ -71,7 +71,7 @@ enum HelpText {
         static let learnedPreferences = "Yojam remembers which browser you pick for each domain when Smart selection is active. View & Manage lets you remove specific domains or promote a learned preference into an explicit routing rule."
         static let exportSettings = "Saves your browsers, rules, rewrites, and preferences to a JSON file. Good for backups or moving to another Mac."
         static let importSettings = "Loads settings from a previously exported file. Replaces your current browser list and rules."
-        static let importFromOtherApps = "Detects rules from Bumpr, Choosy, and Finicky if they're installed on this Mac. Imported rules are marked with a metadata tag so you can review them afterwards."
+        static let importFromOtherApps = "Finds installed copies of Bumpr, Choosy, and Finicky. Review compatible routes, rewrites, and conversion warnings before Yojam adds selected items."
         static let flatFileConfig = "Yojam writes a human-editable copy of your config to JSON. Editing that file is picked up live — useful for dotfiles, Dropbox, Syncthing, or scripted changes."
         static let configFileCopyPath = "Copy the full path to the clipboard."
         static let configFileOpen = "Open the file with whatever app macOS associates with .json."
@@ -82,7 +82,7 @@ enum HelpText {
         static let redetectBrowsers = "Scans your system for browsers and rebuilds the list from scratch."
         static let resetAll = "Wipes all settings, rules, and learned preferences back to factory defaults."
         static let uninstall = "Removes native messaging manifests, the login item, and log files. If the checkbox is enabled, also wipes your rules and preferences."
-        static let shortlinkResolution = "Follows bit.ly, t.co, and friends to their real destination before routing, so a rule targeting the final domain still matches. Costs a network request and up to 3s per click."
+        static let shortlinkResolution = "Follows configured short links to their final destination before routing. This makes final-domain rules work, but it adds a network request and can add up to three seconds."
         static let trackerParameterList = "URL parameters that get stripped when tracker removal is on. One per line."
         static let suppressedClipboardDomains = "Domains to skip when clipboard monitoring is on. URLs from these won't trigger the notification."
     }

@@ -6,6 +6,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     public var enabled: Bool
     public var matchType: MatchType
     public var pattern: String
+    public var urlNormalization: URLNormalizationMode
     public var targetBundleId: String
     public var targetAppName: String
     /// Optional BrowserEntry UUID when this rule targets a configured browser
@@ -57,6 +58,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         enabled: Bool = true,
         matchType: MatchType,
         pattern: String,
+        urlNormalization: URLNormalizationMode = .none,
         targetBundleId: String,
         targetAppName: String,
         targetBrowserEntryId: UUID? = nil,
@@ -81,6 +83,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.id = id; self.name = name; self.enabled = enabled
         self.matchType = matchType; self.pattern = pattern
+        self.urlNormalization = urlNormalization
         self.targetBundleId = targetBundleId; self.targetAppName = targetAppName
         self.targetBrowserEntryId = targetBrowserEntryId
         self.isBuiltIn = isBuiltIn; self.priority = priority
@@ -101,7 +104,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, enabled, matchType, pattern
+        case id, name, enabled, matchType, pattern, urlNormalization
         case targetBundleId, targetAppName, targetBrowserEntryId, isBuiltIn, priority
         case stripUTMParams, rewriteRules
         case sourceAppBundleId, sourceAppName
@@ -118,6 +121,10 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         self.matchType = try c.decodeIfPresent(MatchType.self, forKey: .matchType) ?? .domain
         self.pattern = try c.decodeIfPresent(String.self, forKey: .pattern) ?? ""
+        self.urlNormalization = try c.decodeIfPresent(
+            URLNormalizationMode.self,
+            forKey: .urlNormalization
+        ) ?? .none
         self.targetBundleId = try c.decodeIfPresent(String.self, forKey: .targetBundleId) ?? ""
         self.targetAppName = try c.decodeIfPresent(String.self, forKey: .targetAppName) ?? ""
         self.targetBrowserEntryId = try c.decodeIfPresent(UUID.self, forKey: .targetBrowserEntryId)

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>behaviour</key>
+		<integer>4</integer>
+		<key>behaviourArgument</key>
+		<string></string>
+		<key>enabled</key>
+		<true/>
+		<key>predicate</key>
+		<string>runningBrowsers &gt; 0</string>
+		<key>title</key>
+		<string>Some browsers are running</string>
+	</dict>
+	<dict>
+		<key>behaviour</key>
+		<integer>6</integer>
+		<key>behaviourArgument</key>
+		<dict>
+			<key>path</key>
+			<string>/Applications/Google Chrome.app</string>
+			<key>type</key>
+			<string>ChoosyBrowser</string>
+		</dict>
+		<key>enabled</key>
+		<true/>
+		<key>predicate</key>
+		<string>URL CONTAINS "github.com"</string>
+		<key>title</key>
+		<string>Audit GitHub rule</string>
+	</dict>
+	<dict>
+		<key>behaviour</key>
+		<integer>3</integer>
+		<key>behaviourArgument</key>
+		<string></string>
+		<key>enabled</key>
+		<true/>
+		<key>predicate</key>
+		<string>TRUEPREDICATE</string>
+		<key>title</key>
+		<string>Default behaviour</string>
+	</dict>
+</array>
+</plist>

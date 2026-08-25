@@ -647,6 +647,15 @@ struct PipelineTab: View {
         }
 
         let existingRule = rules[index]
+        var metadata = existingRule.metadata
+        if existingRule.metadata?["finickyWebOnly"] == "true",
+           (existingRule.matchPattern != editedRule.matchPattern
+            || existingRule.isRegex != editedRule.isRegex) {
+            metadata?.removeValue(forKey: "finickyWebOnly")
+            if metadata?.isEmpty == true {
+                metadata = nil
+            }
+        }
         var updatedRules = rules
         updatedRules[index] = URLRewriteRule(
             id: existingRule.id,
@@ -656,6 +665,8 @@ struct PipelineTab: View {
             replacement: editedRule.replacement,
             isRegex: editedRule.isRegex,
             scope: existingRule.scope,
+            urlNormalization: existingRule.urlNormalization,
+            metadata: metadata,
             lastModifiedAt: modifiedAt)
         return updatedRules
     }
@@ -1378,7 +1389,9 @@ struct AddRuleSheet: View {
             id: baseId,
             name: name, enabled: editing?.enabled ?? true,
             matchType: matchType,
-            pattern: matchType == .all ? "" : pattern, targetBundleId: targetBundleId,
+            pattern: matchType == .all ? "" : pattern,
+            urlNormalization: editing?.urlNormalization ?? .none,
+            targetBundleId: targetBundleId,
             targetAppName: targetAppName,
             targetBrowserEntryId: targetBrowserEntryId,
             isBuiltIn: editing?.isBuiltIn ?? false,
@@ -1428,6 +1441,7 @@ struct AddRuleSheet: View {
         let testRule = Rule(
             name: name, matchType: matchType,
             pattern: matchType == .all ? "" : pattern,
+            urlNormalization: editing?.urlNormalization ?? .none,
             targetBundleId: targetBundleId,
             targetAppName: targetAppName,
             targetBrowserEntryId: targetBrowserEntryId,
@@ -1528,7 +1542,9 @@ struct AddRewriteSheet: View {
                         id: editing?.id ?? UUID(),
                         name: name, matchPattern: matchPattern,
                         replacement: replacement, isRegex: isRegex,
-                        scope: .global)
+                        scope: .global,
+                        urlNormalization: editing?.urlNormalization ?? .none,
+                        metadata: editing?.metadata)
                     onSave(rule)
                     onDismiss()
                 }

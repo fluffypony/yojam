@@ -72,12 +72,13 @@ struct PreferencesRoute: Equatable {
 @MainActor
 final class SettingsStore: ObservableObject {
     /// App-only settings (launch at login, Quick Start, clipboard, Sparkle, etc.)
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     /// Routing-relevant settings shared via App Group with extensions.
     /// Per hard-cut policy: no fallback to .standard for routing data.
     let sharedStore = SharedRoutingStore()
     private var sharedDefaults: UserDefaults { sharedStore.defaults }
     private var isRevertingLaunchAtLogin = false
+    private var isCanonicalisingShortlinkHosts = false
 
     private enum Keys {
         static let isFirstLaunch = "isFirstLaunch"
@@ -107,7 +108,7 @@ final class SettingsStore: ObservableObject {
         static let quickStartVisitedActivation = "quickStartVisitedActivation"
         static let quickStartVisitedBrowsers = "quickStartVisitedBrowsers"
         static let quickStartVisitedTester = "quickStartVisitedTester"
-        static let quickStartVisitedImport = "quickStartVisitedImport"
+        static let completedImporterOfferVersion = "completedImporterOfferVersion"
         // User-deleted built-in rule UUIDs (distinct from BuiltInRules.removedIds).
         static let deletedBuiltInRuleIds = "deletedBuiltInRuleIds"
         // Last-used editor app for the flat-file config (bundle identifier).
@@ -120,6 +121,30 @@ final class SettingsStore: ObservableObject {
         // NativeMessagingHosts dirs triggers the macOS "access data from
         // other apps" TCC prompt.
         static let lastNativeMessagingBundlePath = "lastNativeMessagingBundlePath"
+    }
+
+    private struct RewriteRuleDeduplicationKey: Hashable {
+        let name: String
+        let enabled: Bool
+        let matchPattern: String
+        let replacement: String
+        let isRegex: Bool
+        let scope: RewriteScope
+        let urlNormalization: URLNormalizationMode
+        let importedFrom: String?
+        let finickyWebOnly: String?
+
+        init(_ rule: URLRewriteRule) {
+            name = rule.name
+            enabled = rule.enabled
+            matchPattern = rule.matchPattern
+            replacement = rule.replacement
+            isRegex = rule.isRegex
+            scope = rule.scope
+            urlNormalization = rule.urlNormalization
+            importedFrom = rule.metadata?["importedFrom"]
+            finickyWebOnly = rule.metadata?["finickyWebOnly"]
+        }
     }
 
     @Published var isFirstLaunch: Bool {
@@ -166,6 +191,7 @@ final class SettingsStore: ObservableObject {
         didSet {
             defaults.set(clipboardMonitoringEnabled, forKey: Keys.clipboardMonitoring)
             configMirrorDataDidChange.send()
+            routingDataDidChange.send()
         }
     }
     @Published var iCloudSyncEnabled: Bool {
@@ -178,12 +204,14 @@ final class SettingsStore: ObservableObject {
         didSet {
             defaults.set(debugLoggingEnabled, forKey: Keys.debugLogging)
             configMirrorDataDidChange.send()
+            routingDataDidChange.send()
         }
     }
     @Published var periodicRescanInterval: TimeInterval {
         didSet {
             defaults.set(periodicRescanInterval, forKey: Keys.periodicRescanInterval)
             configMirrorDataDidChange.send()
+            routingDataDidChange.send()
         }
     }
     @Published var utmStripList: [String] {
@@ -220,7 +248,36 @@ final class SettingsStore: ObservableObject {
         }
     }
     @Published var shortlinkResolutionEnabled: Bool {
-        didSet { sharedDefaults.set(shortlinkResolutionEnabled, forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled) }
+        didSet {
+            sharedDefaults.set(
+                shortlinkResolutionEnabled,
+                forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled)
+            routingDataDidChange.send()
+        }
+    }
+    @Published var shortlinkResolutionHosts: Set<String> {
+        didSet {
+            let canonical = ShortlinkResolver.canonicalHostAllowlist(
+                shortlinkResolutionHosts)
+            if canonical != shortlinkResolutionHosts {
+                isCanonicalisingShortlinkHosts = true
+                shortlinkResolutionHosts = canonical
+                isCanonicalisingShortlinkHosts = false
+            }
+            guard !isCanonicalisingShortlinkHosts else { return }
+            sharedDefaults.set(
+                canonical.sorted(),
+                forKey: SharedRoutingStore.Keys.shortlinkResolutionHosts)
+            routingDataDidChange.send()
+        }
+    }
+    @Published var shortlinkResolutionMode: ShortlinkResolutionMode {
+        didSet {
+            sharedDefaults.set(
+                shortlinkResolutionMode.rawValue,
+                forKey: SharedRoutingStore.Keys.shortlinkResolutionMode)
+            routingDataDidChange.send()
+        }
     }
     @Published var hasDismissedQuickStart: Bool {
         didSet { defaults.set(hasDismissedQuickStart, forKey: Keys.hasDismissedQuickStart) }
@@ -234,11 +291,14 @@ final class SettingsStore: ObservableObject {
     @Published var quickStartVisitedTester: Bool {
         didSet { defaults.set(quickStartVisitedTester, forKey: Keys.quickStartVisitedTester) }
     }
-    /// Whether the user has tapped the Quick Start step that imports rules
-    /// from Bumpr / Choosy / Finicky. The step only appears when one of
-    /// those apps is detected and not yet visited.
-    @Published var quickStartVisitedImport: Bool {
-        didSet { defaults.set(quickStartVisitedImport, forKey: Keys.quickStartVisitedImport) }
+    /// The latest importer offer that the user completed or declined.
+    /// A version lets a corrected importer reach users who handled an older offer.
+    @Published private(set) var completedImporterOfferVersion: Int {
+        didSet {
+            defaults.set(
+                completedImporterOfferVersion,
+                forKey: Keys.completedImporterOfferVersion)
+        }
     }
     /// Bundle path where we last reconciled native-messaging manifests.
     /// nil or mismatched path means we need to reconcile on next launch.
@@ -285,21 +345,34 @@ final class SettingsStore: ObservableObject {
     /// Transient control ID that the UI should highlight briefly.
     @Published var highlightedControlId: String?
 
-    // B-ICLOUD-BROAD: Dedicated publisher for routing-data changes only,
-    // so iCloud sync doesn't re-encode on unrelated UI field changes.
+    // Dedicated publisher for routing data and settings stored in iCloud.
+    // It excludes local and transient UI state.
     let routingDataDidChange = PassthroughSubject<Void, Never>()
 
-    /// Changes used only by the live JSON mirror. ConfigFileManager merges
-    /// this with routingDataDidChange, while iCloud sync remains routing-only.
+    /// Changes stored in the live JSON mirror but not in iCloud.
+    /// ConfigFileManager merges this with routingDataDidChange.
     let configMirrorDataDidChange = PassthroughSubject<Void, Never>()
 
     // P2: Cached decoded results to avoid re-deserializing JSON on every routing call
     private var cachedRules: [Rule]?
     private var cachedGlobalRewriteRules: [URLRewriteRule]?
 
-    init() {
-        // App-only defaults (UserDefaults.standard)
-        let d = UserDefaults.standard
+    static let currentImporterOfferVersion = 1
+
+    var hasCompletedCurrentImporterOffer: Bool {
+        completedImporterOfferVersion >= Self.currentImporterOfferVersion
+    }
+
+    func completeCurrentImporterOffer() {
+        completedImporterOfferVersion = max(
+            completedImporterOfferVersion,
+            Self.currentImporterOfferVersion)
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        // App-only defaults
+        let d = defaults
         d.register(defaults: [
             Keys.isFirstLaunch: true,
             Keys.periodicRescanInterval: 1800.0,
@@ -330,7 +403,9 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedActivation = d.bool(forKey: Keys.quickStartVisitedActivation)
         self.quickStartVisitedBrowsers = d.bool(forKey: Keys.quickStartVisitedBrowsers)
         self.quickStartVisitedTester = d.bool(forKey: Keys.quickStartVisitedTester)
-        self.quickStartVisitedImport = d.bool(forKey: Keys.quickStartVisitedImport)
+        self.completedImporterOfferVersion = max(
+            0,
+            d.integer(forKey: Keys.completedImporterOfferVersion))
         self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
         self.configFilePath = d.string(forKey: Keys.configFilePath)
         self.lastNativeMessagingBundlePath = d.string(forKey: Keys.lastNativeMessagingBundlePath)
@@ -366,6 +441,15 @@ final class SettingsStore: ObservableObject {
             rawValue: s.string(forKey: Keys.recentURLRetention) ?? "") ?? .forever
         self.recentURLRetentionMinutes = s.object(forKey: Keys.recentURLRetentionMinutes) as? Int ?? 30
         self.shortlinkResolutionEnabled = s.bool(forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled)
+        self.shortlinkResolutionHosts = s.object(
+            forKey: SharedRoutingStore.Keys.shortlinkResolutionHosts) == nil
+            ? ShortlinkResolver.defaultShortenerHosts
+            : ShortlinkResolver.canonicalHostAllowlist(
+                s.stringArray(
+                    forKey: SharedRoutingStore.Keys.shortlinkResolutionHosts) ?? [])
+        self.shortlinkResolutionMode = ShortlinkResolutionMode(rawValue: s.string(
+            forKey: SharedRoutingStore.Keys.shortlinkResolutionMode) ?? "")
+            ?? .exactHostHTTPAndHTTPS
     }
 
     // MARK: - User-deleted built-in rules tracking
@@ -539,22 +623,22 @@ final class SettingsStore: ObservableObject {
             YojamLogger.shared.log("Failed to decode rewrite rules: \(error.localizedDescription)")
             return BuiltInRewriteRules.all
         }
-        // Deduplicate: keep the first occurrence of each (name + pattern) pair.
-        // This cleans up duplicates from earlier builds that used random UUIDs
-        // for built-in rewrite rules.
-        var seen = Set<String>()
+        // Deduplicate exact rewrite behaviour while ignoring IDs. This cleans up
+        // built-ins from earlier builds that used random UUIDs without dropping
+        // distinct rules that happen to share text fields.
+        var seen = Set<RewriteRuleDeduplicationKey>()
         var deduped: [URLRewriteRule] = []
         for rule in savedRules {
-            let key = "\(rule.name)|\(rule.matchPattern)|\(rule.replacement)"
+            let key = RewriteRuleDeduplicationKey(rule)
             if seen.insert(key).inserted {
                 deduped.append(rule)
             }
         }
         let savedIds = Set(deduped.map(\.id))
         let newBuiltIns = BuiltInRewriteRules.all.filter { !savedIds.contains($0.id) }
-        // Also skip new built-ins whose name+pattern already exist (migrating old random IDs)
+        // Also skip equivalent built-ins with old random IDs.
         let finalNew = newBuiltIns.filter { rule in
-            !seen.contains("\(rule.name)|\(rule.matchPattern)|\(rule.replacement)")
+            !seen.contains(RewriteRuleDeduplicationKey(rule))
         }
         let result = deduped + finalNew
         cachedGlobalRewriteRules = result
@@ -581,13 +665,16 @@ final class SettingsStore: ObservableObject {
 
     private func makeSettingsExport() -> SettingsExport {
         SettingsExport(
-            version: 5,
+            version: SettingsExport.currentVersion,
             activationMode: activationMode,
             defaultSelection: defaultSelectionBehavior,
             verticalThreshold: verticalThreshold,
             soundEffects: soundEffectsEnabled,
             launchAtLogin: launchAtLogin,
             globalUTMStripping: globalUTMStrippingEnabled,
+            shortlinkResolutionEnabled: shortlinkResolutionEnabled,
+            shortlinkResolutionHosts: shortlinkResolutionHosts.sorted(),
+            shortlinkResolutionMode: shortlinkResolutionMode,
             clipboardMonitoring: clipboardMonitoringEnabled,
             iCloudSync: iCloudSyncEnabled,
             debugLoggingEnabled: debugLoggingEnabled,
@@ -737,6 +824,19 @@ final class SettingsStore: ObservableObject {
         if globalUTMStrippingEnabled != imported.globalUTMStripping {
             globalUTMStrippingEnabled = imported.globalUTMStripping
         }
+        if imported.decodedKeys.contains(.shortlinkResolutionHosts),
+           shortlinkResolutionHosts != Set(imported.shortlinkResolutionHosts) {
+            shortlinkResolutionHosts = ShortlinkResolver.canonicalHostAllowlist(
+                imported.shortlinkResolutionHosts)
+        }
+        if imported.decodedKeys.contains(.shortlinkResolutionMode),
+           shortlinkResolutionMode != imported.shortlinkResolutionMode {
+            shortlinkResolutionMode = imported.shortlinkResolutionMode
+        }
+        if imported.decodedKeys.contains(.shortlinkResolutionEnabled),
+           shortlinkResolutionEnabled != imported.shortlinkResolutionEnabled {
+            shortlinkResolutionEnabled = imported.shortlinkResolutionEnabled
+        }
         if clipboardMonitoringEnabled != imported.clipboardMonitoring {
             clipboardMonitoringEnabled = imported.clipboardMonitoring
         }
@@ -885,10 +985,13 @@ final class SettingsStore: ObservableObject {
         self.recentURLRetention = .forever
         self.recentURLRetentionMinutes = 30
         self.shortlinkResolutionEnabled = false
+        self.shortlinkResolutionHosts = ShortlinkResolver.defaultShortenerHosts
+        self.shortlinkResolutionMode = .exactHostHTTPAndHTTPS
         self.hasDismissedQuickStart = false
         self.quickStartVisitedActivation = false
         self.quickStartVisitedBrowsers = false
         self.quickStartVisitedTester = false
+        self.completedImporterOfferVersion = 0
         self.configFilePath = nil
         saveBrowsers([])
         saveEmailClients([])
@@ -901,6 +1004,8 @@ final class SettingsStore: ObservableObject {
 }
 
 struct SettingsExport: Codable {
+    static let currentVersion = 6
+
     let version: Int
     let hasExplicitVersion: Bool
     let decodedKeys: Set<CodingKeys>
@@ -910,6 +1015,9 @@ struct SettingsExport: Codable {
     var soundEffects: Bool
     var launchAtLogin: Bool
     var globalUTMStripping: Bool
+    var shortlinkResolutionEnabled: Bool
+    var shortlinkResolutionHosts: [String]
+    var shortlinkResolutionMode: ShortlinkResolutionMode
     var clipboardMonitoring: Bool
     var iCloudSync: Bool
     var debugLoggingEnabled: Bool
@@ -930,7 +1038,10 @@ struct SettingsExport: Codable {
 
     enum CodingKeys: String, CodingKey, CaseIterable, Hashable {
         case version, activationMode, defaultSelection, verticalThreshold
-        case soundEffects, launchAtLogin, globalUTMStripping, clipboardMonitoring
+        case soundEffects, launchAtLogin, globalUTMStripping
+        case shortlinkResolutionEnabled, shortlinkResolutionHosts
+        case shortlinkResolutionMode
+        case clipboardMonitoring
         case iCloudSync, debugLoggingEnabled
         case periodicRescanInterval, browsers, emailClients, phoneClients, rules
         case globalRewriteRules, utmStripList, suppressedClipboardDomains
@@ -951,6 +1062,9 @@ struct SettingsExport: Codable {
         try c.encode(soundEffects, forKey: .soundEffects)
         try c.encode(launchAtLogin, forKey: .launchAtLogin)
         try c.encode(globalUTMStripping, forKey: .globalUTMStripping)
+        try c.encode(shortlinkResolutionEnabled, forKey: .shortlinkResolutionEnabled)
+        try c.encode(shortlinkResolutionHosts, forKey: .shortlinkResolutionHosts)
+        try c.encode(shortlinkResolutionMode, forKey: .shortlinkResolutionMode)
         try c.encode(clipboardMonitoring, forKey: .clipboardMonitoring)
         try c.encode(iCloudSync, forKey: .iCloudSync)
         try c.encode(debugLoggingEnabled, forKey: .debugLoggingEnabled)
@@ -973,6 +1087,9 @@ struct SettingsExport: Codable {
     init(version: Int, activationMode: ActivationMode,
          defaultSelection: DefaultSelectionBehavior, verticalThreshold: Int,
          soundEffects: Bool, launchAtLogin: Bool, globalUTMStripping: Bool,
+         shortlinkResolutionEnabled: Bool = false,
+         shortlinkResolutionHosts: [String] = ShortlinkResolver.defaultShortenerHosts.sorted(),
+         shortlinkResolutionMode: ShortlinkResolutionMode = .exactHostHTTPAndHTTPS,
          clipboardMonitoring: Bool, iCloudSync: Bool,
          debugLoggingEnabled: Bool, periodicRescanInterval: TimeInterval,
          browsers: [BrowserEntry], emailClients: [BrowserEntry],
@@ -994,6 +1111,10 @@ struct SettingsExport: Codable {
         self.soundEffects = soundEffects
         self.launchAtLogin = launchAtLogin
         self.globalUTMStripping = globalUTMStripping
+        self.shortlinkResolutionEnabled = shortlinkResolutionEnabled
+        self.shortlinkResolutionHosts = ShortlinkResolver.canonicalHostAllowlist(
+            shortlinkResolutionHosts).sorted()
+        self.shortlinkResolutionMode = shortlinkResolutionMode
         self.clipboardMonitoring = clipboardMonitoring
         self.iCloudSync = iCloudSync
         self.debugLoggingEnabled = debugLoggingEnabled
@@ -1026,6 +1147,17 @@ struct SettingsExport: Codable {
         soundEffects = try container.decodeIfPresent(Bool.self, forKey: .soundEffects) ?? false
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         globalUTMStripping = try container.decodeIfPresent(Bool.self, forKey: .globalUTMStripping) ?? false
+        shortlinkResolutionEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .shortlinkResolutionEnabled) ?? false
+        shortlinkResolutionHosts = ShortlinkResolver.canonicalHostAllowlist(
+            try container.decodeIfPresent(
+                [String].self,
+                forKey: .shortlinkResolutionHosts)
+                ?? ShortlinkResolver.defaultShortenerHosts.sorted()).sorted()
+        shortlinkResolutionMode = try container.decodeIfPresent(
+            ShortlinkResolutionMode.self,
+            forKey: .shortlinkResolutionMode) ?? .exactHostHTTPAndHTTPS
         clipboardMonitoring = try container.decodeIfPresent(Bool.self, forKey: .clipboardMonitoring) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
         debugLoggingEnabled = try container.decodeIfPresent(Bool.self, forKey: .debugLoggingEnabled) ?? false

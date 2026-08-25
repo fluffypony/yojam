@@ -8,19 +8,36 @@ enum SyncConflictResolver {
     }
 
     static func mergeBrowserLists(
-        local: [BrowserEntry], remote: [BrowserEntry]
+        local: [BrowserEntry],
+        remote: [BrowserEntry],
+        preservingLocalRewriteFieldsForRemoteBrowserIDs legacyBrowserIds: Set<UUID> = [],
+        preferringRemoteOnEqualTimestampForBrowserIDs preferredRemoteBrowserIds: Set<UUID> = []
     ) -> [BrowserEntry] {
-        mergeBrowserListsWithAliases(local: local, remote: remote).entries
+        mergeBrowserListsWithAliases(
+            local: local,
+            remote: remote,
+            preservingLocalRewriteFieldsForRemoteBrowserIDs: legacyBrowserIds,
+            preferringRemoteOnEqualTimestampForBrowserIDs: preferredRemoteBrowserIds
+        ).entries
     }
 
     static func mergeBrowserListsWithAliases(
-        local: [BrowserEntry], remote: [BrowserEntry]
+        local: [BrowserEntry],
+        remote: [BrowserEntry],
+        preservingLocalRewriteFieldsForRemoteBrowserIDs legacyBrowserIds: Set<UUID> = [],
+        preferringRemoteOnEqualTimestampForBrowserIDs preferredRemoteBrowserIds: Set<UUID> = []
     ) -> BrowserListMergeResult {
         var merged: [UUID: BrowserEntry] = [:]
         for entry in local { merged[entry.id] = entry }
         for entry in remote {
             if let existing = merged[entry.id] {
-                merged[entry.id] = newerBrowserEntry(remote: entry, local: existing)
+                let remoteEntry = legacyBrowserIds.contains(entry.id)
+                    ? preservingLegacyRewriteFields(in: entry, from: existing)
+                    : entry
+                merged[entry.id] = newerBrowserEntry(
+                    remote: remoteEntry,
+                    local: existing,
+                    preferRemoteOnEqualTimestamp: preferredRemoteBrowserIds.contains(entry.id))
             } else {
                 merged[entry.id] = entry
             }
@@ -28,7 +45,8 @@ enum SyncConflictResolver {
 
         let coalesced = coalesceBrowserIdentityDuplicates(
             Array(merged.values),
-            preferredLocalIds: Set(local.map(\.id)))
+            preferredLocalIds: Set(local.map(\.id)),
+            legacyRemoteIds: legacyBrowserIds)
 
         var sorted = coalesced.entries.sorted {
             if $0.position != $1.position { return $0.position < $1.position }
@@ -38,12 +56,23 @@ enum SyncConflictResolver {
         return BrowserListMergeResult(entries: sorted, idAliases: coalesced.idAliases)
     }
 
-    static func mergeRules(local: [Rule], remote: [Rule]) -> [Rule] {
+    static func mergeRules(
+        local: [Rule],
+        remote: [Rule],
+        preservingLocalRewriteFieldsForRemoteRuleIDs legacyRuleIds: Set<UUID> = [],
+        preferringRemoteOnEqualTimestampForRuleIDs preferredRemoteRuleIds: Set<UUID> = []
+    ) -> [Rule] {
         var merged: [UUID: Rule] = [:]
         for rule in local { merged[rule.id] = rule }
         for rule in remote {
             if let existing = merged[rule.id] {
-                merged[rule.id] = mergeRule(local: existing, remote: rule)
+                let remoteRule = legacyRuleIds.contains(rule.id)
+                    ? preservingLegacyRewriteFields(in: rule, from: existing)
+                    : rule
+                merged[rule.id] = mergeRule(
+                    local: existing,
+                    remote: remoteRule,
+                    preferRemoteOnEqualTimestamp: preferredRemoteRuleIds.contains(rule.id))
             } else {
                 merged[rule.id] = rule
             }
@@ -68,10 +97,18 @@ enum SyncConflictResolver {
         }
     }
 
-    private static func newerBrowserEntry(remote: BrowserEntry, local: BrowserEntry) -> BrowserEntry {
+    private static func newerBrowserEntry(
+        remote: BrowserEntry,
+        local: BrowserEntry,
+        preferRemoteOnEqualTimestamp: Bool = false
+    ) -> BrowserEntry {
         let remoteDate = remote.lastModifiedAt ?? remote.lastSeenAt ?? .distantPast
         let localDate = local.lastModifiedAt ?? local.lastSeenAt ?? .distantPast
-        guard remoteDate > localDate else { return local }
+        guard remoteDate > localDate
+                || (preferRemoteOnEqualTimestamp
+                    && remote.lastModifiedAt == local.lastModifiedAt) else {
+            return local
+        }
 
         var winning = remote
         // Preserve local-only fields that are stripped or machine-specific.
@@ -85,7 +122,8 @@ enum SyncConflictResolver {
 
     private static func coalesceBrowserIdentityDuplicates(
         _ entries: [BrowserEntry],
-        preferredLocalIds: Set<UUID>
+        preferredLocalIds: Set<UUID>,
+        legacyRemoteIds: Set<UUID>
     ) -> (entries: [BrowserEntry], idAliases: [UUID: UUID]) {
         var groups: [String: [BrowserEntry]] = [:]
         for entry in entries {
@@ -109,11 +147,15 @@ enum SyncConflictResolver {
             for entry in ordered.dropFirst() {
                 winning = newerBrowserEntry(remote: entry, local: winning)
             }
+            let winningWasLegacy = legacyRemoteIds.contains(winning.id)
             if winning.id != canonical.id {
                 winning = copyBrowserEntry(winning, id: canonical.id)
             }
             if let localAnchor = ordered.first(where: { preferredLocalIds.contains($0.id) }) {
                 winning = preservingLocalBrowserFields(in: winning, from: localAnchor)
+                if winningWasLegacy {
+                    winning = preservingLegacyRewriteFields(in: winning, from: localAnchor)
+                }
             }
             for entry in ordered where entry.id != canonical.id {
                 aliases[entry.id] = canonical.id
@@ -133,6 +175,25 @@ enum SyncConflictResolver {
         }
         copy.isInstalled = local.isInstalled
         copy.lastSeenAt = local.lastSeenAt
+        return copy
+    }
+
+    private static func preservingLegacyRewriteFields(
+        in remote: BrowserEntry,
+        from local: BrowserEntry
+    ) -> BrowserEntry {
+        var copy = remote
+        var localRewritesById: [UUID: URLRewriteRule] = [:]
+        for rewrite in local.rewriteRules {
+            localRewritesById[rewrite.id] = rewrite
+        }
+        for index in copy.rewriteRules.indices {
+            guard let localRewrite = localRewritesById[copy.rewriteRules[index].id] else {
+                continue
+            }
+            copy.rewriteRules[index].urlNormalization = localRewrite.urlNormalization
+            copy.rewriteRules[index].metadata = localRewrite.metadata
+        }
         return copy
     }
 
@@ -189,10 +250,18 @@ enum SyncConflictResolver {
             openAsNewInstance: entry.openAsNewInstance)
     }
 
-    private static func mergeRule(local: Rule, remote: Rule) -> Rule {
+    private static func mergeRule(
+        local: Rule,
+        remote: Rule,
+        preferRemoteOnEqualTimestamp: Bool = false
+    ) -> Rule {
         let remoteIsNewer = (remote.lastModifiedAt ?? .distantPast)
             > (local.lastModifiedAt ?? .distantPast)
-        var merged = remoteIsNewer ? remote : local
+        let timestampsAreEqual = (remote.lastModifiedAt ?? .distantPast)
+            == (local.lastModifiedAt ?? .distantPast)
+        var merged = remoteIsNewer || (preferRemoteOnEqualTimestamp && timestampsAreEqual)
+            ? remote
+            : local
 
         let localScopeDate = machineScopeDate(local)
         let remoteScopeDate = machineScopeDate(remote)
@@ -208,6 +277,24 @@ enum SyncConflictResolver {
             merged.machineScopeModifiedAt = local.machineScopeModifiedAt ?? local.lastModifiedAt
         }
         return merged
+    }
+
+    private static func preservingLegacyRewriteFields(in remote: Rule, from local: Rule) -> Rule {
+        var copy = remote
+        copy.urlNormalization = local.urlNormalization
+
+        var localRewritesById: [UUID: URLRewriteRule] = [:]
+        for rewrite in local.rewriteRules {
+            localRewritesById[rewrite.id] = rewrite
+        }
+        for index in copy.rewriteRules.indices {
+            guard let localRewrite = localRewritesById[copy.rewriteRules[index].id] else {
+                continue
+            }
+            copy.rewriteRules[index].urlNormalization = localRewrite.urlNormalization
+            copy.rewriteRules[index].metadata = localRewrite.metadata
+        }
+        return copy
     }
 
     private static func machineScopeDate(_ rule: Rule) -> Date? {
@@ -227,16 +314,26 @@ enum SyncConflictResolver {
 
     // §7: Preserve local order, append remote-only entries. Use timestamps when available.
     static func mergeRewriteRules(
-        local: [URLRewriteRule], remote: [URLRewriteRule]
+        local: [URLRewriteRule],
+        remote: [URLRewriteRule],
+        preservingLocalRewriteFieldsForRemoteRewriteRuleIDs legacyRewriteRuleIds: Set<UUID> = [],
+        preferringRemoteOnEqualTimestampForRewriteRuleIDs preferredRemoteRewriteRuleIds: Set<UUID> = []
     ) -> [URLRewriteRule] {
         var mergedMap: [UUID: URLRewriteRule] = [:]
         for rule in local { mergedMap[rule.id] = rule }
         for rule in remote {
             if let existing = mergedMap[rule.id] {
-                let remoteDate = rule.lastModifiedAt ?? .distantPast
+                var remoteRule = rule
+                if legacyRewriteRuleIds.contains(rule.id) {
+                    remoteRule.urlNormalization = existing.urlNormalization
+                    remoteRule.metadata = existing.metadata
+                }
+                let remoteDate = remoteRule.lastModifiedAt ?? .distantPast
                 let localDate = existing.lastModifiedAt ?? .distantPast
-                if remoteDate > localDate {
-                    mergedMap[rule.id] = rule
+                if remoteDate > localDate
+                    || (preferredRemoteRewriteRuleIds.contains(rule.id)
+                        && remoteDate == localDate) {
+                    mergedMap[rule.id] = remoteRule
                 }
             } else {
                 mergedMap[rule.id] = rule

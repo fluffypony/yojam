@@ -152,7 +152,7 @@ enum SettingsSearchIndex {
         SettingsSearchItem(tab: .advanced, section: "Danger Zone", title: "Uninstall Yojam",
                            subtitle: "Remove native messaging manifests login item logs preferences"),
         SettingsSearchItem(tab: .advanced, section: "Settings Data", title: "Import from Other Apps",
-                           subtitle: "Bumpr Choosy Finicky migration rules"),
+                           subtitle: "Bumpr Choosy Finicky migration routes rewrites warnings"),
 
         // About
         SettingsSearchItem(tab: .about, section: "About", title: "About Yojam",
@@ -212,6 +212,14 @@ struct PreferencesView: View {
                             }
                         }
                     })
+                    .frame(width: 300)
+                    .padding(16)
+                    .shadow(radius: 8)
+                    .transition(.opacity)
+            } else if !settingsStore.hasCompletedCurrentImporterOffer {
+                ExistingImporterOfferCard(
+                    settingsStore: settingsStore,
+                    ruleEngine: ruleEngine)
                     .frame(width: 300)
                     .padding(16)
                     .shadow(radius: 8)

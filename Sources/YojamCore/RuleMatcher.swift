@@ -15,7 +15,8 @@ public enum RuleMatcher {
         sourceApp: String? = nil,
         machineIdentifier: String? = nil
     ) -> RuleMatchResult {
-        let urlString = url.absoluteString
+        let urlString = rule.urlNormalization.normalize(url.absoluteString)
+        let matchingURL = URL(string: urlString) ?? url
         let normalizedURL = normalizeURL(urlString)
 
         // Source-app filter. Must match exactly when set.
@@ -45,7 +46,7 @@ public enum RuleMatcher {
             }
         }
 
-        let host = url.host?.lowercased() ?? ""
+        let host = matchingURL.host?.lowercased() ?? ""
         let pattern = rule.pattern
         let patternLower = pattern.lowercased()
 
@@ -96,7 +97,7 @@ public enum RuleMatcher {
                                    normalizedURL: normalizedURL, explanation: explanation)
 
         case .hostPathPrefix:
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let components = URLComponents(url: matchingURL, resolvingAgainstBaseURL: false)
             let path = components?.path ?? ""
             let hostPath = (host + path).lowercased()
             let trimmedHostPath = hostPath.hasSuffix("/") ? String(hostPath.dropLast()) : hostPath

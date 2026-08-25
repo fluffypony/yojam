@@ -1,6 +1,16 @@
 import Foundation
 
-struct ChromiumProfileReader {
+struct ChromiumProfileReader: Sendable {
+    private let applicationSupportDirectory: URL
+
+    init(
+        applicationSupportDirectory: URL = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support")
+    ) {
+        self.applicationSupportDirectory = applicationSupportDirectory
+    }
+
     func readProfiles(
         appSupportPath: String,
         bundleId: String,
@@ -60,8 +70,7 @@ struct ChromiumProfileReader {
            !userDataDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return URL(fileURLWithPath: expandedPath(userDataDirectory))
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support")
+        return applicationSupportDirectory
             .appendingPathComponent(appSupportPath)
     }
 

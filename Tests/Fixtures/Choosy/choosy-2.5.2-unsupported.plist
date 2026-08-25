@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>title</key><string>Dynamic state</string>
+		<key>predicate</key><string>runningBrowsers &gt; 0</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>6</integer>
+		<key>behaviourArgument</key>
+		<dict><key>path</key><string>/Applications/Safari.app</string><key>type</key><string>ChoosyBrowser</string></dict>
+	</dict>
+	<dict>
+		<key>title</key><string>Negated compound</string>
+		<key>predicate</key><string>NOT (URL CONTAINS "blocked.example")</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>6</integer>
+		<key>behaviourArgument</key>
+		<dict><key>path</key><string>/Applications/Safari.app</string><key>type</key><string>ChoosyBrowser</string></dict>
+	</dict>
+	<dict>
+		<key>title</key><string>Source not equal</string>
+		<key>predicate</key><string>sourceApp != "/Applications/Slack.app"</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>6</integer>
+		<key>behaviourArgument</key>
+		<dict><key>path</key><string>/Applications/Safari.app</string><key>type</key><string>ChoosyBrowser</string></dict>
+	</dict>
+	<dict>
+		<key>title</key><string>Prompt action</string>
+		<key>predicate</key><string>TRUEPREDICATE</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>3</integer>
+		<key>behaviourArgument</key><string></string>
+	</dict>
+	<dict>
+		<key>title</key><string>Invalid single browser</string>
+		<key>predicate</key><string>TRUEPREDICATE</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>6</integer>
+		<key>behaviourArgument</key>
+		<array><dict><key>path</key><string>/Applications/Safari.app</string><key>type</key><string>ChoosyBrowser</string></dict></array>
+	</dict>
+	<dict>
+		<key>title</key><string>Diacritic comparison</string>
+		<key>predicate</key><string>URL CONTAINS[d] "cafe"</string>
+		<key>enabled</key><true/>
+		<key>behaviour</key><integer>6</integer>
+		<key>behaviourArgument</key>
+		<dict><key>path</key><string>/Applications/Safari.app</string><key>type</key><string>ChoosyBrowser</string></dict>
+	</dict>
+</array>
+</plist>

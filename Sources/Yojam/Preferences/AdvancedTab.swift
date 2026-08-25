@@ -272,7 +272,7 @@ struct AdvancedTab: View {
                         Text("Import from Other Apps")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textPrimary)
-                        Text("Detects and imports routing rules from Bumpr, Choosy, or Finicky if they're installed on this Mac.")
+                        Text("Review compatible routes and rewrites from installed copies of Bumpr, Choosy, or Finicky.")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textSecondary)
                     }

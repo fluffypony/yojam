@@ -56,6 +56,17 @@ public enum RoutingSnapshotLoader {
         let isEnabled = (defaults.object(forKey: SharedRoutingStore.Keys.isEnabled) as? Bool) ?? true
         let globalUTMStripping = (defaults.object(forKey: SharedRoutingStore.Keys.globalUTMStripping) as? Bool) ?? false
         let shortlinkEnabled = (defaults.object(forKey: SharedRoutingStore.Keys.shortlinkResolutionEnabled) as? Bool) ?? false
+        // A missing host key identifies an existing Yojam installation. Keep
+        // the catalogue that those users opted into before policies were stored.
+        let shortlinkHosts = defaults.object(
+            forKey: SharedRoutingStore.Keys.shortlinkResolutionHosts) == nil
+            ? ShortlinkResolver.defaultShortenerHosts
+            : ShortlinkResolver.canonicalHostAllowlist(
+                defaults.stringArray(
+                    forKey: SharedRoutingStore.Keys.shortlinkResolutionHosts) ?? [])
+        let shortlinkMode = ShortlinkResolutionMode(rawValue: defaults.string(
+            forKey: SharedRoutingStore.Keys.shortlinkResolutionMode) ?? "")
+            ?? .exactHostHTTPAndHTTPS
         let lastUsedBrowserIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedBrowserId)
         let lastUsedEmailIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedEmailId)
         let lastUsedPhoneIdStr = defaults.string(forKey: SharedRoutingStore.Keys.lastUsedPhoneId)
@@ -101,6 +112,8 @@ public enum RoutingSnapshotLoader {
             lastUsedEmailClientId: lastUsedEmailIdStr.flatMap(UUID.init(uuidString:)),
             lastUsedPhoneClientId: lastUsedPhoneIdStr.flatMap(UUID.init(uuidString:)),
             shortlinkResolutionEnabled: shortlinkEnabled,
+            shortlinkResolutionHosts: shortlinkHosts,
+            shortlinkResolutionMode: shortlinkMode,
             currentMachineIdentifier: store.localMachineIdentifier
         )
     }

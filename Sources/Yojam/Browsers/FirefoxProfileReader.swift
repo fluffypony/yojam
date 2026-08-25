@@ -15,15 +15,12 @@ struct FirefoxProfileReader: Sendable {
         self.firefoxVersionProvider = firefoxVersionProvider
     }
 
-    func readProfiles(bundleId: String) -> [BrowserProfile] {
-        let appSupportName: String
-        switch bundleId {
-        case "org.mozilla.firefoxdeveloperedition": appSupportName = "Firefox Developer Edition"
-        case "org.mozilla.nightly":                 appSupportName = "Firefox Nightly"
-        default:                                    appSupportName = "Firefox"
-        }
+    func readProfiles(
+        appSupportPath: String,
+        bundleId: String
+    ) -> [BrowserProfile] {
         let profilesDir = applicationSupportDirectory
-            .appendingPathComponent(appSupportName)
+            .appendingPathComponent(appSupportPath)
         let profilesIni = profilesDir.appendingPathComponent("profiles.ini")
         guard let content = try? String(contentsOf: profilesIni, encoding: .utf8)
         else {
@@ -96,8 +93,15 @@ struct FirefoxProfileReader: Sendable {
         return profiles
     }
 
-    func selectableProfilePath(named name: String, bundleId: String) -> String? {
-        readProfiles(bundleId: bundleId).first { profile in
+    func selectableProfilePath(
+        named name: String,
+        appSupportPath: String,
+        bundleId: String
+    ) -> String? {
+        readProfiles(
+            appSupportPath: appSupportPath,
+            bundleId: bundleId
+        ).first { profile in
             profile.name == name && profile.id.hasPrefix("/")
         }?.id
     }

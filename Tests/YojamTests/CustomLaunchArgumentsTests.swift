@@ -50,6 +50,27 @@ final class CustomLaunchArgumentsTests: XCTestCase {
         ])
     }
 
+    func testColdAppBundleUsesWorkspaceArgumentLaunch() {
+        XCTAssertTrue(AppDelegate.shouldUseWorkspaceArgumentLaunch(
+            appURL: URL(fileURLWithPath: "/Applications/Google Chrome.app"),
+            isRunning: false,
+            openAsNewInstance: false))
+    }
+
+    func testRunningAppBundleKeepsDirectArgumentForwarding() {
+        XCTAssertFalse(AppDelegate.shouldUseWorkspaceArgumentLaunch(
+            appURL: URL(fileURLWithPath: "/Applications/Google Chrome.app"),
+            isRunning: true,
+            openAsNewInstance: false))
+    }
+
+    func testBareExecutableKeepsDirectArgumentLaunch() {
+        XCTAssertFalse(AppDelegate.shouldUseWorkspaceArgumentLaunch(
+            appURL: URL(fileURLWithPath: "/opt/browser/bin/browser"),
+            isRunning: false,
+            openAsNewInstance: false))
+    }
+
     @MainActor
     func testCustomLaunchArgsIncludeConfiguredUserDataDirectoryBeforeAppendedURL() {
         let url = URL(string: "https://example.com/path")!
@@ -67,5 +88,70 @@ final class CustomLaunchArgumentsTests: XCTestCase {
             "--profile-directory=Profile 2",
             url.absoluteString,
         ])
+    }
+
+    @MainActor
+    func testFinickyProfileArgumentsPrecedeExactCustomArguments() {
+        let url = URL(string: "https://example.com/path")!
+        let args = AppDelegate.customLaunchArguments(
+            template: "--app=$URL",
+            url: url,
+            profile: "Profile 2",
+            bundleId: "com.google.Chrome",
+            privateWindow: false,
+            appendURLIfMissing: false,
+            usesFinickyArgumentSemantics: true)
+
+        XCTAssertEqual(args, [
+            "--profile-directory=Profile 2",
+            "--app=\(url.absoluteString)",
+        ])
+    }
+
+    @MainActor
+    func testFinickyArgumentsDoNotExpandShellHomeTokens() {
+        let url = URL(string: "https://example.com/path")!
+        let args = AppDelegate.customLaunchArguments(
+            template: "$HOME ~/literal",
+            url: url,
+            profile: nil,
+            bundleId: nil,
+            privateWindow: false,
+            appendURLIfMissing: false,
+            usesFinickyArgumentSemantics: true)
+
+        XCTAssertEqual(args, ["$HOME", "~/literal"])
+    }
+
+    func testExactFinickyActionKeepsExplicitPrivateRequest() {
+        XCTAssertTrue(AppDelegate.effectivePrivateWindow(
+            exactFinickyAction: true,
+            rulePrivateWindow: false,
+            routedPrivateWindow: true,
+            forcePrivateWindow: true))
+    }
+
+    func testExactFinickyActionBypassesBrowserPrivateSetting() {
+        XCTAssertFalse(AppDelegate.effectivePrivateWindow(
+            exactFinickyAction: true,
+            rulePrivateWindow: false,
+            routedPrivateWindow: true,
+            forcePrivateWindow: false))
+    }
+
+    func testExactFinickyActionKeepsRulePrivateSetting() {
+        XCTAssertTrue(AppDelegate.effectivePrivateWindow(
+            exactFinickyAction: true,
+            rulePrivateWindow: true,
+            routedPrivateWindow: false,
+            forcePrivateWindow: false))
+    }
+
+    func testStandardActionKeepsExistingPrivatePrecedence() {
+        XCTAssertFalse(AppDelegate.effectivePrivateWindow(
+            exactFinickyAction: false,
+            rulePrivateWindow: false,
+            routedPrivateWindow: true,
+            forcePrivateWindow: true))
     }
 }

@@ -1,46 +1,33 @@
 import Foundation
 
 enum ProfileLaunchHelper {
-    private static let firefoxBundleIds: Set<String> = [
-        "org.mozilla.firefox",
-        "org.mozilla.firefoxdeveloperedition",
-        "org.mozilla.nightly",
-    ]
-    private static let chromiumBundleIds: Set<String> = [
-        "com.google.Chrome",
-        "com.brave.Browser",
-        "com.microsoft.edgemac",
-        "com.vivaldi.Vivaldi",
-        "com.operasoftware.Opera",
-        "org.chromium.Chromium",
-    ]
-
     static func launchArguments(
         forProfile profileId: String,
         browserBundleId: String,
         userDataDirectory: String? = nil,
         firefoxProfileReader: FirefoxProfileReader = FirefoxProfileReader()
     ) -> [String] {
-        switch browserBundleId {
-        case let id where chromiumBundleIds.contains(id):
+        guard let configuration = BrowserProfileCatalog.configuration(
+            for: browserBundleId) else { return [] }
+        switch configuration.engine {
+        case .chromium:
             return dataDirectoryArguments(
                 userDataDirectory: userDataDirectory,
                 browserBundleId: browserBundleId)
                 + ["--profile-directory=\(profileId)"]
-        case let id where firefoxBundleIds.contains(id):
+        case .firefox:
             if isFirefoxProfilePath(profileId) {
                 return ["--profile", expandedProfilePath(profileId), "--new-instance"]
             }
             if let profilePath = firefoxProfileReader.selectableProfilePath(
                 named: profileId,
+                appSupportPath: configuration.appSupportPath,
                 bundleId: browserBundleId) {
                 return ["--profile", profilePath, "--new-instance"]
             }
             // Firefox profile locks reject a forced new instance when the
             // profile is already open. -P lets Firefox reuse that profile.
             return ["-P", profileId]
-        default:
-            return []
         }
     }
 
@@ -48,7 +35,7 @@ enum ProfileLaunchHelper {
         userDataDirectory: String?,
         browserBundleId: String
     ) -> [String] {
-        guard chromiumBundleIds.contains(browserBundleId),
+        guard BrowserProfileCatalog.configuration(for: browserBundleId)?.engine == .chromium,
               let userDataDirectory,
               !userDataDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return []
@@ -57,7 +44,7 @@ enum ProfileLaunchHelper {
     }
 
     static func supportsUserDataDirectory(browserBundleId: String) -> Bool {
-        chromiumBundleIds.contains(browserBundleId)
+        BrowserProfileCatalog.configuration(for: browserBundleId)?.engine == .chromium
     }
 
     private static func isFirefoxProfilePath(_ profileId: String) -> Bool {

@@ -75,10 +75,34 @@ final class RuleEngine: ObservableObject {
         save()
     }
 
+    func addImportedRules(_ importedRules: [Rule]) {
+        guard !importedRules.isEmpty else { return }
+        var ordered = orderedRules
+        let insertionIndex = ordered.firstIndex(where: \.isBuiltIn) ?? ordered.endIndex
+        var stampedRules: [Rule] = []
+        for rule in importedRules {
+            var imported = rule
+            stampRuleChange(&imported, previous: nil)
+            stampedRules.append(imported)
+        }
+        ordered.insert(contentsOf: stampedRules, at: insertionIndex)
+        reindexPriorities(&ordered)
+        rules = ordered
+        save()
+    }
+
     func updateRule(_ rule: Rule) {
         if let idx = rules.firstIndex(where: { $0.id == rule.id }) {
             var r = rule
-            stampRuleChange(&r, previous: rules[idx])
+            let previous = rules[idx]
+            if previous.metadata?["finickyWebOnly"] == "true",
+               (previous.matchType != r.matchType || previous.pattern != r.pattern) {
+                r.metadata?.removeValue(forKey: "finickyWebOnly")
+                if r.metadata?.isEmpty == true {
+                    r.metadata = nil
+                }
+            }
+            stampRuleChange(&r, previous: previous)
             rules[idx] = r
             save()
         }
@@ -102,6 +126,7 @@ final class RuleEngine: ObservableObject {
             enabled: true,
             matchType: original.matchType,
             pattern: original.pattern,
+            urlNormalization: original.urlNormalization,
             targetBundleId: original.targetBundleId,
             targetAppName: original.targetAppName,
             targetBrowserEntryId: original.targetBrowserEntryId,

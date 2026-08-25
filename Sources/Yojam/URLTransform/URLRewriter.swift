@@ -45,19 +45,6 @@ final class URLRewriter: ObservableObject {
     }
 
     private func applyRewrites(_ rules: [URLRewriteRule], to url: URL) -> URL {
-        var urlString = url.absoluteString
-        for rule in rules where rule.enabled {
-            if rule.isRegex {
-                urlString = RegexMatcher.replaceMatches(
-                    in: urlString, pattern: rule.matchPattern,
-                    replacement: rule.replacement
-                )
-            } else {
-                urlString = urlString.replacingOccurrences(
-                    of: rule.matchPattern, with: rule.replacement
-                )
-            }
-        }
-        return URL(string: urlString) ?? url
+        URLRewriteEngine.apply(rules, to: url)
     }
 }

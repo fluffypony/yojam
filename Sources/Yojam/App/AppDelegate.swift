@@ -53,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pickerAuthenticationSessionID: UUID?
     private let deduplicationWindow: TimeInterval = 0.5
     private var pendingRequests: [IncomingLinkRequest] = []
+    private var requestRoutingTail: Task<Void, Never>?
+    private var authenticationPreparationTasks: [
+        UUID: (generation: Int, task: Task<Void, Never>)
+    ] = [:]
+    private var requestRoutingGeneration = 0
     private var pendingFirstLaunchPreferencesWorkItem: DispatchWorkItem?
     private var isFinishedLaunching = false
     private var wasLaunchedByAuthenticationServices = false
@@ -75,6 +80,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let application = notification.object as? NSApplication ?? NSApplication.shared
         application.servicesProvider = self
 
+        // AuthenticationServices can deliver its request as soon as the app
+        // starts. Install the handler before any launch-time registration work.
+        let authenticationSessionHandler = AuthenticationSessionHandler(
+            onRequest: { [weak self] id, request in
+                self?.beginAuthenticationSession(id: id, request: request)
+            },
+            onCancel: { [weak self] id in
+                self?.cancelAuthenticationSession(id: id)
+            })
+        self.authenticationSessionHandler = authenticationSessionHandler
+        wasLaunchedByAuthenticationServices = authenticationSessionHandler.install()
+
+        // Updating Yojam can add or change Launch Services declarations. Force
+        // their refresh so AuthenticationServices does not need a login or
+        // restart before it recognises Yojam as an authentication browser.
+        let registrationStatus = LaunchServicesRegistration.refresh()
+        if registrationStatus != noErr {
+            YojamLogger.shared.log(
+                "Launch Services registration failed with status \(registrationStatus)")
+        }
+
         // Prevent Yojam from appearing in Cmd+Tab and the Dock.
         // Two-step: .prohibited first to avoid a brief Dock icon flash,
         // then .accessory in didFinishLaunching so we can show windows.
@@ -87,18 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             andSelector: #selector(handleGetURL(event:reply:)),
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL))
-
-        // AuthenticationServices can deliver a request during cold launch.
-        // Install this handler before the run loop accepts those requests.
-        let authenticationSessionHandler = AuthenticationSessionHandler(
-            onRequest: { [weak self] id, request in
-                self?.beginAuthenticationSession(id: id, request: request)
-            },
-            onCancel: { [weak self] id in
-                self?.cancelAuthenticationSession(id: id)
-            })
-        self.authenticationSessionHandler = authenticationSessionHandler
-        wasLaunchedByAuthenticationServices = authenticationSessionHandler.install()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -290,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        requestRoutingTail?.cancel()
         appInstallMonitor.stopMonitoring()
         workspaceObserver.stopObserving()
         periodicScanner.stop()
@@ -315,41 +330,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingRequests.append(request)
             return
         }
-        // Opt-in shortlink resolution: async pre-stage before routing
-        if settingsStore.shortlinkResolutionEnabled,
-           let host = request.url.host?.lowercased(),
-           ShortlinkResolver.defaultShortenerHosts.contains(host) {
-            Task { @MainActor in
-                let resolved = await ShortlinkResolver.shared.resolve(request.url)
-                let resolvedRequest = IncomingLinkRequest(
-                    url: resolved,
-                    sourceAppBundleId: request.sourceAppBundleId,
-                    origin: request.origin,
-                    modifierFlags: request.modifierFlags,
-                    receivedAt: request.receivedAt,
-                    metadata: request.metadata,
-                    forcedBrowserBundleId: request.forcedBrowserBundleId,
-                    forcePicker: request.forcePicker,
-                    forcePrivateWindow: request.forcePrivateWindow
-                )
-                self.handleIncomingRequest(resolvedRequest)
+        schedulePreparedRequest(request)
+    }
+
+    /// Adds a request to one serial preparation chain. A slow short-link lookup
+    /// cannot let a later cold-launch or live request overtake it.
+    private func schedulePreparedRequest(_ request: IncomingLinkRequest) {
+        let predecessor = requestRoutingTail
+        let authenticationSessionID = authenticationSessionID(for: request)
+        requestRoutingGeneration += 1
+        let generation = requestRoutingGeneration
+        let task = Task { @MainActor [weak self] in
+            await predecessor?.value
+            guard let self else { return }
+            defer {
+                if let authenticationSessionID,
+                   self.authenticationPreparationTasks[authenticationSessionID]?.generation
+                    == generation {
+                    self.authenticationPreparationTasks.removeValue(
+                        forKey: authenticationSessionID)
+                }
+                if self.requestRoutingGeneration == generation {
+                    self.requestRoutingTail = nil
+                }
             }
+            guard !Task.isCancelled else { return }
+            await self.routePreparedRequest(request)
+        }
+        requestRoutingTail = task
+        if let authenticationSessionID {
+            authenticationPreparationTasks[authenticationSessionID] = (generation, task)
+        }
+    }
+
+    /// Routes a request after cold-launch preparation has completed.
+    /// Both live and queued requests use the same short-link pre-stage.
+    private func routePreparedRequest(_ request: IncomingLinkRequest) async {
+        // Authentication cancellation can occur while this request waits for
+        // an earlier short-link lookup. Do not make a later network request.
+        guard authenticationSessionIsActive(for: request) else { return }
+        let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
+        // Opt-in shortlink resolution: async pre-stage before routing.
+        if !shiftHeld,
+           settingsStore.shortlinkResolutionEnabled,
+           ShortlinkResolver.isConfiguredShortlinkURL(
+            request.url,
+            allowlist: settingsStore.shortlinkResolutionHosts,
+            mode: settingsStore.shortlinkResolutionMode) {
+            let resolved = await ShortlinkResolver.shared.resolve(
+                request.url,
+                allowlist: settingsStore.shortlinkResolutionHosts,
+                mode: settingsStore.shortlinkResolutionMode)
+            guard !Task.isCancelled else { return }
+            let resolvedRequest = IncomingLinkRequest(
+                url: resolved,
+                sourceAppBundleId: request.sourceAppBundleId,
+                origin: request.origin,
+                modifierFlags: request.modifierFlags,
+                receivedAt: request.receivedAt,
+                metadata: request.metadata,
+                forcedBrowserBundleId: request.forcedBrowserBundleId,
+                forcePicker: request.forcePicker,
+                forcePrivateWindow: request.forcePrivateWindow
+            )
+            handleIncomingRequest(resolvedRequest)
             return
         }
         handleIncomingRequest(request)
     }
 
     private func drainPendingLaunchRequests() {
-        // Drain before marking launch complete so requests that arrive during
-        // processing stay queued and preserve their original order.
-        while !pendingRequests.isEmpty {
-            let requests = pendingRequests
-            pendingRequests.removeAll()
-            for request in requests {
-                handleIncomingRequest(request)
-            }
-        }
+        let requests = pendingRequests
+        pendingRequests.removeAll()
         isFinishedLaunching = true
+        for request in requests {
+            schedulePreparedRequest(request)
+        }
     }
 
     /// Process an incoming link request through the routing pipeline.
@@ -490,17 +546,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // profile, private-window state, or launch args regardless of
             // how the BrowserEntry is configured on the Browsers tab. nil
             // fields fall back to the entry's defaults.
-            let effectiveProfile = matchedRule?.ruleProfileId ?? entry.profileId
-            let effectivePrivate = matchedRule?.ruleOpenInPrivateWindow ?? privateWindow
-            let effectiveArgs = matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs
-            let effectiveNewInstance = matchedRule?.ruleOpenAsNewInstance ?? entry.openAsNewInstance
+            let exactFinickyAction = matchedRule?.metadata?["finickyExactBrowserAction"] == "true"
+            let effectiveProfile = exactFinickyAction
+                ? matchedRule?.ruleProfileId
+                : (matchedRule?.ruleProfileId ?? entry.profileId)
+            let effectivePrivate = Self.effectivePrivateWindow(
+                exactFinickyAction: exactFinickyAction,
+                rulePrivateWindow: matchedRule?.ruleOpenInPrivateWindow,
+                routedPrivateWindow: privateWindow,
+                forcePrivateWindow: request.forcePrivateWindow)
+            let effectiveArgs = exactFinickyAction
+                ? matchedRule?.ruleCustomLaunchArgs
+                : (matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs)
+            let effectiveNewInstance = exactFinickyAction
+                ? (matchedRule?.ruleOpenAsNewInstance ?? false)
+                : (matchedRule?.ruleOpenAsNewInstance ?? entry.openAsNewInstance)
+            let appendURLToCustomArguments = matchedRule?.metadata?["finickySuppressAutomaticURL"] != "true"
 
             openURL(effectiveURL, withAppAt: resolvedAppURL,
                     profile: effectiveProfile,
                     bundleId: entry.bundleIdentifier,
                     privateWindow: effectivePrivate,
-                    userDataDirectory: entry.userDataDirectory,
+                    userDataDirectory: exactFinickyAction ? nil : entry.userDataDirectory,
                     customLaunchArgs: effectiveArgs,
+                    appendURLToCustomArguments: appendURLToCustomArguments,
+                    usesFinickyArgumentSemantics: exactFinickyAction,
                     openAsNewInstance: effectiveNewInstance)
 
             // Per-display targeting (best-effort, requires AX permission).
@@ -607,6 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelAuthenticationSession(id: UUID) {
         activeAuthenticationSessionIDs.remove(id)
         pendingRequests.removeAll { authenticationSessionID(for: $0) == id }
+        authenticationPreparationTasks.removeValue(forKey: id)?.task.cancel()
 
         if pickerAuthenticationSessionID == id {
             pickerAuthenticationSessionID = nil
@@ -890,26 +961,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             container: container,
             browserBundleId: entry.bundleIdentifier)
 
-        let effectiveProfile = ruleTargetsThisEntry
-            ? (matchedRule?.ruleProfileId ?? entry.profileId)
-            : entry.profileId
-        let effectivePrivate = ruleTargetsThisEntry
-            ? (matchedRule?.ruleOpenInPrivateWindow ?? entry.openInPrivateWindow)
-            : entry.openInPrivateWindow
-        let effectiveArgs = ruleTargetsThisEntry
-            ? (matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs)
-            : entry.customLaunchArgs
-        let effectiveNewInstance = ruleTargetsThisEntry
-            ? (matchedRule?.ruleOpenAsNewInstance ?? entry.openAsNewInstance)
-            : entry.openAsNewInstance
+        let exactFinickyAction = ruleTargetsThisEntry
+            && matchedRule?.metadata?["finickyExactBrowserAction"] == "true"
+        let effectiveProfile = exactFinickyAction
+            ? matchedRule?.ruleProfileId
+            : (ruleTargetsThisEntry
+                ? (matchedRule?.ruleProfileId ?? entry.profileId)
+                : entry.profileId)
+        let effectivePrivate = exactFinickyAction
+            ? (matchedRule?.ruleOpenInPrivateWindow ?? false)
+            : (ruleTargetsThisEntry
+                ? (matchedRule?.ruleOpenInPrivateWindow ?? entry.openInPrivateWindow)
+                : entry.openInPrivateWindow)
+        let effectiveArgs = exactFinickyAction
+            ? matchedRule?.ruleCustomLaunchArgs
+            : (ruleTargetsThisEntry
+                ? (matchedRule?.ruleCustomLaunchArgs ?? entry.customLaunchArgs)
+                : entry.customLaunchArgs)
+        let effectiveNewInstance = exactFinickyAction
+            ? (matchedRule?.ruleOpenAsNewInstance ?? false)
+            : (ruleTargetsThisEntry
+                ? (matchedRule?.ruleOpenAsNewInstance ?? entry.openAsNewInstance)
+                : entry.openAsNewInstance)
+        let appendURLToCustomArguments = !ruleTargetsThisEntry
+            || matchedRule?.metadata?["finickySuppressAutomaticURL"] != "true"
 
         openURL(
             effectiveURL, withAppAt: appURL,
             profile: effectiveProfile,
             bundleId: entry.bundleIdentifier,
             privateWindow: effectivePrivate,
-            userDataDirectory: entry.userDataDirectory,
+            userDataDirectory: exactFinickyAction ? nil : entry.userDataDirectory,
             customLaunchArgs: effectiveArgs,
+            appendURLToCustomArguments: appendURLToCustomArguments,
+            usesFinickyArgumentSemantics: exactFinickyAction,
             openAsNewInstance: effectiveNewInstance)
 
         if let targetDisplayUUID, !targetDisplayUUID.isEmpty {
@@ -937,6 +1022,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return stripUTM(rewritten)
         }
         return rewritten
+    }
+
+    nonisolated static func effectivePrivateWindow(
+        exactFinickyAction: Bool,
+        rulePrivateWindow: Bool?,
+        routedPrivateWindow: Bool,
+        forcePrivateWindow: Bool
+    ) -> Bool {
+        if exactFinickyAction {
+            return forcePrivateWindow || (rulePrivateWindow ?? false)
+        }
+        return rulePrivateWindow ?? routedPrivateWindow
     }
 
     private func rule(_ rule: Rule?, targets entry: BrowserEntry) -> Bool {
@@ -1007,6 +1104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         privateWindow: Bool = false,
         userDataDirectory: String? = nil,
         customLaunchArgs: String? = nil,
+        appendURLToCustomArguments: Bool = true,
+        usesFinickyArgumentSemantics: Bool = false,
         openAsNewInstance: Bool = false
     ) {
         // AppleScript-based private window for Safari/Orion
@@ -1034,8 +1133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Custom launch args avoid NSWorkspace because macOS can drop
-        // arguments when it hands a URL to an already-running app.
+        // Custom launch args need an explicit argument path. Cold apps use
+        // Launch Services, while running apps receive direct forwarding.
         if let template = customLaunchArgs, !template.isEmpty {
             let args = Self.customLaunchArguments(
                 template: template,
@@ -1043,7 +1142,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 profile: profile,
                 bundleId: bundleId,
                 privateWindow: privateWindow,
-                userDataDirectory: userDataDirectory)
+                userDataDirectory: userDataDirectory,
+                appendURLIfMissing: appendURLToCustomArguments,
+                usesFinickyArgumentSemantics: usesFinickyArgumentSemantics)
             runArgumentLaunch(
                 appURL: appURL,
                 arguments: args,
@@ -1084,15 +1185,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
+        config.addsToRecentItems = false
         config.createsNewApplicationInstance = openAsNewInstance
 
-        Task {
-            do {
-                _ = try await NSWorkspace.shared.open(
-                    [url], withApplicationAt: appURL, configuration: config)
-            } catch {
-                YojamLogger.shared.log(
-                    "Failed to open URL: \(error.localizedDescription)")
+        NSWorkspace.shared.open(
+            [url], withApplicationAt: appURL, configuration: config
+        ) { _, error in
+            if let error {
+                Task { @MainActor in
+                    YojamLogger.shared.log(
+                        "Failed to open URL: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -1103,31 +1206,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profile: String?,
         bundleId: String?,
         privateWindow: Bool,
-        userDataDirectory: String? = nil
+        userDataDirectory: String? = nil,
+        appendURLIfMissing: Bool = true,
+        usesFinickyArgumentSemantics: Bool = false
     ) -> [String] {
         var args = shellSplitArguments(template)
-            .map { expandLaunchArgument($0, url: url) }
+            .map {
+                expandLaunchArgument(
+                    $0,
+                    url: url,
+                    expandHomeReferences: !usesFinickyArgumentSemantics)
+            }
         let templateHasUserDataDirectory = args.contains {
             $0.hasPrefix("--user-data-dir")
         }
 
+        var profileArguments: [String] = []
         if let bundleId {
             if let profile {
-                args.append(contentsOf: ProfileLaunchHelper.launchArguments(
+                profileArguments.append(contentsOf: ProfileLaunchHelper.launchArguments(
                     forProfile: profile,
                     browserBundleId: bundleId,
                     userDataDirectory: templateHasUserDataDirectory ? nil : userDataDirectory))
             } else if !templateHasUserDataDirectory {
-                args.append(contentsOf: ProfileLaunchHelper.dataDirectoryArguments(
+                profileArguments.append(contentsOf: ProfileLaunchHelper.dataDirectoryArguments(
                     userDataDirectory: userDataDirectory,
                     browserBundleId: bundleId))
             }
+        }
+        if usesFinickyArgumentSemantics {
+            args.insert(contentsOf: profileArguments, at: 0)
+        } else {
+            args.append(contentsOf: profileArguments)
         }
         if privateWindow, let bundleId {
             args.append(contentsOf: ProfileLaunchHelper.privateWindowArguments(
                 browserBundleId: bundleId))
         }
-        if !template.contains("$URL") {
+        if appendURLIfMissing, !template.contains("$URL") {
             args.append(url.absoluteString)
         }
         return args
@@ -1140,6 +1256,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logPrefix: String,
         openAsNewInstance: Bool
     ) {
+        let resolvedBundleID = bundleId ?? Bundle(url: appURL)?.bundleIdentifier
+        let isRunning = resolvedBundleID.map {
+            !NSRunningApplication.runningApplications(
+                withBundleIdentifier: $0).isEmpty
+        } ?? false
+
+        // Launch cold app bundles through LaunchServices. Directly starting a
+        // browser executable can leave its URL queued until the user opens the
+        // app, notably for ASWebAuthenticationSession routes. Keep the direct
+        // executable path for a running browser, where it forwards profile
+        // arguments to the existing instance.
+        if Self.shouldUseWorkspaceArgumentLaunch(
+            appURL: appURL,
+            isRunning: isRunning,
+            openAsNewInstance: openAsNewInstance
+        ) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            config.addsToRecentItems = false
+            config.createsNewApplicationInstance = openAsNewInstance
+            config.arguments = arguments
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: config
+            ) { _, error in
+                if let error {
+                    Task { @MainActor in
+                        YojamLogger.shared.log(
+                            "\(logPrefix) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+            return
+        }
+
         let invocation = Self.argumentLaunchInvocation(
             appURL: appURL,
             arguments: arguments,
@@ -1166,6 +1317,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    nonisolated static func shouldUseWorkspaceArgumentLaunch(
+        appURL: URL,
+        isRunning: Bool,
+        openAsNewInstance: Bool
+    ) -> Bool {
+        appURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame
+            && (!isRunning || openAsNewInstance)
+    }
+
     static func argumentLaunchInvocation(
         appURL: URL,
         arguments: [String],
@@ -1185,26 +1345,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var tokens: [String] = []
         var current = ""
         var inQuote: Character? = nil
+        var tokenStarted = false
         for ch in template {
             if let q = inQuote {
                 if ch == q { inQuote = nil } else { current.append(ch) }
             } else if ch == "\"" || ch == "'" {
                 inQuote = ch
+                tokenStarted = true
             } else if ch == " " {
-                if !current.isEmpty { tokens.append(current); current = "" }
+                if tokenStarted || !current.isEmpty {
+                    tokens.append(current)
+                    current = ""
+                    tokenStarted = false
+                }
             } else {
                 current.append(ch)
+                tokenStarted = true
             }
         }
-        if !current.isEmpty { tokens.append(current) }
+        if tokenStarted || !current.isEmpty { tokens.append(current) }
         return tokens
     }
 
-    private static func expandLaunchArgument(_ argument: String, url: URL) -> String {
+    private static func expandLaunchArgument(
+        _ argument: String,
+        url: URL,
+        expandHomeReferences: Bool
+    ) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var expanded = argument
-            .replacingOccurrences(of: "$URL", with: url.absoluteString)
-            .replacingOccurrences(of: "$HOME", with: home)
+        var expanded = argument.replacingOccurrences(
+            of: "$URL",
+            with: url.absoluteString)
+        guard expandHomeReferences else { return expanded }
+        expanded = expanded.replacingOccurrences(of: "$HOME", with: home)
         if expanded == "~" {
             expanded = home
         } else if expanded.hasPrefix("~/") {

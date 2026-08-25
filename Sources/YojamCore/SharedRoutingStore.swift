@@ -59,6 +59,8 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
         public static let verticalThreshold = "verticalThreshold"
         public static let soundEffects = "soundEffects"
         public static let shortlinkResolutionEnabled = "shortlinkResolutionEnabled"
+        public static let shortlinkResolutionHosts = "shortlinkResolutionHosts"
+        public static let shortlinkResolutionMode = "shortlinkResolutionMode"
         public static let lastUsedBrowserId = "lastUsedBrowserId"
         public static let lastUsedEmailId = "lastUsedEmailId"
         public static let lastUsedPhoneId = "lastUsedPhoneId"

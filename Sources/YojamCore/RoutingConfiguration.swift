@@ -34,6 +34,9 @@ public struct RoutingConfiguration: Sendable {
     public let lastUsedPhoneClientId: UUID?
     /// Whether shortlink resolution is enabled (opt-in async pre-stage).
     public let shortlinkResolutionEnabled: Bool
+    /// Canonical lowercased hosts which can make shortlink network requests.
+    public let shortlinkResolutionHosts: Set<String>
+    public let shortlinkResolutionMode: ShortlinkResolutionMode
     /// Stable local ID for this Mac, used by machine-scoped rules.
     public let currentMachineIdentifier: String?
 
@@ -53,6 +56,8 @@ public struct RoutingConfiguration: Sendable {
         lastUsedEmailClientId: UUID?,
         lastUsedPhoneClientId: UUID? = nil,
         shortlinkResolutionEnabled: Bool = false,
+        shortlinkResolutionHosts: Set<String> = ShortlinkResolver.defaultShortenerHosts,
+        shortlinkResolutionMode: ShortlinkResolutionMode = .exactHostHTTPAndHTTPS,
         currentMachineIdentifier: String? = nil
     ) {
         self.browsers = browsers
@@ -70,6 +75,9 @@ public struct RoutingConfiguration: Sendable {
         self.lastUsedEmailClientId = lastUsedEmailClientId
         self.lastUsedPhoneClientId = lastUsedPhoneClientId
         self.shortlinkResolutionEnabled = shortlinkResolutionEnabled
+        self.shortlinkResolutionHosts = ShortlinkResolver.canonicalHostAllowlist(
+            shortlinkResolutionHosts)
+        self.shortlinkResolutionMode = shortlinkResolutionMode
         self.currentMachineIdentifier = currentMachineIdentifier
     }
 }

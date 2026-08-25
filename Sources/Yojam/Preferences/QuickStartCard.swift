@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import TipKit
 import YojamCore
@@ -8,8 +9,28 @@ struct QuickStartCard: View {
     var onSwitchTab: ((PreferencesTab) -> Void)?
     /// Scroll + optional highlight. Caller controls the delay / highlight-nil timing.
     var onScrollToSection: ((String, String?) -> Void)?
+    @StateObject private var importerOffer: ImporterOfferCoordinator
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
     @State private var showingImportSheet = false
+    @State private var completedImportOfferThisPresentation = false
+
+    init(
+        settingsStore: SettingsStore,
+        ruleEngine: RuleEngine,
+        onSwitchTab: ((PreferencesTab) -> Void)? = nil,
+        onScrollToSection: ((String, String?) -> Void)? = nil,
+        discoverImportSources: @escaping ImporterOfferCoordinator.Discovery = {
+            ConfigImporter.detectAvailable()
+        }
+    ) {
+        self.settingsStore = settingsStore
+        self.ruleEngine = ruleEngine
+        self.onSwitchTab = onSwitchTab
+        self.onScrollToSection = onScrollToSection
+        _importerOffer = StateObject(wrappedValue: ImporterOfferCoordinator(
+            currentVersion: SettingsStore.currentImporterOfferVersion,
+            discover: discoverImportSources))
+    }
 
     // State-based completion: auto-ticked from live state rather than
     // just "the user clicked the button".
@@ -24,23 +45,15 @@ struct QuickStartCard: View {
             || !settingsStore.loadBrowsers().filter(\.enabled).isEmpty
     }
     private var step4Done: Bool { settingsStore.quickStartVisitedTester }
-    private var importStepDone: Bool { settingsStore.quickStartVisitedImport }
-
-    /// Always surface the import step until the user has acted on it.
-    /// Pre-detecting via `ConfigImporter.detectAvailable()` at startup
-    /// triggers the macOS "access data from other apps" TCC prompt on
-    /// every launch (even LaunchServices queries against sandboxed
-    /// bundle IDs like com.nickvdh.Bumpr stat the container). Detection
-    /// runs inside the Import sheet instead, where any TCC prompt is
-    /// in-context and user-initiated.
     private var importStepVisible: Bool {
-        !settingsStore.quickStartVisitedImport
+        !settingsStore.hasCompletedCurrentImporterOffer
+            && importerOffer.offerLabel != nil
     }
     private var numberShift: Int { importStepVisible ? 1 : 0 }
 
     private var allDone: Bool {
         let coreDone = step1Done && step2Done && step3Done && step4Done
-        return importStepVisible ? (coreDone && importStepDone) : coreDone
+        return coreDone && !importStepVisible
     }
 
     var body: some View {
@@ -49,21 +62,32 @@ struct QuickStartCard: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 14))
                     .foregroundColor(Theme.accent)
+                    .accessibilityHidden(true)
                 Text("Get started with Yojam")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Theme.textInverse)
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                if importStepVisible {
-                    quickStartItem(
-                        number: 1,
-                        text: importStepLabel,
-                        isDone: importStepDone
-                    ) {
-                        settingsStore.quickStartVisitedImport = true
-                        showingImportSheet = true
-                        checkAllDone()
+                if importStepVisible, let importStepLabel = importerOffer.offerLabel {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        quickStartItem(
+                            number: 1,
+                            text: importStepLabel
+                        ) {
+                            showingImportSheet = true
+                        }
+
+                        Button("Not now") {
+                            completeImportOffer()
+                            checkAllDone()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textSecondary)
+                        .help("Keep your current rules. You can import later in Advanced settings.")
+                        .accessibilityHint(
+                            "Keeps your current rules. You can import later in Advanced settings.")
                     }
                 }
 
@@ -126,20 +150,22 @@ struct QuickStartCard: View {
         }
         .onAppear {
             isDefault = DefaultBrowserManager.isDefaultBrowser
+            importerOffer.discoverIfNeeded(
+                completedVersion: settingsStore.completedImporterOfferVersion)
         }
         .sheet(isPresented: $showingImportSheet) {
             ImportFromOtherAppsSheet(
                 settingsStore: settingsStore,
                 ruleEngine: ruleEngine,
-                onDismiss: { showingImportSheet = false })
+                offeredSources: importerOffer.availableSources,
+                onImport: { completeImportOffer() },
+                onDismiss: {
+                    showingImportSheet = false
+                    if completedImportOfferThisPresentation {
+                        checkAllDone()
+                    }
+                })
         }
-    }
-
-    private var importStepLabel: String {
-        // Generic label — we deliberately don't pre-detect what's
-        // installed (see `importStepVisible` comment). The sheet shows
-        // which sources are actually present when the user opens it.
-        "Import rules from Bumpr, Choosy, or Finicky"
     }
 
     private func checkAllDone() {
@@ -150,6 +176,12 @@ struct QuickStartCard: View {
                 }
             }
         }
+    }
+
+    private func completeImportOffer() {
+        completedImportOfferThisPresentation = true
+        settingsStore.completeCurrentImporterOffer()
+        importerOffer.markCompleted()
     }
 
     private func quickStartItem(number: Int, text: String, isDone: Bool = false, action: @escaping () -> Void) -> some View {
@@ -184,5 +216,9 @@ struct QuickStartCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .accessibilityValue(isDone ? "Completed" : "Not completed")
+        .accessibilityHint("Opens this Quick Start step.")
     }
 }

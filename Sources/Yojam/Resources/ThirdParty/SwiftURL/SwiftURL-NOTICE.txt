@@ -1,0 +1,2 @@
+swift-url (WebURL)
+Copyright Karl Wagner, and the swift-url Contributors.

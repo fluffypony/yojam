@@ -2,16 +2,10 @@ import AppKit
 import Foundation
 import YojamCore
 
-/// Detects and imports rules from other link-routing apps already installed
-/// on this Mac. Supported sources:
-///   • Bumpr   (plist under ~/Library/Containers/…/Bumpr.plist)
-///   • Choosy  (plist under ~/Library/Preferences/com.choosyosx.Choosy.plist)
-///   • Finicky (~/.finicky.js — JS config, parsed best-effort)
-///
-/// Parsers are intentionally conservative: anything we can't map cleanly gets
-/// appended to `warnings` instead of silently dropped.
+/// Detects installed link-routing apps and statically imports the parts of
+/// their configurations that Yojam can represent exactly.
 enum ConfigImporter {
-    enum Source: String, CaseIterable, Identifiable {
+    enum Source: String, CaseIterable, Identifiable, Sendable {
         case bumpr, choosy, finicky
         var id: String { rawValue }
         var displayName: String {
@@ -23,10 +17,28 @@ enum ConfigImporter {
         }
     }
 
-    struct ImportResult {
+    struct ImportResult: Sendable {
         var rules: [Rule]
+        var rewriteRules: [URLRewriteRule]
         var warnings: [String]
         var source: Source
+        var finickyShortlinkPolicy: FinickyShortlinkPolicy?
+
+        init(
+            rules: [Rule],
+            rewriteRules: [URLRewriteRule] = [],
+            warnings: [String],
+            source: Source,
+            finickyShortlinkPolicy: FinickyShortlinkPolicy? = nil
+        ) {
+            self.rules = rules
+            self.rewriteRules = rewriteRules
+            self.warnings = warnings
+            self.source = source
+            self.finickyShortlinkPolicy = finickyShortlinkPolicy
+        }
+
+        var itemCount: Int { rules.count + rewriteRules.count }
     }
 
     // MARK: - Detection
@@ -36,36 +48,37 @@ enum ConfigImporter {
     ///
     /// Why LaunchServices instead of `FileManager.fileExists`: touching paths
     /// under `~/Library/Containers/<other-app>/` (Bumpr's sandbox) triggers
-    /// the macOS `TCC_SERVICE_SYSTEM_POLICY_APP_DATA` prompt — the
-    /// "would like to access data from other apps" dialog — on every launch
+    /// the macOS `TCC_SERVICE_SYSTEM_POLICY_APP_DATA` prompt. This is the
+    /// "would like to access data from other apps" dialog. It appears on each launch
     /// with a changed code signature (Debug builds, ad-hoc signed). The
     /// actual plist reads happen in `importFrom(_:)`, which is only invoked
     /// when the user explicitly opens the Import sheet; the prompt there is
     /// in-context and one-shot.
-    static func detectAvailable() -> [Source] {
+    @MainActor
+    static func detectAvailable(
+        applicationURL: (String) -> URL? = {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+        }
+    ) -> [Source] {
         var available: [Source] = []
-        let ws = NSWorkspace.shared
 
         let bumprBundleIds = [
-            "com.nickvdh.Bumpr",
-            "com.tenseventeen.Bumpr",
-            "com.nicholaspsmith.Bumpr",
+            "com.letsgo.Handler",
         ]
-        if bumprBundleIds.contains(where: { ws.urlForApplication(withBundleIdentifier: $0) != nil }) {
+        if bumprBundleIds.contains(where: { applicationURL($0) != nil }) {
             available.append(.bumpr)
         }
 
-        if ws.urlForApplication(withBundleIdentifier: "com.choosyosx.Choosy") != nil {
+        if applicationURL("com.choosyosx.Choosy") != nil {
             available.append(.choosy)
         }
 
-        // Finicky ships as both a plain JS dotfile in the user's home dir
-        // (accessible without TCC) and, historically, a menu-bar app.
-        // Either signal is enough to offer the import.
-        let finickyJS = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".finicky.js")
-        if FileManager.default.fileExists(atPath: finickyJS.path)
-            || ws.urlForApplication(withBundleIdentifier: "net.kassett.Finicky") != nil {
+        let finickyBundleIds = [
+            "se.johnste.finicky",
+            "net.kassett.finicky",
+            "net.kassett.Finicky",
+        ]
+        if finickyBundleIds.contains(where: { applicationURL($0) != nil }) {
             available.append(.finicky)
         }
 
@@ -78,149 +91,215 @@ enum ConfigImporter {
         switch source {
         case .bumpr:   return importBumpr()
         case .choosy:  return importChoosy()
-        case .finicky: return importFinicky()
+        case .finicky: return importFinicky(detectRuntimeOptions: true)
         }
     }
 
-    private static func importBumpr() -> ImportResult {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let paths = [
-            "Library/Containers/com.nickvdh.Bumpr/Data/Library/Preferences/com.nickvdh.Bumpr.plist",
-            "Library/Containers/com.tenseventeen.Bumpr/Data/Library/Preferences/com.tenseventeen.Bumpr.plist",
-            "Library/Containers/com.nicholaspsmith.Bumpr/Data/Library/Preferences/com.nicholaspsmith.Bumpr.plist",
-            "Library/Preferences/com.nickvdh.Bumpr.plist",
-        ]
-        guard let url = paths.lazy
-            .map({ home.appendingPathComponent($0) })
-            .first(where: { FileManager.default.fileExists(atPath: $0.path) })
-        else {
+    static func importBumpr(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> ImportResult {
+        let url = BumprConfigPaths.preferencesURL(homeDirectory: homeDirectory)
+        guard FileManager.default.fileExists(atPath: url.path) else {
             return ImportResult(rules: [], warnings: ["Could not find Bumpr preferences on disk."], source: .bumpr)
         }
 
-        var rules: [Rule] = []
-        var warnings: [String] = []
-
-        guard let plist = NSDictionary(contentsOf: url) else {
-            return ImportResult(rules: [], warnings: ["Could not read Bumpr preferences."], source: .bumpr)
-        }
-
-        // Bumpr's rule storage key has varied across versions. We look for
-        // common array-of-dict candidates under known top-level keys.
-        let candidates = ["rules", "Rules", "BPRules", "behaviors", "Behaviors"]
-        var matched: [[String: Any]] = []
-        for key in candidates {
-            if let arr = plist[key] as? [[String: Any]] {
-                matched = arr; break
-            }
-        }
-        if matched.isEmpty {
-            warnings.append("Bumpr file found but no recognized rule array. Format may have changed.")
-        }
-
-        for dict in matched {
-            let name = (dict["name"] as? String) ?? (dict["title"] as? String) ?? "Imported"
-            let pattern = (dict["pattern"] as? String) ?? (dict["domain"] as? String) ?? ""
-            let bundleId = (dict["bundleIdentifier"] as? String) ?? (dict["bundleId"] as? String) ?? ""
-            let appName = (dict["appName"] as? String) ?? (dict["displayName"] as? String) ?? ""
-            guard !pattern.isEmpty, !bundleId.isEmpty else {
-                warnings.append("Skipping entry without pattern or bundle ID.")
-                continue
-            }
-            rules.append(Rule(
-                name: name,
-                matchType: pattern.contains("*") ? .urlContains : .domainSuffix,
-                pattern: pattern.replacingOccurrences(of: "*", with: ""),
-                targetBundleId: bundleId,
-                targetAppName: appName,
-                isBuiltIn: false,
-                priority: 200,
-                metadata: ["importedFrom": Source.bumpr.rawValue]))
-        }
-
-        return ImportResult(rules: rules, warnings: warnings, source: .bumpr)
+        let parsed = BumprConfigParser().parsePreferences(at: url)
+        return ImportResult(
+            rules: parsed.rules,
+            warnings: parsed.warnings,
+            source: .bumpr)
     }
 
-    private static func importChoosy() -> ImportResult {
-        let path = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Preferences/com.choosyosx.Choosy.plist")
-        guard let plist = NSDictionary(contentsOf: path) else {
-            return ImportResult(rules: [], warnings: ["Could not read Choosy preferences."], source: .choosy)
-        }
-        var rules: [Rule] = []
-        var warnings: [String] = []
-
-        // Choosy stores behaviors under "behaviors" or "rules".
-        let arr = (plist["behaviors"] as? [[String: Any]])
-            ?? (plist["rules"] as? [[String: Any]]) ?? []
-        if arr.isEmpty {
-            warnings.append("Choosy file found but no behaviors array present.")
+    static func importChoosy(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> ImportResult {
+        guard let url = ChoosyConfigParser.sourcePaths(homeDirectory: homeDirectory)
+            .first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            return ImportResult(
+                rules: [],
+                warnings: ["Could not find Choosy behaviours.plist on disk."],
+                source: .choosy)
         }
 
-        for dict in arr {
-            let name = (dict["name"] as? String) ?? "Imported"
-            let pattern = (dict["urlPattern"] as? String)
-                ?? (dict["pattern"] as? String)
-                ?? (dict["host"] as? String) ?? ""
-            let bundleId = (dict["bundleIdentifier"] as? String)
-                ?? ((dict["handler"] as? [String: Any])?["bundleIdentifier"] as? String) ?? ""
-            let appName = (dict["appName"] as? String) ?? ""
-            guard !pattern.isEmpty, !bundleId.isEmpty else {
-                warnings.append("Skipping Choosy entry without pattern/bundleId.")
-                continue
-            }
-            rules.append(Rule(
-                name: name,
-                matchType: .domainSuffix,
-                pattern: pattern,
-                targetBundleId: bundleId,
-                targetAppName: appName,
-                isBuiltIn: false,
-                priority: 200,
-                metadata: ["importedFrom": Source.choosy.rawValue]))
+        do {
+            let parsed = ChoosyConfigParser.parse(data: try Data(contentsOf: url))
+            return ImportResult(
+                rules: parsed.rules,
+                warnings: parsed.warnings,
+                source: .choosy)
+        } catch {
+            return ImportResult(
+                rules: [],
+                warnings: ["Could not read Choosy behaviours.plist: \(error.localizedDescription)"],
+                source: .choosy)
         }
-
-        return ImportResult(rules: rules, warnings: warnings, source: .choosy)
     }
 
-    private static func importFinicky() -> ImportResult {
-        // Finicky uses JavaScript; we cannot fully evaluate arbitrary JS here.
-        // Strategy: regex-match the `handlers` array for match strings and app
-        // names. Report anything we can't parse cleanly.
-        let path = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".finicky.js")
-        guard let js = try? String(contentsOf: path, encoding: .utf8) else {
-            return ImportResult(rules: [], warnings: ["Could not read ~/.finicky.js."], source: .finicky)
-        }
+    static func importFinicky(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        currentAppInstalled: Bool? = nil,
+        legacyBookmarkData: Data? = nil,
+        runtimeOptions: FinickyRuntimeOptions? = nil,
+        detectRuntimeOptions: Bool = false
+    ) -> ImportResult {
+        let parser = FinickyConfigParser()
         var rules: [Rule] = []
+        var rewrites: [URLRewriteRule] = []
         var warnings: [String] = []
+        var javaScriptPipelineIsComplete = true
+        var shortlinkPolicy: FinickyShortlinkPolicy?
 
-        // Very conservative heuristic parser: look for `match: "domain"` / `browser: "App Name"` pairs.
-        let pattern = #"match\s*:\s*["']([^"']+)["'][\s,]*browser\s*:\s*["']([^"']+)["']"#
-        if let re = try? NSRegularExpression(pattern: pattern, options: []) {
-            let ns = js as NSString
-            let matches = re.matches(in: js, range: NSRange(location: 0, length: ns.length))
-            for m in matches where m.numberOfRanges >= 3 {
-                let matchStr = ns.substring(with: m.range(at: 1))
-                let browser = ns.substring(with: m.range(at: 2))
-                rules.append(Rule(
-                    name: "Finicky: \(matchStr)",
-                    matchType: .urlContains,
-                    pattern: matchStr,
-                    targetBundleId: browser,
-                    targetAppName: browser,
-                    isBuiltIn: false,
-                    priority: 200,
-                    metadata: ["importedFrom": Source.finicky.rawValue,
-                               "note": "Target may be a display name rather than bundle ID"]))
+        let currentBundleIdentifier = "se.johnste.finicky"
+        let legacyBundleIdentifiers = [
+            "net.kassett.finicky",
+            "net.kassett.Finicky",
+        ]
+        let runtimeDetection = runtimeOptions == nil && detectRuntimeOptions
+            ? FinickyRuntimeOptions.detectRunning(bundleIdentifiers: [
+                currentBundleIdentifier,
+            ] + legacyBundleIdentifiers)
+            : nil
+        let hasCurrentApp = currentAppInstalled ?? (
+            NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: currentBundleIdentifier) != nil)
+        let selectedBundleIdentifier = runtimeDetection?.bundleIdentifier
+            ?? (hasCurrentApp
+                ? currentBundleIdentifier
+                : legacyBundleIdentifiers.first(where: {
+                    NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+                }))
+        let version: FinickyConfigVersion = selectedBundleIdentifier == currentBundleIdentifier
+            ? .v4
+            : .v3
+        let selectedAppVersion = runtimeDetection?.appVersion
+            ?? selectedBundleIdentifier.flatMap {
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+            }.flatMap(FinickyRuntimeOptions.applicationVersion(at:))
+        let bookmarkData = legacyBookmarkData ?? UserDefaults(
+            suiteName: FinickyConfigPaths.legacyBundleIdentifier
+        )?.data(forKey: FinickyConfigPaths.legacyBookmarkKey)
+        let effectiveRuntimeOptions = runtimeOptions ?? runtimeDetection?.options
+        let configURL: URL?
+        if effectiveRuntimeOptions?.skipsJavaScriptConfig == true {
+            configURL = nil
+            warnings.append(
+                "Finicky is running with --no-config. Its JavaScript configuration was not imported.")
+        } else if effectiveRuntimeOptions?.configPath != nil {
+            configURL = effectiveRuntimeOptions?.configURL(homeDirectory: homeDirectory)
+            if configURL == nil {
+                javaScriptPipelineIsComplete = false
+                warnings.append(
+                    "Finicky uses a relative --config path that Yojam cannot locate safely.")
             }
-        }
-
-        if rules.isEmpty {
-            warnings.append("Could not auto-parse Finicky handlers. Only string-literal match/browser pairs are supported; function-valued handlers require manual migration.")
         } else {
-            warnings.append("Finicky import is best-effort. Review each rule's target app — values may be display names rather than bundle IDs.")
+            configURL = FinickyConfigPaths.preferredConfigURL(
+                homeDirectory: homeDirectory,
+                version: version,
+                appVersion: selectedAppVersion,
+                legacyBookmarkData: bookmarkData)
         }
 
-        return ImportResult(rules: rules, warnings: warnings, source: .finicky)
+        var foundConfiguration = false
+        if let configURL {
+            foundConfiguration = true
+            do {
+                let source = try String(contentsOf: configURL, encoding: .utf8)
+                let parsed = parser.parse(source, version: version)
+                rules.append(contentsOf: parsed.rules)
+                rewrites.append(contentsOf: parsed.globalRewrites)
+                warnings.append(contentsOf: parsed.warningMessages)
+                shortlinkPolicy = parsed.shortlinkPolicy
+                javaScriptPipelineIsComplete = parsed.handlerPipelineIsComplete
+                    && parsed.rewritePipelineIsComplete
+            } catch {
+                javaScriptPipelineIsComplete = false
+                warnings.append(
+                    "Could not read Finicky configuration at \(configURL.path): "
+                        + error.localizedDescription)
+            }
+        }
+
+        // Finicky 3 has no declarative rules.json pipeline. A stale Finicky 4
+        // file must not change a legacy import or its short-link policy.
+        if version == .v3 {
+            if !foundConfiguration {
+                warnings.append("Could not find a Finicky configuration on disk.")
+            }
+            return ImportResult(
+                rules: rules,
+                rewriteRules: rewrites,
+                warnings: warnings,
+                source: .finicky,
+                finickyShortlinkPolicy: shortlinkPolicy)
+        }
+
+        let rulesURL: URL
+        if effectiveRuntimeOptions?.rulesPath != nil {
+            if let customRulesURL = effectiveRuntimeOptions?.rulesURL(homeDirectory: homeDirectory) {
+                rulesURL = customRulesURL
+            } else {
+                warnings.append(
+                    "Finicky uses a relative --rules path that Yojam cannot locate safely.")
+                for index in rules.indices {
+                    rules[index].metadata?["importRequiresReview"] = "true"
+                }
+                for index in rewrites.indices {
+                    rewrites[index].metadata?["importRequiresReview"] = "true"
+                }
+                return ImportResult(
+                    rules: rules,
+                    rewriteRules: rewrites,
+                    warnings: warnings,
+                    source: .finicky,
+                    finickyShortlinkPolicy: shortlinkPolicy)
+            }
+        } else {
+            rulesURL = FinickyConfigPaths.rulesJSONURL(homeDirectory: homeDirectory)
+        }
+        if FileManager.default.fileExists(atPath: rulesURL.path) {
+            foundConfiguration = true
+            do {
+                var parsed = parser.parseRulesJSON(try Data(contentsOf: rulesURL))
+                if version == .v4, !javaScriptPipelineIsComplete, !parsed.rules.isEmpty {
+                    for ruleIndex in parsed.rules.indices {
+                        parsed.rules[ruleIndex].metadata?["importRequiresReview"] = "true"
+                    }
+                    warnings.append(
+                        "Finicky rules.json routes follow a skipped or partly imported "
+                            + "JavaScript handler or rewrite. Review and select them manually.")
+                }
+                // Finicky 4 evaluates JavaScript handlers before rules.json handlers.
+                // Keep that order when the two sources are combined.
+                rules.append(contentsOf: parsed.rules)
+                rewrites.append(contentsOf: parsed.globalRewrites)
+                warnings.append(contentsOf: parsed.warningMessages)
+                if version == .v4 {
+                    shortlinkPolicy = parsed.shortlinkPolicy
+                }
+            } catch {
+                if effectiveRuntimeOptions?.rulesPath != nil {
+                    warnings.append(
+                        "Could not read Finicky's explicit --rules file at \(rulesURL.path): "
+                            + error.localizedDescription)
+                } else {
+                    warnings.append(
+                        "Could not read Finicky rules.json: \(error.localizedDescription)")
+                }
+            }
+        } else if effectiveRuntimeOptions?.rulesPath != nil {
+            warnings.append(
+                "Could not find Finicky's explicit --rules file at \(rulesURL.path).")
+        }
+
+        if !foundConfiguration {
+            warnings.append("Could not find a Finicky configuration on disk.")
+        }
+
+        return ImportResult(
+            rules: rules,
+            rewriteRules: rewrites,
+            warnings: warnings,
+            source: .finicky,
+            finickyShortlinkPolicy: shortlinkPolicy)
     }
 }

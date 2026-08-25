@@ -18,6 +18,8 @@ final class RewriteRuleEditingTests: XCTestCase {
             replacement: "original.test",
             isRegex: false,
             scope: .global,
+            urlNormalization: .whatwg,
+            metadata: ["importRequiresReview": "true"],
             lastModifiedAt: originalModifiedAt)
         let last = URLRewriteRule(
             name: "Last",
@@ -51,6 +53,8 @@ final class RewriteRuleEditingTests: XCTestCase {
         XCTAssertEqual(updated[1].replacement, "https://edited.test/$1")
         XCTAssertTrue(updated[1].isRegex)
         XCTAssertEqual(updated[1].scope, .global)
+        XCTAssertEqual(updated[1].urlNormalization, .whatwg)
+        XCTAssertEqual(updated[1].metadata, ["importRequiresReview": "true"])
         XCTAssertEqual(updated[1].lastModifiedAt, modifiedAt)
     }
 
@@ -75,5 +79,31 @@ final class RewriteRuleEditingTests: XCTestCase {
             modifiedAt: Date(timeIntervalSince1970: 2_000))
 
         XCTAssertEqual(updated, rules)
+    }
+
+    @MainActor
+    func testChangingImportedFinickyRewriteMatchMakesItUserScoped() throws {
+        let original = URLRewriteRule(
+            name: "Imported",
+            matchPattern: #"^https://example\.com/(.*)$"#,
+            replacement: "https://example.net/$1",
+            scope: .global,
+            urlNormalization: .whatwg,
+            metadata: [
+                "importedFrom": "finicky",
+                "finickyWebOnly": "true",
+            ])
+        let edited = URLRewriteRule(
+            id: original.id,
+            name: original.name,
+            matchPattern: #"^mailto:(.*)$"#,
+            replacement: "mailto:$1",
+            scope: .global)
+
+        let updated = PipelineTab.rewriteRulesByApplyingEdit(edited, to: [original])
+        let saved = try XCTUnwrap(updated.first)
+
+        XCTAssertEqual(saved.metadata?["importedFrom"], "finicky")
+        XCTAssertNil(saved.metadata?["finickyWebOnly"])
     }
 }

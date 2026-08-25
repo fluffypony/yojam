@@ -39,6 +39,26 @@ final class AuthenticationSessionPackagingTests: XCTestCase {
             "ASWebAuthenticationSessionWebBrowserSupportCapabilities.IsSupported"))
     }
 
+    func testSessionHandlerInstallsBeforeLaunchServicesRefresh() throws {
+        let source = try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("Sources/Yojam/App/AppDelegate.swift"),
+            encoding: .utf8)
+        let willFinish = try XCTUnwrap(
+            source.range(of: "func applicationWillFinishLaunching"))
+        let didFinish = try XCTUnwrap(
+            source.range(
+                of: "func applicationDidFinishLaunching",
+                range: willFinish.upperBound..<source.endIndex))
+        let launchBody = source[willFinish.lowerBound..<didFinish.lowerBound]
+        let install = try XCTUnwrap(
+            launchBody.range(of: "authenticationSessionHandler.install()"))
+        let refresh = try XCTUnwrap(
+            launchBody.range(of: "LaunchServicesRegistration.refresh()"))
+
+        XCTAssertLessThan(install.lowerBound, refresh.lowerBound)
+    }
+
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

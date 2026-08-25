@@ -49,7 +49,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in nil }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         let defaultProfile = try XCTUnwrap(
             profiles.first { $0.name == "default-release" })
@@ -112,7 +114,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in "138.0.1" }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(profiles.count, 3)
         XCTAssertEqual(
@@ -148,7 +152,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in "137.0" }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(profiles.first?.id, "Work")
     }
@@ -174,7 +180,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in "138.0" }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(
             profiles.first?.id,
@@ -219,7 +227,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in "138.0" }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(profiles.first { $0.name == "default-release" }?.isDefault, true)
         XCTAssertEqual(profiles.first { $0.name == "dev-edition-default" }?.isDefault, true)
@@ -248,7 +258,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in nil }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(
             profiles.first?.id,
@@ -277,7 +289,9 @@ final class FirefoxProfileReaderTests: XCTestCase {
         let profiles = FirefoxProfileReader(
             applicationSupportDirectory: tempDirectory,
             firefoxVersionProvider: { _ in nil }
-        ).readProfiles(bundleId: "org.mozilla.firefox")
+        ).readProfiles(
+            appSupportPath: "Firefox",
+            bundleId: "org.mozilla.firefox")
 
         XCTAssertEqual(
             profiles.first?.id,

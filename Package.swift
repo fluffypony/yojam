@@ -19,11 +19,15 @@ let package = Package(
         .executable(name: "yojam-cli", targets: ["YojamCLI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.1"),
+        .package(url: "https://github.com/karwa/swift-url", exact: "0.4.2")
     ],
     targets: [
         .target(
             name: "YojamCore",
+            dependencies: [
+                .product(name: "WebURL", package: "swift-url")
+            ],
             path: "Sources/YojamCore"
         ),
         .executableTarget(
@@ -45,7 +49,8 @@ let package = Package(
         .testTarget(
             name: "YojamTests",
             dependencies: ["Yojam"],
-            path: "Tests/YojamTests"
+            path: "Tests/YojamTests",
+            resources: [.process("Fixtures")]
         ),
         .testTarget(
             name: "YojamCoreTests",

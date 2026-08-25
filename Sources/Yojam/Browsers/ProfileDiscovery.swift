@@ -9,38 +9,126 @@ struct BrowserProfile: Identifiable, Codable, Sendable {
     var isDefault: Bool = false
 }
 
-final class ProfileDiscovery: Sendable {
-    private let chromiumReader = ChromiumProfileReader()
-    private let firefoxReader = FirefoxProfileReader()
+enum BrowserProfileEngine: Equatable, Sendable {
+    case chromium
+    case firefox
+}
 
-    func discoverProfiles(for bundleId: String, userDataDirectory: String? = nil) -> [BrowserProfile] {
+struct BrowserProfileConfiguration: Equatable, Sendable {
+    let engine: BrowserProfileEngine
+    let appSupportPath: String
+}
+
+enum BrowserProfileCatalog {
+    private static let configurations: [String: BrowserProfileConfiguration] = [
+        // Finicky 4 browsers.json.
+        "com.brave.browser": .init(
+            engine: .chromium,
+            appSupportPath: "BraveSoftware/Brave-Browser"),
+        "com.google.chrome": .init(
+            engine: .chromium,
+            appSupportPath: "Google/Chrome"),
+        "com.google.chrome.beta": .init(
+            engine: .chromium,
+            appSupportPath: "Google/Chrome Beta"),
+        "com.google.chrome.canary": .init(
+            engine: .chromium,
+            appSupportPath: "Google/Chrome Canary"),
+        "org.chromium.chromium": .init(
+            engine: .chromium,
+            appSupportPath: "Chromium"),
+        "com.microsoft.edgemac": .init(
+            engine: .chromium,
+            appSupportPath: "Microsoft Edge"),
+        "com.vivaldi.vivaldi": .init(
+            engine: .chromium,
+            appSupportPath: "Vivaldi"),
+        "com.bookry.wavebox": .init(
+            engine: .chromium,
+            appSupportPath: "WaveboxApp"),
+        "net.imput.helium": .init(
+            engine: .chromium,
+            appSupportPath: "net.imput.helium"),
+        "ai.perplexity.comet": .init(
+            engine: .chromium,
+            appSupportPath: "Comet"),
+        "ru.yandex.desktop.yandex-browser": .init(
+            engine: .chromium,
+            appSupportPath: "Yandex/YandexBrowser"),
+        "com.operasoftware.opera": .init(
+            engine: .chromium,
+            appSupportPath: "com.operasoftware.Opera"),
+        "com.operasoftware.operagx": .init(
+            engine: .chromium,
+            appSupportPath: "com.operasoftware.OperaGX"),
+        "org.mozilla.firefox": .init(
+            engine: .firefox,
+            appSupportPath: "Firefox"),
+        "org.mozilla.firefoxdeveloperedition": .init(
+            engine: .firefox,
+            appSupportPath: "Firefox"),
+        "app.zen-browser.zen": .init(
+            engine: .firefox,
+            appSupportPath: "zen"),
+
+        // Finicky 3.4 profile-capable channels not present above.
+        "com.brave.browser.beta": .init(
+            engine: .chromium,
+            appSupportPath: "BraveSoftware/Brave-Browser-Beta"),
+        "com.brave.browser.dev": .init(
+            engine: .chromium,
+            appSupportPath: "BraveSoftware/Brave-Browser-Dev"),
+        "com.microsoft.edgemac.beta": .init(
+            engine: .chromium,
+            appSupportPath: "Microsoft Edge Beta"),
+
+        // Keep Yojam's existing Firefox Nightly support.
+        "org.mozilla.nightly": .init(
+            engine: .firefox,
+            appSupportPath: "Firefox Nightly"),
+    ]
+
+    static func configuration(
+        for bundleIdentifier: String
+    ) -> BrowserProfileConfiguration? {
+        configurations[bundleIdentifier.lowercased()]
+    }
+}
+
+final class ProfileDiscovery: Sendable {
+    private let chromiumReader: ChromiumProfileReader
+    private let firefoxReader: FirefoxProfileReader
+
+    init(
+        applicationSupportDirectory: URL = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support")
+    ) {
+        chromiumReader = ChromiumProfileReader(
+            applicationSupportDirectory: applicationSupportDirectory)
+        firefoxReader = FirefoxProfileReader(
+            applicationSupportDirectory: applicationSupportDirectory)
+    }
+
+    func discoverProfiles(
+        for bundleId: String,
+        userDataDirectory: String? = nil
+    ) -> [BrowserProfile] {
+        if let configuration = BrowserProfileCatalog.configuration(for: bundleId) {
+            switch configuration.engine {
+            case .chromium:
+                return chromiumReader.readProfiles(
+                    appSupportPath: configuration.appSupportPath,
+                    bundleId: bundleId,
+                    userDataDirectory: userDataDirectory)
+            case .firefox:
+                return firefoxReader.readProfiles(
+                    appSupportPath: configuration.appSupportPath,
+                    bundleId: bundleId)
+            }
+        }
+
         switch bundleId {
-        case "com.google.Chrome":
-            return chromiumReader.readProfiles(
-                appSupportPath: "Google/Chrome", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "com.brave.Browser":
-            return chromiumReader.readProfiles(
-                appSupportPath: "BraveSoftware/Brave-Browser", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "com.microsoft.edgemac":
-            return chromiumReader.readProfiles(
-                appSupportPath: "Microsoft Edge", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "com.vivaldi.Vivaldi":
-            return chromiumReader.readProfiles(
-                appSupportPath: "Vivaldi", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "com.operasoftware.Opera":
-            return chromiumReader.readProfiles(
-                appSupportPath: "com.operasoftware.Opera", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "org.chromium.Chromium":
-            return chromiumReader.readProfiles(
-                appSupportPath: "Chromium", bundleId: bundleId,
-                userDataDirectory: userDataDirectory)
-        case "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly":
-            return firefoxReader.readProfiles(bundleId: bundleId)
         case "com.apple.Safari":
             return readSafariProfiles(bundleId: bundleId)
         case "com.kagi.kagimacOS":

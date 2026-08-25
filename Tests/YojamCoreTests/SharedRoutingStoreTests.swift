@@ -27,6 +27,9 @@ final class SharedRoutingStoreTests: XCTestCase {
         XCTAssertFalse(SharedRoutingStore.Keys.learnedDomainPreferences.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.recentURLs.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.recentURLTimestamps.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.shortlinkResolutionEnabled.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.shortlinkResolutionHosts.isEmpty)
+        XCTAssertFalse(SharedRoutingStore.Keys.shortlinkResolutionMode.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.localMachineIdentifier.isEmpty)
         XCTAssertFalse(SharedRoutingStore.Keys.localMachineName.isEmpty)
     }
@@ -46,6 +49,9 @@ final class SharedRoutingStoreTests: XCTestCase {
             SharedRoutingStore.Keys.learnedDomainPreferences,
             SharedRoutingStore.Keys.recentURLs,
             SharedRoutingStore.Keys.recentURLTimestamps,
+            SharedRoutingStore.Keys.shortlinkResolutionEnabled,
+            SharedRoutingStore.Keys.shortlinkResolutionHosts,
+            SharedRoutingStore.Keys.shortlinkResolutionMode,
             SharedRoutingStore.Keys.verticalThreshold,
             SharedRoutingStore.Keys.soundEffects,
             SharedRoutingStore.Keys.localMachineIdentifier,

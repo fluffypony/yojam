@@ -37,6 +37,7 @@ public enum RoutingService {
         let originalScheme = url.scheme?.lowercased()
         let isMailto = originalScheme == "mailto"
         let isTel = originalScheme == "tel"
+        let isWeb = originalScheme == "http" || originalScheme == "https"
         let shiftHeld = (request.modifierFlags & (1 << 17)) != 0
 
         // Shift is an escape hatch for one-off links. Handle it before any
@@ -67,7 +68,10 @@ public enum RoutingService {
 
         // Global rewrites are for web/mail URLs; phone links should stay intact.
         if !isTel {
-            processedURL = applyRewrites(configuration.globalRewriteRules, to: processedURL)
+            let rewrites = isWeb
+                ? configuration.globalRewriteRules
+                : configuration.globalRewriteRules.filter { !isFinickyWebOnly($0) }
+            processedURL = applyRewrites(rewrites, to: processedURL)
         }
 
         // Global UTM stripping is web-only.
@@ -116,15 +120,24 @@ public enum RoutingService {
         }
 
         // Rule evaluation.
-        if let rule = evaluateRules(configuration.rules, url: processedURL,
+        let applicableRules = isWeb
+            ? configuration.rules
+            : configuration.rules.filter { !isFinickyWebOnly($0) }
+        if let rule = evaluateRules(applicableRules, url: processedURL,
                                     sourceAppBundleId: request.sourceAppBundleId,
                                     machineIdentifier: configuration.currentMachineIdentifier) {
+            let exactFinickyAction = rule.metadata?["finickyExactBrowserAction"] == "true"
+            processedURL = normalize(processedURL, as: rule.urlNormalization)
             processedURL = applyRewrites(rule.rewriteRules.filter(\.enabled), to: processedURL)
+            processedURL = normalize(processedURL, as: rule.urlNormalization)
 
             let matchedEntry = matchedBrowserEntry(for: rule, in: configuration.browsers)
             if !isTel && rule.stripUTMParams {
                 processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
-            } else if !isTel, let entry = matchedEntry, entry.stripUTMParams {
+            } else if !exactFinickyAction,
+                      !isTel,
+                      let entry = matchedEntry,
+                      entry.stripUTMParams {
                 processedURL = stripUTM(processedURL, parameters: configuration.utmStripParameters)
             }
 
@@ -147,8 +160,12 @@ public enum RoutingService {
             let isNonBrowserTarget = matchedEntry == nil
 
             if isNonBrowserTarget {
-                let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
-                let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+                let entryRewrites = exactFinickyAction
+                    ? []
+                    : effectiveEntry.rewriteRules.filter(\.enabled)
+                let finalURL = applyRewrites(entryRewrites, to: processedURL)
+                let priv = request.forcePrivateWindow
+                    || (!exactFinickyAction && effectiveEntry.openInPrivateWindow)
                 return .openDirect(browser: effectiveEntry, finalURL: finalURL,
                                    privateWindow: priv, reason: reason,
                                    matchedRule: rule)
@@ -163,8 +180,12 @@ public enum RoutingService {
                                    matchedRule: rule)
             }
 
-            let finalURL = applyRewrites(effectiveEntry.rewriteRules.filter(\.enabled), to: processedURL)
-            let priv = request.forcePrivateWindow || effectiveEntry.openInPrivateWindow
+            let entryRewrites = exactFinickyAction
+                ? []
+                : effectiveEntry.rewriteRules.filter(\.enabled)
+            let finalURL = applyRewrites(entryRewrites, to: processedURL)
+            let priv = request.forcePrivateWindow
+                || (!exactFinickyAction && effectiveEntry.openInPrivateWindow)
             return .openDirect(browser: effectiveEntry, finalURL: finalURL,
                                privateWindow: priv, reason: reason,
                                matchedRule: rule)
@@ -219,6 +240,14 @@ public enum RoutingService {
             }
             return .openSystemDefault(processedURL)
         }
+    }
+
+    private static func isFinickyWebOnly(_ rule: Rule) -> Bool {
+        rule.metadata?["finickyWebOnly"] == "true"
+    }
+
+    private static func isFinickyWebOnly(_ rewrite: URLRewriteRule) -> Bool {
+        rewrite.metadata?["finickyWebOnly"] == "true"
     }
 
     // MARK: - Mailto
@@ -363,18 +392,11 @@ public enum RoutingService {
     }
 
     private static func applyRewrites(_ rules: [URLRewriteRule], to url: URL) -> URL {
-        var urlString = url.absoluteString
-        for rule in rules where rule.enabled {
-            if rule.isRegex {
-                urlString = RegexMatcher.replaceMatches(
-                    in: urlString, pattern: rule.matchPattern,
-                    replacement: rule.replacement)
-            } else {
-                urlString = urlString.replacingOccurrences(
-                    of: rule.matchPattern, with: rule.replacement)
-            }
-        }
-        return URL(string: urlString) ?? url
+        URLRewriteEngine.apply(rules, to: url)
+    }
+
+    private static func normalize(_ url: URL, as mode: URLNormalizationMode) -> URL {
+        URL(string: mode.normalize(url.absoluteString)) ?? url
     }
 
     private static func stripUTM(_ url: URL, parameters: Set<String>) -> URL {

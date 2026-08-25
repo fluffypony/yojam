@@ -18,7 +18,10 @@ settings:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.7.0"
+    exactVersion: "2.9.1"
+  SwiftURL:
+    url: https://github.com/karwa/swift-url
+    exactVersion: "0.4.2"
 
 targets:
   YojamCore:
@@ -26,6 +29,9 @@ targets:
     platform: macOS
     sources:
       - path: Sources/YojamCore
+    dependencies:
+      - package: SwiftURL
+        product: WebURL
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.core

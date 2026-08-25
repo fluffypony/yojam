@@ -17,7 +17,7 @@ switch command {
 case "open":
     handleOpen(Array(args.dropFirst(2)))
 case "preview":
-    handlePreview(Array(args.dropFirst(2)))
+    await handlePreview(Array(args.dropFirst(2)))
 case "settings":
     handleSettings()
 case "validate":
@@ -130,7 +130,7 @@ func handleOpen(_ args: [String]) {
     }
 }
 
-func handlePreview(_ args: [String]) {
+func handlePreview(_ args: [String]) async {
     guard let urlArg = args.first else {
         fputs("Usage: \(progName) preview <url> [--json]\n", stderr)
         exit(1)
@@ -149,19 +149,14 @@ func handlePreview(_ args: [String]) {
     // Resolve shortlinks if enabled, to match real routing behavior
     let resolvedURL: URL
     if config.shortlinkResolutionEnabled,
-       let host = url.host?.lowercased(),
-       ShortlinkResolver.defaultShortenerHosts.contains(host) {
-        // Use nonisolated(unsafe) to bridge async shortlink resolution
-        // into the synchronous CLI context. Safe because the semaphore
-        // ensures sequential access.
-        nonisolated(unsafe) var result = url
-        let sem = DispatchSemaphore(value: 0)
-        Task {
-            result = await ShortlinkResolver.shared.resolve(url)
-            sem.signal()
-        }
-        _ = sem.wait(timeout: .now() + .seconds(4))
-        resolvedURL = result
+       ShortlinkResolver.isConfiguredShortlinkURL(
+        url,
+        allowlist: config.shortlinkResolutionHosts,
+        mode: config.shortlinkResolutionMode) {
+        resolvedURL = await ShortlinkResolver.shared.resolve(
+            url,
+            allowlist: config.shortlinkResolutionHosts,
+            mode: config.shortlinkResolutionMode)
     } else {
         resolvedURL = url
     }

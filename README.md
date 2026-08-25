@@ -20,7 +20,7 @@ Yojam fixes that. Set it as your default browser, and it catches every link you 
 - **Email handling:** Catches `mailto:` links and routes them to your preferred client.
 - **Clipboard monitor:** Optionally watches your clipboard and offers to open copied links.
 - **Auto-learning:** Yojam notices which browser you pick for each domain and starts suggesting it automatically.
-- **Migrate from Bumpr, Choosy, or Finicky:** Quick Start detects these on first launch and imports their rules, tagged so you can review them before committing.
+- **Import from Bumpr, Choosy, or Finicky:** On first launch, Quick Start finds installed apps and offers an import. Review compatible routes, rewrites, and conversion warnings before Yojam adds selected items. Yojam skips duplicates. Finicky configs are parsed, not run.
 - **Flat-file config:** A live-editable JSON copy of your setup at `~/Library/Application Support/Yojam/config.json`. Edits in the file get picked up by the app in real time, and vice-versa. Good for dotfile repos or scripted changes.
 - **iCloud sync:** Your rules and browser setups sync across all your Macs, with per-rule machine scope for rules that should only run on one Mac.
 - **Shortcuts integration:** "Open URL in Browser" and "Apply URL Rules" intents for automation.
@@ -224,7 +224,7 @@ Six tabs in preferences (menu bar icon > Preferences, or Cmd+,):
 - **Advanced** - Debug logging, tracker parameter list, smart routing data, import from Bumpr/Choosy/Finicky, flat-file config panel, import/export settings, uninstall, reset
 - **About** - Version info, license, links
 
-On first launch Yojam shows a Quick Start card above the tabs that walks you through default-browser registration and, if any are installed, offers to import rules from Bumpr, Choosy, or Finicky.
+On first launch Yojam shows a Quick Start card above the tabs. It guides you through default-browser registration. If Bumpr, Choosy, or Finicky is installed, it also offers to import compatible routes and rewrites.
 
 The URL tester on the Link Handling tab lets you paste a URL and see exactly what Yojam would do - which rewrites fire, whether trackers get stripped, which rule matches, and where it ends up.
 

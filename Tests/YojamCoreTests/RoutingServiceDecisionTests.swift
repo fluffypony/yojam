@@ -127,6 +127,121 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
+    func testWhatWGRuleNormalizesTheFinalBrowserURL() throws {
+        let rule = Rule(
+            name: "Imported Finicky route",
+            matchType: .all,
+            pattern: "",
+            urlNormalization: .whatwg,
+            targetBundleId: "com.google.Chrome",
+            targetAppName: "Chrome"
+        )
+        let config = makeConfig(
+            browsers: [chrome],
+            rules: [rule],
+            activationMode: .smartFallback
+        )
+        let cases = [
+            ("https://EXAMPLE.com", "https://example.com/"),
+            ("https://EXAMPLE.com:443/path", "https://example.com/path"),
+            ("https://example.com/a/%2e%2e/b", "https://example.com/b"),
+        ]
+
+        for (input, expected) in cases {
+            let request = IncomingLinkRequest(
+                url: try XCTUnwrap(URL(string: input)),
+                origin: .defaultHandler
+            )
+            let decision = RoutingService.decide(
+                request: request,
+                configuration: config
+            )
+
+            guard case .openDirect(_, let finalURL, _, _, _) = decision else {
+                XCTFail("The imported route should open directly for \(input)")
+                continue
+            }
+            XCTAssertEqual(finalURL.absoluteString, expected)
+        }
+    }
+
+    func testWhatWGRuleNormalizesAConstantRewriteResult() throws {
+        let rewrite = URLRewriteRule(
+            name: "Imported constant rewrite",
+            matchPattern: "(?s:^.*$)",
+            replacement: "https://DEST.example:443/a/%2e%2e/final",
+            urlNormalization: .whatwg
+        )
+        let rule = Rule(
+            name: "Imported Finicky route",
+            matchType: .all,
+            pattern: "",
+            urlNormalization: .whatwg,
+            targetBundleId: "com.google.Chrome",
+            targetAppName: "Chrome",
+            rewriteRules: [rewrite]
+        )
+        let config = makeConfig(
+            browsers: [chrome],
+            rules: [rule],
+            activationMode: .smartFallback
+        )
+        let request = IncomingLinkRequest(
+            url: try XCTUnwrap(URL(string: "https://source.example")),
+            origin: .defaultHandler
+        )
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        guard case .openDirect(_, let finalURL, _, _, _) = decision else {
+            return XCTFail("The imported route should open directly")
+        }
+        XCTAssertEqual(finalURL.absoluteString, "https://dest.example/final")
+    }
+
+    func testExactFinickyRuleDoesNotInheritBrowserEntryTransforms() throws {
+        let entry = BrowserEntry(
+            bundleIdentifier: "com.google.Chrome",
+            displayName: "Chrome",
+            stripUTMParams: true,
+            openInPrivateWindow: true,
+            rewriteRules: [URLRewriteRule(
+                name: "Entry rewrite",
+                matchPattern: "example.com",
+                replacement: "wrong.example")]
+        )
+        let rule = Rule(
+            name: "Imported Finicky route",
+            matchType: .all,
+            pattern: "",
+            urlNormalization: .whatwg,
+            targetBundleId: "com.google.Chrome",
+            targetAppName: "Chrome",
+            metadata: ["finickyExactBrowserAction": "true"]
+        )
+        let config = makeConfig(
+            browsers: [entry],
+            rules: [rule],
+            activationMode: .smartFallback,
+            utmParams: ["oauth"]
+        )
+        let request = IncomingLinkRequest(
+            url: try XCTUnwrap(URL(
+                string: "https://EXAMPLE.com:443/callback?oauth=keep")),
+            origin: .defaultHandler
+        )
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        guard case .openDirect(_, let finalURL, let privateWindow, _, _) = decision else {
+            return XCTFail("The imported route should open directly")
+        }
+        XCTAssertEqual(
+            finalURL.absoluteString,
+            "https://example.com/callback?oauth=keep")
+        XCTAssertFalse(privateWindow)
+    }
+
     func testLocalHTMLFileURLCanMatchRegexRule() {
         let rule = Rule(
             name: "Local HTML",
@@ -488,6 +603,62 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
+    func testImportedFinickyCatchAllDoesNotCaptureMailto() {
+        let rule = Rule(
+            name: "Imported Finicky catch-all",
+            matchType: .all,
+            pattern: "",
+            targetBundleId: "com.google.Chrome",
+            targetAppName: "Chrome",
+            metadata: [
+                "importedFrom": "finicky",
+                "finickyWebOnly": "true",
+            ])
+        let config = makeConfig(
+            browsers: [chrome],
+            emailClients: [mail],
+            rules: [rule],
+            activationMode: .always)
+        let request = IncomingLinkRequest(
+            url: URL(string: "mailto:test@example.com")!,
+            origin: .defaultHandler)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        guard case .showPicker(let entries, _, let finalURL, let isEmail, _, _, _) = decision else {
+            return XCTFail("The mail flow should handle mailto links")
+        }
+        XCTAssertEqual(entries.map(\.bundleIdentifier), ["com.apple.mail"])
+        XCTAssertEqual(finalURL.absoluteString, "mailto:test@example.com")
+        XCTAssertTrue(isEmail)
+    }
+
+    func testImportedFinickyGlobalRewriteDoesNotChangeMailto() {
+        let rewrite = URLRewriteRule(
+            name: "Imported Finicky rewrite",
+            matchPattern: "mailto:test@example.com",
+            replacement: "https://wrong.example",
+            metadata: [
+                "importedFrom": "finicky",
+                "finickyWebOnly": "true",
+            ])
+        let config = makeConfig(
+            emailClients: [mail],
+            activationMode: .always,
+            globalRewriteRules: [rewrite])
+        let request = IncomingLinkRequest(
+            url: URL(string: "mailto:test@example.com")!,
+            origin: .defaultHandler)
+
+        let decision = RoutingService.decide(request: request, configuration: config)
+
+        guard case .showPicker(_, _, let finalURL, let isEmail, _, _, _) = decision else {
+            return XCTFail("The mail flow should handle mailto links")
+        }
+        XCTAssertEqual(finalURL.absoluteString, "mailto:test@example.com")
+        XCTAssertTrue(isEmail)
+    }
+
     // MARK: - Tel handling
 
     func testTelShowsPhonePicker() {
@@ -645,10 +816,24 @@ final class RoutingServiceDecisionTests: XCTestCase {
 
     func testSnapshotLoaderReturnsConfigFromEmptyDefaults() {
         let store = SharedRoutingStore()
+        let hostKey = SharedRoutingStore.Keys.shortlinkResolutionHosts
+        let modeKey = SharedRoutingStore.Keys.shortlinkResolutionMode
+        let oldHosts = store.defaults.object(forKey: hostKey)
+        let oldMode = store.defaults.object(forKey: modeKey)
+        defer {
+            if let oldHosts { store.defaults.set(oldHosts, forKey: hostKey) }
+            else { store.defaults.removeObject(forKey: hostKey) }
+            if let oldMode { store.defaults.set(oldMode, forKey: modeKey) }
+            else { store.defaults.removeObject(forKey: modeKey) }
+        }
+        store.defaults.removeObject(forKey: hostKey)
+        store.defaults.removeObject(forKey: modeKey)
         let config = RoutingSnapshotLoader.loadConfiguration(from: store)
         XCTAssertNotNil(config)
         XCTAssertEqual(config?.activationMode, .always)
         XCTAssertEqual(config?.isEnabled, true)
         XCTAssertEqual(config?.shortlinkResolutionEnabled, false)
+        XCTAssertEqual(config?.shortlinkResolutionHosts, ShortlinkResolver.defaultShortenerHosts)
+        XCTAssertEqual(config?.shortlinkResolutionMode, .exactHostHTTPAndHTTPS)
     }
 }

@@ -50,6 +50,134 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testShortlinkPolicyRoundTripsThroughSettingsExport() throws {
+        let store = SettingsStore()
+        let originalEnabled = store.shortlinkResolutionEnabled
+        let originalHosts = store.shortlinkResolutionHosts
+        let originalMode = store.shortlinkResolutionMode
+        defer {
+            store.shortlinkResolutionHosts = originalHosts
+            store.shortlinkResolutionMode = originalMode
+            store.shortlinkResolutionEnabled = originalEnabled
+        }
+        store.shortlinkResolutionHosts = ["Custom.Example", "t.co"]
+        store.shortlinkResolutionMode = .exactHostHTTPS
+        store.shortlinkResolutionEnabled = true
+
+        let exported = try store.exportJSON()
+        let decoded = try JSONDecoder().decode(SettingsExport.self, from: exported)
+        XCTAssertEqual(decoded.version, SettingsExport.currentVersion)
+        XCTAssertEqual(SettingsExport.currentVersion, 6)
+        store.shortlinkResolutionHosts = ShortlinkResolver.defaultShortenerHosts
+        store.shortlinkResolutionMode = .exactHostHTTPAndHTTPS
+        store.shortlinkResolutionEnabled = false
+        try store.importJSON(exported)
+
+        XCTAssertTrue(store.shortlinkResolutionEnabled)
+        XCTAssertEqual(store.shortlinkResolutionHosts, ["custom.example", "t.co"])
+        XCTAssertEqual(store.shortlinkResolutionMode, .exactHostHTTPS)
+    }
+
+    @MainActor
+    func testLegacySettingsExportUsesOriginalYojamShortlinkPolicy() throws {
+        let store = SettingsStore()
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: store.exportJSON()) as? [String: Any])
+        object.removeValue(forKey: "shortlinkResolutionEnabled")
+        object.removeValue(forKey: "shortlinkResolutionHosts")
+        object.removeValue(forKey: "shortlinkResolutionMode")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsExport.self,
+            from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertFalse(decoded.shortlinkResolutionEnabled)
+        XCTAssertEqual(
+            Set(decoded.shortlinkResolutionHosts),
+            ShortlinkResolver.defaultShortenerHosts)
+        XCTAssertEqual(decoded.shortlinkResolutionMode, .exactHostHTTPAndHTTPS)
+    }
+
+    @MainActor
+    func testLegacySettingsImportKeepsCurrentShortlinkPolicy() throws {
+        let store = SettingsStore()
+        let originalEnabled = store.shortlinkResolutionEnabled
+        let originalHosts = store.shortlinkResolutionHosts
+        let originalMode = store.shortlinkResolutionMode
+        defer {
+            store.shortlinkResolutionHosts = originalHosts
+            store.shortlinkResolutionMode = originalMode
+            store.shortlinkResolutionEnabled = originalEnabled
+        }
+
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: store.exportJSON()) as? [String: Any])
+        object.removeValue(forKey: "shortlinkResolutionEnabled")
+        object.removeValue(forKey: "shortlinkResolutionHosts")
+        object.removeValue(forKey: "shortlinkResolutionMode")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        store.shortlinkResolutionHosts = ["custom.example"]
+        store.shortlinkResolutionMode = .exactHostHTTPS
+        store.shortlinkResolutionEnabled = true
+        try store.importJSON(legacyData)
+
+        XCTAssertEqual(store.shortlinkResolutionHosts, ["custom.example"])
+        XCTAssertEqual(store.shortlinkResolutionMode, .exactHostHTTPS)
+        XCTAssertTrue(store.shortlinkResolutionEnabled)
+    }
+
+    @MainActor
+    func testCanonicalShortlinkHostsPersistAndPublishRoutingChange() {
+        let store = SettingsStore()
+        let originalHosts = store.shortlinkResolutionHosts
+        let defaults = store.sharedStore.defaults
+        let key = SharedRoutingStore.Keys.shortlinkResolutionHosts
+        let originalStoredValue = defaults.object(forKey: key)
+        defer {
+            store.shortlinkResolutionHosts = originalHosts
+            if let originalStoredValue {
+                defaults.set(originalStoredValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        var changeCount = 0
+        let cancellable = store.routingDataDidChange.sink { changeCount += 1 }
+        store.shortlinkResolutionHosts = [" Custom.Example. ", "T.CO"]
+
+        XCTAssertEqual(store.shortlinkResolutionHosts, ["custom.example", "t.co"])
+        XCTAssertEqual(
+            defaults.stringArray(forKey: key),
+            ["custom.example", "t.co"])
+        XCTAssertEqual(changeCount, 1)
+        cancellable.cancel()
+    }
+
+    @MainActor
+    func testICloudScalarSettingsPublishRoutingChanges() {
+        let store = SettingsStore()
+        let originalClipboard = store.clipboardMonitoringEnabled
+        let originalDebug = store.debugLoggingEnabled
+        let originalInterval = store.periodicRescanInterval
+        defer {
+            store.clipboardMonitoringEnabled = originalClipboard
+            store.debugLoggingEnabled = originalDebug
+            store.periodicRescanInterval = originalInterval
+        }
+
+        var changeCount = 0
+        let cancellable = store.routingDataDidChange.sink { changeCount += 1 }
+        store.clipboardMonitoringEnabled.toggle()
+        store.debugLoggingEnabled.toggle()
+        store.periodicRescanInterval = originalInterval == 3600 ? 3601 : 3600
+
+        XCTAssertEqual(changeCount, 3)
+        cancellable.cancel()
+    }
+
+    @MainActor
     func testLoadRulesMergesNewBuiltIns() {
         let store = SettingsStore()
         let partial = Array(BuiltInRules.all.prefix(3))
@@ -104,6 +232,80 @@ final class SettingsStoreTests: XCTestCase {
 
         let loaded = store.loadPhoneClients()
         XCTAssertEqual(loaded.map(\.displayName), ["FaceTime", "Teams"])
+    }
+
+    @MainActor
+    func testGlobalRewriteLoadOnlyDeduplicatesExactBehaviour() {
+        let store = SettingsStore()
+        let original = store.loadGlobalRewriteRules()
+        defer { store.saveGlobalRewriteRules(original) }
+
+        let base = URLRewriteRule(
+            name: "Shared text",
+            matchPattern: "https://example.com/(.*)",
+            replacement: "https://example.net/$1",
+            isRegex: true,
+            scope: .global,
+            urlNormalization: .none)
+        let exactDuplicate = URLRewriteRule(
+            name: base.name,
+            enabled: base.enabled,
+            matchPattern: base.matchPattern,
+            replacement: base.replacement,
+            isRegex: base.isRegex,
+            scope: base.scope,
+            urlNormalization: base.urlNormalization)
+        let variants = [
+            URLRewriteRule(
+                name: base.name,
+                enabled: false,
+                matchPattern: base.matchPattern,
+                replacement: base.replacement,
+                isRegex: base.isRegex,
+                scope: base.scope,
+                urlNormalization: base.urlNormalization),
+            URLRewriteRule(
+                name: base.name,
+                enabled: base.enabled,
+                matchPattern: base.matchPattern,
+                replacement: base.replacement,
+                isRegex: false,
+                scope: base.scope,
+                urlNormalization: base.urlNormalization),
+            URLRewriteRule(
+                name: base.name,
+                enabled: base.enabled,
+                matchPattern: base.matchPattern,
+                replacement: base.replacement,
+                isRegex: base.isRegex,
+                scope: .browser("com.example.browser"),
+                urlNormalization: base.urlNormalization),
+            URLRewriteRule(
+                name: base.name,
+                enabled: base.enabled,
+                matchPattern: base.matchPattern,
+                replacement: base.replacement,
+                isRegex: base.isRegex,
+                scope: base.scope,
+                urlNormalization: .whatwg),
+            URLRewriteRule(
+                name: base.name,
+                enabled: base.enabled,
+                matchPattern: base.matchPattern,
+                replacement: base.replacement,
+                isRegex: base.isRegex,
+                scope: base.scope,
+                urlNormalization: base.urlNormalization,
+                metadata: ["importedFrom": "finicky"]),
+        ]
+
+        store.saveGlobalRewriteRules([base, exactDuplicate] + variants)
+
+        let loaded = store.loadGlobalRewriteRules()
+        let expected = [base] + variants
+        let expectedIds = Set(expected.map(\.id))
+        XCTAssertEqual(loaded.filter { expectedIds.contains($0.id) }, expected)
+        XCTAssertFalse(loaded.contains { $0.id == exactDuplicate.id })
     }
 
     @MainActor
@@ -395,7 +597,7 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testMirrorOnlySettingsEmitConfigChangesWithoutRoutingChanges() {
+    func testConfigMirrorSettingsEmitExpectedRoutingChanges() {
         let store = SettingsStore()
         let originalClipboardMonitoring = store.clipboardMonitoringEnabled
         let originalICloudSync = store.iCloudSyncEnabled
@@ -440,7 +642,7 @@ final class SettingsStoreTests: XCTestCase {
         store.recentURLRetentionMinutes = originalRetentionMinutes == 1 ? 2 : 1
 
         XCTAssertEqual(configNotificationCount, 9)
-        XCTAssertEqual(routingNotificationCount, 0)
+        XCTAssertEqual(routingNotificationCount, 3)
     }
 
     @MainActor

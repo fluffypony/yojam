@@ -62,6 +62,50 @@ func validatedSource(_ raw: String?) -> String {
     return raw
 }
 
+/// Bridges the async resolver into the synchronous native-host loop without
+/// letting a timed-out task write to stack state after this function returns.
+func resolveShortlink(
+    _ url: URL,
+    allowlist: Set<String>,
+    mode: ShortlinkResolutionMode
+) -> URL {
+    let result = LockedURLResult()
+    let semaphore = DispatchSemaphore(value: 0)
+    let task = Task {
+        let resolved = await ShortlinkResolver.shared.resolve(
+            url,
+            allowlist: allowlist,
+            mode: mode)
+        result.store(resolved)
+        semaphore.signal()
+    }
+
+    if semaphore.wait(timeout: .now() + .seconds(4)) == .timedOut {
+        task.cancel()
+    }
+    return result.close(fallback: url)
+}
+
+private final class LockedURLResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: URL?
+    private var isClosed = false
+
+    func store(_ value: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isClosed else { return }
+        self.value = value
+    }
+
+    func close(fallback: URL) -> URL {
+        lock.lock()
+        defer { lock.unlock() }
+        isClosed = true
+        return value ?? fallback
+    }
+}
+
 // MARK: - Request / Response Types
 
 struct HostRequest: Decodable {
@@ -146,19 +190,20 @@ while let req = readMessage() {
 
         // Resolve shortlinks if enabled, to match real routing behavior
         var resolvedURL = targetURL
-        if config.shortlinkResolutionEnabled,
-           let host = targetURL.host?.lowercased(),
-           ShortlinkResolver.defaultShortenerHosts.contains(host) {
-            let sem = DispatchSemaphore(value: 0)
-            Task {
-                resolvedURL = await ShortlinkResolver.shared.resolve(targetURL)
-                sem.signal()
-            }
-            _ = sem.wait(timeout: .now() + .seconds(4))
+        let shiftHeld = req.modifiers?.contains("shift") ?? false
+        if !shiftHeld,
+           config.shortlinkResolutionEnabled,
+           ShortlinkResolver.isConfiguredShortlinkURL(
+            targetURL,
+            allowlist: config.shortlinkResolutionHosts,
+            mode: config.shortlinkResolutionMode) {
+            resolvedURL = resolveShortlink(
+                targetURL,
+                allowlist: config.shortlinkResolutionHosts,
+                mode: config.shortlinkResolutionMode)
         }
 
         let source = validatedSource(req.source)
-        let shiftHeld = req.modifiers?.contains("shift") ?? false
         let request = IncomingLinkRequest(
             url: resolvedURL,
             sourceAppBundleId: source,

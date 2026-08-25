@@ -4,6 +4,8 @@ import os
 /// Cached regex matching for rule evaluation and URL rewriting.
 /// Extension-safe: no AppKit dependencies.
 public enum RegexMatcher: Sendable {
+    private static let maximumInputLength = 32_768
+
     private nonisolated(unsafe) static let cache: NSCache<NSString, NSRegularExpression> = {
         let c = NSCache<NSString, NSRegularExpression>()
         c.countLimit = 256
@@ -23,7 +25,7 @@ public enum RegexMatcher: Sendable {
     }
 
     public static func matches(_ input: String, pattern: String) -> Bool {
-        guard input.count < 8192 else { return false }
+        guard input.count <= maximumInputLength else { return false }
         guard let regex = cachedRegex(pattern: pattern) else {
             logger.warning("Invalid regex: \(pattern)")
             return false
@@ -38,7 +40,7 @@ public enum RegexMatcher: Sendable {
     }
 
     public static func replaceMatches(in input: String, pattern: String, replacement: String) -> String {
-        guard input.count < 8192 else { return input }
+        guard input.count <= maximumInputLength else { return input }
         guard let regex = cachedRegex(pattern: pattern) else { return input }
         // Validate template backreferences to avoid NSInvalidArgumentException
         // crash from invalid $99-style references.

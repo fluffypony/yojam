@@ -211,6 +211,93 @@ final class RuleEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testImportedRulesRunBeforeBuiltInsAndKeepSourceOrder() {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        let existing = Rule(
+            name: "Existing", matchType: .domain, pattern: "existing.invalid",
+            targetBundleId: "com.existing", targetAppName: "Existing",
+            priority: 10)
+        let builtIn = Rule(
+            name: "Built-in", matchType: .all, pattern: "",
+            targetBundleId: "/bin/echo", targetAppName: "Built-in",
+            isBuiltIn: true, priority: 20)
+        let firstImport = Rule(
+            name: "First import", matchType: .all, pattern: "",
+            targetBundleId: "/bin/echo", targetAppName: "First",
+            priority: 500)
+        let secondImport = Rule(
+            name: "Second import", matchType: .all, pattern: "",
+            targetBundleId: "/bin/echo", targetAppName: "Second",
+            priority: 100)
+        let engine = RuleEngine(settingsStore: store)
+        engine.rules = [builtIn, existing]
+
+        engine.addImportedRules([firstImport, secondImport])
+
+        XCTAssertEqual(
+            engine.orderedRules.map(\.id),
+            [existing.id, firstImport.id, secondImport.id, builtIn.id])
+        XCTAssertEqual(engine.orderedRules.map(\.priority), [10, 20, 30, 40])
+        XCTAssertEqual(
+            engine.evaluate(URL(string: "https://example.com")!)?.id,
+            firstImport.id)
+    }
+
+    @MainActor
+    func testDuplicateRulePreservesURLNormalization() throws {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        let original = Rule(
+            name: "Imported Finicky route",
+            matchType: .regex,
+            pattern: #"^https://example\.com/$"#,
+            urlNormalization: .whatwg,
+            targetBundleId: "com.apple.Safari",
+            targetAppName: "Safari",
+            metadata: ["importedFrom": "finicky"]
+        )
+        let engine = RuleEngine(settingsStore: store)
+        engine.rules = [original]
+
+        engine.duplicateRule(original.id)
+
+        let copy = try XCTUnwrap(engine.rules.first { $0.id != original.id })
+        XCTAssertEqual(copy.urlNormalization, .whatwg)
+        XCTAssertEqual(copy.metadata, original.metadata)
+    }
+
+    @MainActor
+    func testChangingImportedFinickyMatchMakesRuleUserScoped() throws {
+        let store = SettingsStore()
+        let originalRules = store.loadRules()
+        defer { store.saveRules(originalRules) }
+        let original = Rule(
+            name: "Imported Finicky route",
+            matchType: .regex,
+            pattern: #"^https://example\.com/$"#,
+            urlNormalization: .whatwg,
+            targetBundleId: "com.apple.Safari",
+            targetAppName: "Safari",
+            metadata: [
+                "importedFrom": "finicky",
+                "finickyWebOnly": "true",
+            ])
+        let engine = RuleEngine(settingsStore: store)
+        engine.rules = [original]
+        var edited = original
+        edited.pattern = #"^mailto:.*$"#
+
+        engine.updateRule(edited)
+
+        let saved = try XCTUnwrap(engine.rules.first)
+        XCTAssertEqual(saved.metadata?["importedFrom"], "finicky")
+        XCTAssertNil(saved.metadata?["finickyWebOnly"])
+    }
+
+    @MainActor
     func testBuiltInNotionRulesCoverBothHosts() {
         let notionRules = BuiltInRules.all.filter {
             $0.targetBundleId == "notion.id"
