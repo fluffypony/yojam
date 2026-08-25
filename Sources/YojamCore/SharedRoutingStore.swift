@@ -56,6 +56,7 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
         public static let learnedDomainPreferences = "learnedDomainPreferences"
         public static let recentURLs = "recentURLs"
         public static let recentURLTimestamps = "recentURLTimestamps"
+        public static let linkHistoryPrivacyVersion = "linkHistoryPrivacyVersion"
         public static let verticalThreshold = "verticalThreshold"
         public static let soundEffects = "soundEffects"
         public static let shortlinkResolutionEnabled = "shortlinkResolutionEnabled"

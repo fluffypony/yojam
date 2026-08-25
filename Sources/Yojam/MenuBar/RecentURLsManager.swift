@@ -3,6 +3,7 @@ import YojamCore
 
 @MainActor
 final class RecentURLsManager {
+    private static let currentPrivacyVersion = 1
     private let maxRecents = 10
     private(set) var recentURLs: [URL] = []
     private var timestamps: [URL: Date] = [:]
@@ -12,6 +13,7 @@ final class RecentURLsManager {
     init(sharedDefaults: UserDefaults? = nil) {
         self.sharedDefaults = sharedDefaults ?? SharedRoutingStore().defaults
         loadFromDefaults()
+        clearLegacyHistoryIfNeeded()
     }
 
     func configure(retention: RecentURLRetention, retentionMinutes: Int) {
@@ -33,8 +35,12 @@ final class RecentURLsManager {
         }
     }
 
-    func add(_ url: URL, retention: RecentURLRetention) {
-        guard retention != .never else { return }
+    func add(
+        _ url: URL,
+        retention: RecentURLRetention,
+        origin: IngressOrigin
+    ) {
+        guard retention != .never, origin != .authenticationSession else { return }
         recentURLs.removeAll { $0 == url }
         recentURLs.insert(url, at: 0)
         timestamps[url] = Date()
@@ -95,5 +101,19 @@ final class RecentURLsManager {
                 }
             }
         }
+    }
+
+    /// Older releases did not store the ingress origin, so an existing entry
+    /// cannot be distinguished from an authentication-session URL. Clear the
+    /// small convenience history once, then keep future authentication URLs out.
+    private func clearLegacyHistoryIfNeeded() {
+        let key = SharedRoutingStore.Keys.linkHistoryPrivacyVersion
+        guard sharedDefaults.integer(forKey: key) < Self.currentPrivacyVersion else {
+            return
+        }
+        recentURLs = []
+        timestamps = [:]
+        saveToDefaults()
+        sharedDefaults.set(Self.currentPrivacyVersion, forKey: key)
     }
 }

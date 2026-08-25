@@ -520,7 +520,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch decision {
         case .openDirect(let entry, let finalURL, let privateWindow, _, let matchedRule):
 
-            recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
+            recentURLsManager.add(
+                finalURL,
+                retention: settingsStore.recentURLRetention,
+                origin: request.origin)
             if let domain = finalURL.host?.lowercased() {
                 routingSuggestionEngine.recordChoice(domain: domain, entryId: entry.id.uuidString)
             }
@@ -595,7 +598,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bypassTransformations
         ):
             let isPhone = finalURL.scheme?.lowercased() == "tel"
-            recentURLsManager.add(finalURL, retention: settingsStore.recentURLRetention)
+            recentURLsManager.add(
+                finalURL,
+                retention: settingsStore.recentURLRetention,
+                origin: request.origin)
 
             // Compute smart routing reason when none was provided
             var effectiveReason = reason
