@@ -112,6 +112,8 @@ Shift also acts as a one-off escape hatch in the other modes: it skips matching 
 
 Yojam ships with built-in rules for Zoom, Telegram, Slack, Discord, Spotify, Apple Music, FaceTime, Apple Maps, Microsoft Teams, Figma, Linear, Notion, WhatsApp, Signal, App Store, TestFlight, and Podcasts. They auto-disable when the target app isn't installed and re-enable when it is. Built-in rules are also fully editable - tweak, duplicate, or delete them, and *Restore Default Rules* in Advanced brings them back.
 
+Discord ignores plain web links handed to it, so Yojam converts `discord.com` channel, message, and invite links (and `discord.gg` invites) to `discord://` deep links at launch time. The URL tester shows the converted link.
+
 Add your own rules matching on all URLs, domain (exact), domain suffix, URL prefix, URL substring, or regex. Rules can optionally filter by source app - only route links from Slack to your work browser, for example.
 
 ### Per-rule overrides

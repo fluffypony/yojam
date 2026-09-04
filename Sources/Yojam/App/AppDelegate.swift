@@ -1030,6 +1030,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return rewritten
     }
 
+    /// The URL the target app actually receives. See `DeepLinkTranslator`.
+    nonisolated static func launchURL(for url: URL, targetBundleId: String?) -> URL {
+        guard let targetBundleId else { return url }
+        return DeepLinkTranslator.translate(url, targetBundleId: targetBundleId)
+    }
+
     nonisolated static func effectivePrivateWindow(
         exactFinickyAction: Bool,
         rulePrivateWindow: Bool?,
@@ -1114,6 +1120,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usesFinickyArgumentSemantics: Bool = false,
         openAsNewInstance: Bool = false
     ) {
+        // Some apps ignore a plain web link and only navigate for their own
+        // scheme. Translate at the last moment so Link History and the
+        // decision trace keep the web URL.
+        let url = Self.launchURL(
+            for: url,
+            targetBundleId: bundleId ?? Bundle(url: appURL)?.bundleIdentifier)
+
         // AppleScript-based private window for Safari/Orion
         // Run off-main to avoid beachballing UI (the script has a 0.3s delay).
         // Falls back to normal open if AppleScript fails (permissions, locale).

@@ -563,10 +563,19 @@ struct PipelineTab: View {
             let result = RuleMatcher.evaluate(url: processedURL, against: match, sourceApp: sourceApp)
             nodes.append(PipelineNode(label: "Match: \(host)", icon: "globe", isActive: true))
             nodes.append(.arrow)
+            // Some apps only navigate when handed their own URL scheme.
+            let launchURL = DeepLinkTranslator.translate(
+                processedURL, targetBundleId: match.targetBundleId)
+            var deepLinkNote = ""
+            if launchURL != processedURL {
+                nodes.append(PipelineNode(label: "App link", icon: "link", isActive: true))
+                nodes.append(.arrow)
+                deepLinkNote = " \(match.targetAppName) receives it as \(launchURL.absoluteString)."
+            }
             nodes.append(PipelineNode(label: "Open in: \(match.targetAppName)", isFinal: true))
             let strippedNote = didStrip ? " after tracker stripping" : ""
             let ruleInfo = "\(match.name) via \(match.matchType.displayName)"
-            testSummary = "This link would open in \(match.targetAppName)\(strippedNote). Matched rule: \(ruleInfo). \(result.explanation)"
+            testSummary = "This link would open in \(match.targetAppName)\(strippedNote). Matched rule: \(ruleInfo). \(result.explanation)\(deepLinkNote)"
         } else {
             nodes.append(PipelineNode(label: "No match", icon: "questionmark.circle"))
             nodes.append(.arrow)
