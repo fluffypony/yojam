@@ -118,9 +118,13 @@
 			<string>openURLViaService</string>
 			<key>NSPortName</key>
 			<string>Yojam</string>
+			<key>NSRequiredContext</key>
+			<dict/>
 			<key>NSSendTypes</key>
 			<array>
 				<string>public.url</string>
+				<string>public.utf8-plain-text</string>
+				<string>NSStringPboardType</string>
 				<string>public.plain-text</string>
 			</array>
 		</dict>

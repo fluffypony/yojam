@@ -14,6 +14,9 @@ struct IntegrationsTab: View {
     @State private var isChromeHostMisconfigured = false
     @State private var isFirefoxHostInstalled = false
     @State private var isAppGroupAccessible = false
+    /// nil while pbs is being asked.
+    @State private var servicesStatus: ServicesMenuRegistration.Status?
+    @State private var servicesRefreshToken = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +52,50 @@ struct IntegrationsTab: View {
             for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshStatus()
         }
+        // pbs is a separate process; ask it off the main thread.
+        .task(id: servicesRefreshToken) {
+            let status = await Task.detached(priority: .utility) {
+                ServicesMenuRegistration.currentStatus()
+            }.value
+            servicesStatus = status
+        }
+    }
+
+    /// Ask pbs to rescan, then poll while it catches up.
+    private func repairServicesRegistration() {
+        ServicesMenuRegistration.refresh()
+        servicesStatus = nil
+        for delay in [0.6, 1.5, 3.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { servicesRefreshToken += 1 }
+        }
+    }
+
+    private var servicesRowStatus: IntegrationStatus {
+        switch servicesStatus {
+        case .registered: .ok
+        case .registeredElsewhere: .warning
+        case .notRegistered: .notInstalled
+        case .unknown, nil: .unknown
+        }
+    }
+
+    private var servicesRowDetail: String {
+        switch servicesStatus {
+        case .registered:
+            "\"Open in Yojam\" is registered with macOS"
+        case .registeredElsewhere(let path):
+            "macOS points the service at another copy: \(path)"
+        case .notRegistered:
+            "macOS has not registered the service yet"
+        case .unknown:
+            "Could not read the macOS Services registry"
+        case nil:
+            "Checking the macOS Services registry\u{2026}"
+        }
+    }
+
+    private var servicesRowActionLabel: String {
+        servicesStatus == .registered ? "Refresh" : "Repair"
     }
 
     /// Poll the registration state for a few seconds after invoking
@@ -99,6 +146,7 @@ struct IntegrationsTab: View {
     }
 
     private func refreshStatus() {
+        servicesRefreshToken += 1
         isDefaultBrowser = DefaultBrowserManager.isDefaultBrowser
         isWeblocHandler = DefaultBrowserManager.isWeblocHandler
         isYojamSchemeRegistered = DefaultBrowserManager.isYojamSchemeRegistered
@@ -199,9 +247,10 @@ struct IntegrationsTab: View {
                 IntegrationRow(
                     name: "Services menu",
                     icon: "contextualmenu.and.cursorarrow",
-                    status: .ok,
-                    detail: "\"Open in Yojam\" appears in the Services menu",
+                    status: servicesRowStatus,
+                    detail: servicesRowDetail,
                     helpText: HelpText.Integrations.servicesMenu,
+                    action: (servicesRowActionLabel, { repairServicesRegistration() }),
                     isLast: true
                 )
             }

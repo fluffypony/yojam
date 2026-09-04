@@ -289,6 +289,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // helper is missing, drifted, or tracking a moved app bundle.
         SelfCleanupInstaller.installOrRefresh()
 
+        // pbs caches the path it found our Services entry in. Make it rescan
+        // once per install location and version so "Open in Yojam" never
+        // points at a copy that no longer exists (issue #37).
+        ServicesMenuRegistration.refreshIfNeeded(settingsStore: settingsStore)
+
         // Flat-file config sync. Mirror every exported settings change.
         configFileManager = ConfigFileManager(settingsStore: settingsStore) { [weak self] in
             guard let self else { return }
@@ -859,28 +864,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openURLViaService(_ pasteboard: NSPasteboard,
                                  userData: String?,
                                  error: AutoreleasingUnsafeMutablePointer<NSString>) {
-        let candidates: [URL]
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
-            candidates = urls
-        } else if let text = pasteboard.string(forType: .string) {
-            let detector = try? NSDataDetector(
-                types: NSTextCheckingResult.CheckingType.link.rawValue)
-            let range = NSRange(text.startIndex..., in: text)
-            var detected = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
-            // R5: For strings that look like bare hosts (no scheme detected),
-            // prepend https:// and retry
-            if detected.isEmpty {
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.contains("://") {
-                    if let url = URL(string: "https://" + trimmed) {
-                        detected = [url]
-                    }
-                }
-            }
-            candidates = detected
-        } else {
-            candidates = []
-        }
+        // A text selection yields an empty array here, not nil, so the text
+        // path below must run whenever no URL objects came through.
+        let urlObjects = (pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? []
+        let candidates = Self.serviceRequestURLs(
+            urlObjects: urlObjects,
+            text: pasteboard.string(forType: .string))
         let modifiers = NSEvent.modifierFlags
         for url in candidates {
             let request = IncomingLinkRequest(
@@ -891,6 +880,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             enqueueOrHandle(request)
         }
+    }
+
+    /// URLs carried by a Services request. URL objects win. Otherwise every
+    /// link the data detector finds in the selected text, or the text itself
+    /// when it reads as a bare host such as `example.com`.
+    nonisolated static func serviceRequestURLs(urlObjects: [URL], text: String?) -> [URL] {
+        if !urlObjects.isEmpty { return urlObjects }
+        guard let text else { return [] }
+        let detector = try? NSDataDetector(
+            types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..., in: text)
+        let detected = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
+        if !detected.isEmpty { return detected }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("."), !trimmed.contains(" "), !trimmed.contains("://"),
+              let url = URL(string: "https://" + trimmed) else { return [] }
+        return [url]
     }
 
     // MARK: - Legacy Routing (thin wrapper around unified pipeline)

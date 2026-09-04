@@ -123,8 +123,15 @@ targets:
               default: Open in Yojam
             NSMessage: openURLViaService
             NSPortName: Yojam
+            # An empty NSRequiredContext marks the service as contextual. Without
+            # it macOS files the entry under legacy services, which are switched
+            # off by default in Keyboard Shortcuts > Services, so "Open in Yojam"
+            # never appeared unless the user ticked it by hand (issue #37).
+            NSRequiredContext: {}
             NSSendTypes:
               - public.url
+              - public.utf8-plain-text
+              - NSStringPboardType
               - public.plain-text
     entitlements:
       path: Sources/Yojam/Resources/Yojam.entitlements

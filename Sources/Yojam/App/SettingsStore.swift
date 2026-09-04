@@ -121,6 +121,9 @@ final class SettingsStore: ObservableObject {
         // NativeMessagingHosts dirs triggers the macOS "access data from
         // other apps" TCC prompt.
         static let lastNativeMessagingBundlePath = "lastNativeMessagingBundlePath"
+        // Install location + version for which we last asked pbs to rescan
+        // Services. Keeps NSUpdateDynamicServices() to one call per install.
+        static let lastServicesRegistrationKey = "lastServicesRegistrationKey"
     }
 
     private struct RewriteRuleDeduplicationKey: Hashable {
@@ -314,6 +317,18 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Install location and version for which Yojam last asked pbs to rescan
+    /// the Services menu. See ServicesMenuRegistration.
+    @Published var lastServicesRegistrationKey: String? {
+        didSet {
+            if let key = lastServicesRegistrationKey, !key.isEmpty {
+                defaults.set(key, forKey: Keys.lastServicesRegistrationKey)
+            } else {
+                defaults.removeObject(forKey: Keys.lastServicesRegistrationKey)
+            }
+        }
+    }
+
     /// Bundle identifier of the editor the user last picked via
     /// "Edit With..." in Advanced > Settings Data. `nil` means no custom
     /// editor has been chosen yet.
@@ -409,6 +424,7 @@ final class SettingsStore: ObservableObject {
         self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
         self.configFilePath = d.string(forKey: Keys.configFilePath)
         self.lastNativeMessagingBundlePath = d.string(forKey: Keys.lastNativeMessagingBundlePath)
+        self.lastServicesRegistrationKey = d.string(forKey: Keys.lastServicesRegistrationKey)
 
         // Routing settings from App Group suite
         self.isEnabled = s.object(forKey: Keys.isEnabled) as? Bool ?? true

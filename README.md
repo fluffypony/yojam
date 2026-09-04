@@ -253,6 +253,7 @@ The only network activity is iCloud sync (uses your own Apple ID, off by default
 ## Troubleshooting
 
 - **Handoff link doesn't appear** — Confirm Yojam is your default browser, and that Handoff is on in System Settings > General > AirDrop & Handoff.
+- **Services menu item missing or does nothing** — Open Preferences > Integrations and click *Repair* next to Services menu. macOS keeps its own list of service providers and can keep pointing at an old copy of Yojam after an update or an OS upgrade. If the entry still does not appear, check System Settings > Keyboard > Keyboard Shortcuts > Services and make sure *Open in Yojam* is ticked. Releases before 1.2.4 declared the service in a way macOS treats as legacy, which left it switched off by default.
 - **Share Extension missing** — Enable it in System Settings > Privacy & Security > Extensions > Sharing.
 - **Browser extension button does nothing** — Go to Preferences > Integrations and click "Reinstall Browser Helpers" to rewrite native messaging manifests.
 - **Safari extension not showing** — Enable it in Safari > Settings > Extensions.
