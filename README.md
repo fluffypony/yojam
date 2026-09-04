@@ -54,7 +54,7 @@ brew install --cask yojam
 
 Or grab the DMG from [yoj.am](https://yoj.am) and drag Yojam to your Applications folder. On first launch, Yojam asks to become your default browser.
 
-Yojam checks for updates automatically. You can also check manually from the menu bar icon > "Check for Updates..."
+Yojam checks yoj.am for updates every hour. When a new version is ready, a dot appears on the menu bar icon, the menu gains an *Update to Yojam x.y.z…* entry, Preferences shows an *Install Update* button, and Yojam posts a notification if you allow it. You can also check any time from Preferences > General > Updates, from the About tab, or from the menu bar icon > *Check for Updates…*.
 
 ## Building from source
 

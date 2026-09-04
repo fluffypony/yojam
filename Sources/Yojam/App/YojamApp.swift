@@ -26,7 +26,7 @@ struct YojamApp: App {
                 ruleEngine: appDelegate.ruleEngine,
                 rewriteManager: appDelegate.urlRewriter,
                 routingSuggestionEngine: appDelegate.routingSuggestionEngine,
-                updater: appDelegate.updater
+                updateCenter: appDelegate.updateCenter
             )
         }
         .defaultSize(width: 900, height: 600)

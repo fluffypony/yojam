@@ -1,11 +1,10 @@
-import Sparkle
 import SwiftUI
 import TipKit
 import YojamCore
 
 struct GeneralTab: View {
     @ObservedObject var settingsStore: SettingsStore
-    let updater: SPUUpdater
+    @ObservedObject var updateCenter: UpdateCenter
     @Binding var scrollToSection: String?
     @Binding var selectedTab: PreferencesTab
     @State private var isDefault = DefaultBrowserManager.isDefaultBrowser
@@ -15,15 +14,9 @@ struct GeneralTab: View {
 
     private var automaticUpdatesBinding: Binding<Bool> {
         Binding(
-            get: { updater.automaticallyChecksForUpdates },
-            set: { updater.automaticallyChecksForUpdates = $0 }
+            get: { updateCenter.automaticallyChecksForUpdates },
+            set: { updateCenter.automaticallyChecksForUpdates = $0 }
         )
-    }
-
-    private var versionString: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "Version \(short) (build \(build))"
     }
 
     var body: some View {
@@ -34,6 +27,7 @@ struct GeneralTab: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
                         startupSection.id("Startup")
+                        updatesSection.id("Updates")
                         activationSection.id("Activation")
                         pickerSection.id("Picker")
                         historySection.id("Link History")
@@ -71,18 +65,6 @@ struct GeneralTab: View {
                     }
                     Spacer()
                     ThemeToggle(isOn: $settingsStore.launchAtLogin)
-                }
-                ThemePanelRow(helpText: HelpText.General.automaticUpdates) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Automatically check for updates")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(Theme.textPrimary)
-                        Text(versionString)
-                            .font(.system(size: 11))
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    Spacer()
-                    ThemeToggle(isOn: automaticUpdatesBinding)
                 }
                 ThemePanelRow(isLast: true, helpText: HelpText.General.defaultBrowser) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -129,6 +111,39 @@ struct GeneralTab: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - Updates
+
+    private var updatesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ThemeSectionTitle(text: "Updates")
+            ThemePanel {
+                ThemePanelRow(helpText: HelpText.General.automaticUpdates) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatic Updates")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Checks yoj.am every hour and tells you when a new version is ready.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    ThemeToggle(isOn: automaticUpdatesBinding)
+                }
+                ThemePanelRow(isLast: true, helpText: HelpText.General.checkForUpdates) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(updateCenter.availableUpdate == nil ? "Check for Updates" : "Update Available")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.textPrimary)
+                        UpdateStatusText(updateCenter: updateCenter)
+                    }
+                    Spacer()
+                    UpdateActionButton(updateCenter: updateCenter)
+                }
+                .id("Check for Updates")
             }
         }
     }

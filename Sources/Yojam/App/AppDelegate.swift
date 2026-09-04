@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import Sparkle
 import SwiftUI
 import TipKit
 import YojamCore
@@ -17,11 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let routingSuggestionEngine: RoutingSuggestionEngine
 
     // MARK: - Auto Update (Sparkle)
-    let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil)
-    var updater: SPUUpdater { updaterController.updater }
+    let updateCenter = UpdateCenter()
 
     /// Bridged from YojamApp so we can open the preferences window from
     /// AppKit code without the deprecated showSettingsWindow: selector.
@@ -157,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             browserManager: browserManager,
             recentURLsManager: recentURLsManager,
             settingsStore: settingsStore,
+            updateCenter: updateCenter,
             onReopen: { [weak self] url in
                 let request = IncomingLinkRequest(url: url, origin: .clipboard)
                 self?.enqueueOrHandle(request)
@@ -174,13 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.settingsStore.pendingScrollToSection = "Picker"
                 self.showPreferences()
-            },
-            onCheckForUpdates: { [weak self] in
-                self?.updater.checkForUpdates()
-            },
-            canCheckForUpdates: { [weak self] in
-                self?.updater.canCheckForUpdates ?? false
             })
+
+        // Sparkle starts once the status item exists, so a check that finishes
+        // right away has something to badge.
+        updateCenter.start()
 
         // Recent URL retention
         recentURLsManager.configure(

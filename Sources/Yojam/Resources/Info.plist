@@ -135,6 +135,8 @@
 	</array>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>3600</integer>
 	<key>SUFeedURL</key>
 	<string>https://yoj.am/appcast.xml</string>
 	<key>SUPublicEDKey</key>

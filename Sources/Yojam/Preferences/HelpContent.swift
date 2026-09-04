@@ -8,7 +8,8 @@ enum HelpText {
     // MARK: - General Tab
     enum General {
         static let launchAtLogin = "Yojam starts automatically when you log in, so it's always running when you click a link."
-        static let automaticUpdates = "Yojam checks yoj.am for new versions about once a day in the background. You can also check on demand from the menu bar."
+        static let automaticUpdates = "Yojam checks yoj.am for a new version every hour in the background. When one is ready you get a dot on the menu bar icon, an Install button here, and a notification if you allow it. Turn this off to check only by hand."
+        static let checkForUpdates = "Asks yoj.am right now whether a newer Yojam exists. Updates install in place and relaunch Yojam."
         static let defaultBrowser = "Set Yojam as your system default browser so every link goes through it first."
 
         static let activationMode = "Pick when the browser chooser appears. Smart Fallback is nice once you've settled into a routine."

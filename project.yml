@@ -81,6 +81,10 @@ targets:
         SUFeedURL: https://yoj.am/appcast.xml
         SUPublicEDKey: ewMIKU3we8bcoyPz/88uD1n1fpThNNnDJIfXk/eHLGA=
         SUEnableAutomaticChecks: true
+        # Sparkle's floor is one hour. Yojam runs all day in the menu bar, so a
+        # daily check plus a background-only alert let users fall two releases
+        # behind without noticing (issue #38).
+        SUScheduledCheckInterval: 3600
         CFBundleURLTypes:
           - CFBundleURLName: Web URL
             CFBundleURLSchemes:

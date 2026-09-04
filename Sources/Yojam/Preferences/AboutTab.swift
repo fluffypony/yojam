@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct AboutTab: View {
+    @ObservedObject var updateCenter: UpdateCenter
     @Binding var scrollToSection: String?
 
     var body: some View {
@@ -50,6 +51,12 @@ struct AboutTab: View {
                 Text("© 2026 Riccardo Spagni")
                     .font(.system(size: 12))
                     .foregroundColor(Theme.textSecondary)
+
+                VStack(spacing: 8) {
+                    UpdateActionButton(updateCenter: updateCenter, checkLabel: "Check for Updates\u{2026}")
+                    UpdateStatusText(updateCenter: updateCenter, includesVersion: false)
+                }
+                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)

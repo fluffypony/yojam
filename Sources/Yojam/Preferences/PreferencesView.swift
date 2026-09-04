@@ -1,4 +1,3 @@
-import Sparkle
 import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Identifiable {
@@ -71,6 +70,12 @@ enum SettingsSearchIndex {
                            subtitle: "How long to keep recently opened links and URLs never timed forever auto-delete"),
         SettingsSearchItem(tab: .general, section: "Link History", title: "Auto-delete After",
                            subtitle: "Minutes before Link History entries are automatically removed retention"),
+
+        // General > Updates
+        SettingsSearchItem(tab: .general, section: "Updates", title: "Automatic Updates",
+                           subtitle: "Check yoj.am for new versions every hour sparkle auto update"),
+        SettingsSearchItem(tab: .general, section: "Updates", title: "Check for Updates",
+                           subtitle: "Check now install update new version upgrade"),
 
         // General > Services
         SettingsSearchItem(tab: .general, section: "Services", title: "Clipboard Monitoring",
@@ -180,8 +185,9 @@ struct PreferencesView: View {
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var rewriteManager: URLRewriter
     let routingSuggestionEngine: RoutingSuggestionEngine
-    let updater: SPUUpdater
+    @ObservedObject var updateCenter: UpdateCenter
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: PreferencesTab = .general
     @State private var searchText = ""
     @State private var scrollToSection: String?
@@ -320,6 +326,15 @@ struct PreferencesView: View {
 
             Spacer()
 
+            if let update = updateCenter.availableUpdate {
+                SidebarUpdatePill(version: update.version) {
+                    updateCenter.checkForUpdates()
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+            }
+
             // Help entry point
             Button {
                 settingsStore.hasDismissedQuickStart = false
@@ -341,6 +356,7 @@ struct PreferencesView: View {
             .padding(.bottom, 12)
         }
         .frame(width: 240)
+        .animation(.easeOut(duration: 0.2), value: updateCenter.availableUpdate)
         // layoutPriority wins HStack compression contests without making
         // the sidebar push content out of the window (which fixedSize
         // would do — that overflowed both edges when content was wide).
@@ -444,7 +460,7 @@ struct PreferencesView: View {
         case .general:
             GeneralTab(
                 settingsStore: settingsStore,
-                updater: updater,
+                updateCenter: updateCenter,
                 scrollToSection: $scrollToSection,
                 selectedTab: $selectedTab)
         case .browsers:
@@ -468,7 +484,7 @@ struct PreferencesView: View {
                 routingSuggestionEngine: routingSuggestionEngine,
                 scrollToSection: $scrollToSection)
         case .about:
-            AboutTab(scrollToSection: $scrollToSection)
+            AboutTab(updateCenter: updateCenter, scrollToSection: $scrollToSection)
         }
     }
 }
