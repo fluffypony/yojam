@@ -93,7 +93,7 @@ You need Xcode, XcodeGen, `create-dmg`, and the GitHub CLI. The signing Mac also
 
 1. Update `MARKETING_VERSION` and increment `CURRENT_PROJECT_VERSION` in `project.yml`. Sparkle compares the build number, so it must increase with every release.
 2. Set the same version in `Extensions/chrome/manifest.json`, `Extensions/firefox/manifest.json`, and `Extensions/safari/manifest.json`.
-3. Run `swift test`, then build the app with Xcode and test the changed flows. Check the bundled integrations as well: the Swift package alone does not build them.
+3. Run `swift test` and `node --test Tests/Extensions/*.test.mjs`, then build the app with Xcode and test the changed flows. Check the bundled integrations as well: the Swift package alone does not build them.
 4. Commit the release changes. Keep `Package.resolved` committed; the release build uses its pinned dependencies.
 
 ### Build and sign
@@ -121,6 +121,14 @@ Mozilla requires two-step authentication on the developer account before its fir
 ```
 
 This validates the extension, submits it for unlisted Mozilla signing, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. Unlisted signing lets Firefox users install the GitHub download without an AMO store listing. If Mozilla holds the submission for review, wait for the signed package before publishing it. Keep a separate copy of that package if you rerun the build: `Extensions/build.sh` recreates `dist/`.
+
+### Chrome Web Store updates
+
+Upload `Extensions/dist/yojam-chrome.zip` through the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole). Use the existing store item for updates so its extension ID stays the same.
+
+For the first submission, complete Google's publisher verification and upload the ZIP to obtain its store ID. Add that ID to `Sources/Yojam/Resources/chrome-extension-ids.json` as a JSON array, then rebuild the Mac app. Yojam uses this ID to allow the extension to contact its native helper. The app refreshes those helper registrations when their required content changes, including updates at the same app path.
+
+Keep the listing's permission and data-use declarations aligned with the package. Supply real extension screenshots, link [the privacy policy](https://yoj.am/privacy.html), and state that the extension needs Yojam on macOS 14 or later. Make the Mac build with the store ID available before the store extension goes live. After Google approves the submission, check a normal Chrome install and its connection to the Mac app.
 
 ### Publish and verify
 
