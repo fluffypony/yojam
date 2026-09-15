@@ -95,10 +95,12 @@ Register the helper's explicit App ID, `com.yojam.app.NativeHost`, and associate
 
 During Developer ID export, Xcode creates or selects the helper's distribution profile automatically. The App ID and its App Group association must exist before export: automatic export cannot create or change App IDs.
 
-1. Update `MARKETING_VERSION` and increment `CURRENT_PROJECT_VERSION` in `project.yml`. Sparkle compares the build number, so it must increase with every release.
-2. Set the same version in `Extensions/chrome/manifest.json`, `Extensions/firefox/manifest.json`, and `Extensions/safari/manifest.json`.
+1. For a Mac release, update `MARKETING_VERSION` and increment `CURRENT_PROJECT_VERSION` in `project.yml`. Sparkle compares the build number, so it must increase with every Mac release.
+2. Match `Extensions/safari/manifest.json` to the Mac version. Chrome and Firefox publish independently and can have different versions. Increment their respective manifests when you submit a new store package; store version numbers cannot be reused.
 3. Run `swift test` and `node --test Tests/Extensions/*.test.mjs`, then build the app with Xcode and test the changed flows. Check the bundled integrations as well: the Swift package alone does not build them.
 4. Commit the release changes. Keep `Package.resolved` committed; the release build uses its pinned dependencies.
+
+For a browser-only release, update that browser's manifest and follow its store section below. Run `./scripts/release.sh --check-extension-versions` to check the manifest versions before submission.
 
 ### Build and sign
 
@@ -118,13 +120,21 @@ The outputs are:
 - The DMGs and any `.delta` files in `build/releases/` that the appcast references. The script signs and verifies these update files.
 - `Extensions/dist/yojam-chrome.zip` and `Extensions/dist/yojam-firefox.xpi`. The Firefox XPI from this script is unsigned; Mozilla signing is a separate step.
 
-Mozilla requires two-step authentication on the developer account before its first add-on submission. Before publishing the Firefox package, obtain API credentials from the [AMO Developer Hub](https://addons.mozilla.org/developers/addon/api/key/) and load them into `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`. Keep them out of the repository and shell history. Then run:
+### Firefox Add-ons updates
+
+Use the existing add-on in the [AMO Developer Hub](https://addons.mozilla.org/developers/), with ID `yojam@yoj.am`. Choose **Submit a new version**, then **On this site**, for public distribution. Complete the listing details and keep compatibility set to desktop Firefox: the extension needs the Yojam Mac app. Mozilla requires two-step authentication on the developer account.
+
+An existing unlisted version cannot be uploaded again as a public version, even if you delete it. Use a new version number in `Extensions/firefox/manifest.json`. Complete the first public submission in the Developer Hub so its listing metadata is present before you use the signing script for updates.
+
+For later public updates, build the extensions, obtain API credentials from the [AMO Developer Hub](https://addons.mozilla.org/developers/addon/api/key/), and load them into `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`. Keep them out of the repository and shell history. Then run:
 
 ```bash
 ./Extensions/sign-firefox.sh
 ```
 
-This validates the extension, submits it for unlisted Mozilla signing, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. Unlisted signing lets Firefox users install the GitHub download without an AMO store listing. If Mozilla holds the submission for review, wait for the signed package before publishing it. Keep a separate copy of that package if you rerun the build: `Extensions/build.sh` recreates `dist/`.
+This validates the extension for public distribution, submits it to the listed channel, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. If review exceeds the script's wait period, continue with that submission in the Developer Hub and download its signed XPI there. Check the [public listing](https://addons.mozilla.org/en-US/firefox/addon/b0f23b4f7148465da644/) and approval status before announcing availability. A signature alone does not confirm public publication.
+
+Keep versioned copies of signed Firefox packages and submitted Chrome ZIPs before another build: `Extensions/build.sh` recreates `dist/`. Record each extension's actual version in release notes when it differs from the Mac version.
 
 ### Chrome Web Store updates
 
@@ -245,11 +255,11 @@ Download `yojam-chrome.zip` from the [latest GitHub release](https://github.com/
 
 ### Firefox
 
-Use Firefox 140 or later. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), open it in Firefox, and confirm the installation. From Yojam 1.3.0, this download has a Mozilla signature and works in normal Firefox. It is distributed directly through GitHub, without an AMO store listing.
+Use Firefox 140 or later. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), open it in Firefox, and confirm the installation. From Yojam 1.3.0, this download has a Mozilla signature and works in normal Firefox. Public store submissions use the [Yojam listing on AMO](https://addons.mozilla.org/en-US/firefox/addon/b0f23b4f7148465da644/); each version becomes available there after Mozilla approves it.
 
 Firefox asks for permission to transfer browsing activity because the extension passes links to Yojam on your Mac. It does not upload those links to a server. To route into a container, create the container in Firefox and enter its name in the rule's **Container** field. The name must match an existing container.
 
-Install a newer XPI from GitHub when you update the extension. Sparkle updates the Mac app; it does not replace the Firefox extension.
+Firefox checks AMO for newer public versions, including for these signed GitHub installations. You can also install a newer XPI from GitHub. Firefox and Mac app versions can differ. Sparkle updates the Mac app; it does not replace the Firefox extension.
 
 ### Orion 1.1+
 
