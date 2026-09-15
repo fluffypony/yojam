@@ -135,7 +135,7 @@ This validates the extension, submits it for unlisted Mozilla signing, and repla
    brew bump --open-pr yojam
    ```
 
-   Check the resulting pull request for the version, download URL, and SHA-256 hash. If a pull request already exists, check that one instead of opening a duplicate.
+   If the command reports `Cask is autobumped`, leave the pull request to BrewTestBot. Homebrew runs these version bumps about every three hours. Check the resulting pull request for the version, download URL, and SHA-256 hash. If a pull request already exists, check that one instead of opening a duplicate.
 
 ## How it works
 
