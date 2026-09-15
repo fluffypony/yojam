@@ -3,6 +3,23 @@ import XCTest
 import YojamCore
 
 final class ConfigImportPlanTests: XCTestCase {
+    func testSourceAppOrderDoesNotCreateAnImportDuplicate() {
+        var existing = makeRule(name: "Work")
+        existing.sourceApps = [RuleSourceApp(bundleId: "com.apple.mail"),
+                               RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")]
+        var reordered = makeRule(name: "Imported work")
+        reordered.sourceApps = existing.sourceApps.reversed()
+        var distinct = makeRule(name: "Calendar")
+        distinct.sourceApps = [RuleSourceApp(bundleId: "com.apple.iCal")]
+        let result = ConfigImporter.ImportResult(
+            rules: [reordered, distinct], rewriteRules: [], warnings: [], source: .finicky)
+        let plan = ConfigImportPlan.make(
+            results: [result], selectedRuleIDs: [reordered.id, distinct.id], selectedRewriteIDs: [],
+            existingRules: [existing], existingRewriteRules: [])
+        XCTAssertEqual(plan.rules.map(\.id), [distinct.id])
+        XCTAssertEqual(plan.duplicateRuleCount, 1)
+    }
+
     func testPlanKeepsSelectedItemsAndSkipsExistingSemanticDuplicates() {
         let existingRule = makeRule(name: "Existing")
         let duplicateRule = makeRule(name: "Imported copy")

@@ -59,7 +59,7 @@ enum HelpText {
         static let ruleWindowTypeOverride = "Inherit keeps the selected browser entry's private-window setting. Choose Private or Normal when this rule should always use that window type."
         static let ruleInstanceOverride = "Inherit keeps the selected browser entry's instance setting. Use New instance for custom profile setups that need a separate app process."
         static let rulePriority = "Lower numbers run first. When two rules match the same URL, the lower number wins. Dragging rules in the pipeline updates these numbers."
-        static let ruleSourceApp = "Only applies when the link came from a specific app (e.g. com.apple.mail). Leave blank to match all apps.\n\nFor links from Handoff, AirDrop, the Share Extension, and other non-app sources, Yojam uses synthetic IDs like com.yojam.source.handoff and com.yojam.source.airdrop."
+        static let ruleSourceApp = "The rule matches links from any app in this list. Choose several apps at once, or add their bundle IDs (e.g. com.apple.mail). An empty list allows all apps.\n\nFor Handoff, AirDrop, the Share Extension, and other sources, add an ID such as com.yojam.source.handoff or com.yojam.source.airdrop."
         static let ruleMachineScope = "Limits this rule to the current Mac while still allowing the rest of your rules to sync through iCloud."
         static let rewriteMatch = "A regex pattern matched against the full URL. Use capture groups like (.*) to grab parts you want to keep."
         static let rewriteReplacement = "The replacement URL. Use $1, $2, etc. to insert captured groups from the match pattern."

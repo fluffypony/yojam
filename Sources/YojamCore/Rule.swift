@@ -1,5 +1,21 @@
 import Foundation
 
+public struct RuleSourceApp: Codable, Equatable, Sendable, Identifiable {
+    // Remove with the legacy Rule codec once pre-1.3 clients no longer share configs.
+    public static let legacyMultiAppGuard = RuleSourceApp(
+        bundleId: "com.yojam.source.requires-multiple-source-apps")
+
+    public var bundleId: String
+    public var name: String?
+    public var id: String { bundleId }
+    public var displayName: String { name ?? bundleId }
+
+    public init(bundleId: String, name: String? = nil) {
+        self.bundleId = bundleId
+        self.name = name
+    }
+}
+
 public struct Rule: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
     public var name: String
@@ -16,8 +32,8 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     public var priority: Int
     public var stripUTMParams: Bool
     public var rewriteRules: [URLRewriteRule]
-    public var sourceAppBundleId: String?
-    public var sourceAppName: String?
+    /// Any listed app can match. An empty list allows all sources.
+    public var sourceApps: [RuleSourceApp]
     /// Local machine IDs allowed to run this rule. nil/empty means all Macs.
     public var machineScopeIdentifiers: [String]?
     /// Human-readable names captured when machine-scoped rules are created.
@@ -66,8 +82,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         priority: Int = 100,
         stripUTMParams: Bool = false,
         rewriteRules: [URLRewriteRule] = [],
-        sourceAppBundleId: String? = nil,
-        sourceAppName: String? = nil,
+        sourceApps: [RuleSourceApp] = [],
         machineScopeIdentifiers: [String]? = nil,
         machineScopeNames: [String: String]? = nil,
         machineScopeModifiedAt: Date? = nil,
@@ -88,7 +103,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.targetBrowserEntryId = targetBrowserEntryId
         self.isBuiltIn = isBuiltIn; self.priority = priority
         self.stripUTMParams = stripUTMParams; self.rewriteRules = rewriteRules
-        self.sourceAppBundleId = sourceAppBundleId; self.sourceAppName = sourceAppName
+        self.sourceApps = sourceApps
         self.machineScopeIdentifiers = machineScopeIdentifiers
         self.machineScopeNames = machineScopeNames
         self.machineScopeModifiedAt = machineScopeModifiedAt
@@ -107,7 +122,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         case id, name, enabled, matchType, pattern, urlNormalization
         case targetBundleId, targetAppName, targetBrowserEntryId, isBuiltIn, priority
         case stripUTMParams, rewriteRules
-        case sourceAppBundleId, sourceAppName
+        case sourceApps
         case machineScopeIdentifiers, machineScopeNames, machineScopeModifiedAt, lastModifiedAt
         case firefoxContainer, targetDisplayUUID, targetDisplayIndex, metadata
         case ruleProfileId, ruleOpenInPrivateWindow, ruleCustomLaunchArgs
@@ -132,8 +147,21 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.priority = try c.decodeIfPresent(Int.self, forKey: .priority) ?? 100
         self.stripUTMParams = try c.decodeIfPresent(Bool.self, forKey: .stripUTMParams) ?? false
         self.rewriteRules = try c.decodeIfPresent([URLRewriteRule].self, forKey: .rewriteRules) ?? []
-        self.sourceAppBundleId = try c.decodeIfPresent(String.self, forKey: .sourceAppBundleId)
-        self.sourceAppName = try c.decodeIfPresent(String.self, forKey: .sourceAppName)
+        if let sourceApps = try c.decodeIfPresent([RuleSourceApp].self, forKey: .sourceApps) {
+            self.sourceApps = sourceApps
+        } else {
+            // Single-source rules survive in saved exports and on Macs that update
+            // independently. New saves use only sourceApps. Remove this read
+            // once pre-1.3 exports and sync clients are no longer supported.
+            let legacy = try decoder.container(keyedBy: LegacySourceAppKeys.self)
+            if let bundleId = try legacy.decodeIfPresent(String.self, forKey: .sourceAppBundleId) {
+                self.sourceApps = [RuleSourceApp(
+                    bundleId: bundleId,
+                    name: try legacy.decodeIfPresent(String.self, forKey: .sourceAppName))]
+            } else {
+                self.sourceApps = []
+            }
+        }
         self.machineScopeIdentifiers = try c.decodeIfPresent([String].self, forKey: .machineScopeIdentifiers)
         self.machineScopeNames = try c.decodeIfPresent([String: String].self, forKey: .machineScopeNames)
         self.machineScopeModifiedAt = try c.decodeIfPresent(Date.self, forKey: .machineScopeModifiedAt)
@@ -146,6 +174,48 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
         self.ruleOpenInPrivateWindow = try c.decodeIfPresent(Bool.self, forKey: .ruleOpenInPrivateWindow)
         self.ruleCustomLaunchArgs = try c.decodeIfPresent(String.self, forKey: .ruleCustomLaunchArgs)
         self.ruleOpenAsNewInstance = try c.decodeIfPresent(Bool.self, forKey: .ruleOpenAsNewInstance)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(matchType, forKey: .matchType)
+        try c.encode(pattern, forKey: .pattern)
+        try c.encode(urlNormalization, forKey: .urlNormalization)
+        try c.encode(targetBundleId, forKey: .targetBundleId)
+        try c.encode(targetAppName, forKey: .targetAppName)
+        try c.encodeIfPresent(targetBrowserEntryId, forKey: .targetBrowserEntryId)
+        try c.encode(isBuiltIn, forKey: .isBuiltIn)
+        try c.encode(priority, forKey: .priority)
+        try c.encode(stripUTMParams, forKey: .stripUTMParams)
+        try c.encode(rewriteRules, forKey: .rewriteRules)
+        try c.encode(sourceApps, forKey: .sourceApps)
+        try c.encodeIfPresent(machineScopeIdentifiers, forKey: .machineScopeIdentifiers)
+        try c.encodeIfPresent(machineScopeNames, forKey: .machineScopeNames)
+        try c.encodeIfPresent(machineScopeModifiedAt, forKey: .machineScopeModifiedAt)
+        try c.encodeIfPresent(lastModifiedAt, forKey: .lastModifiedAt)
+        try c.encodeIfPresent(firefoxContainer, forKey: .firefoxContainer)
+        try c.encodeIfPresent(targetDisplayUUID, forKey: .targetDisplayUUID)
+        try c.encodeIfPresent(targetDisplayIndex, forKey: .targetDisplayIndex)
+        try c.encodeIfPresent(metadata, forKey: .metadata)
+        try c.encodeIfPresent(ruleProfileId, forKey: .ruleProfileId)
+        try c.encodeIfPresent(ruleOpenInPrivateWindow, forKey: .ruleOpenInPrivateWindow)
+        try c.encodeIfPresent(ruleCustomLaunchArgs, forKey: .ruleCustomLaunchArgs)
+        try c.encodeIfPresent(ruleOpenAsNewInstance, forKey: .ruleOpenAsNewInstance)
+
+        // Pre-1.3 apps ignore sourceApps. Keep single-app rules usable there;
+        // make multi-app rules miss instead of silently routing every source.
+        // Remove these keys when pre-1.3 clients no longer share configs.
+        var legacy = encoder.container(keyedBy: LegacySourceAppKeys.self)
+        let legacySource = sourceApps.count > 1 ? RuleSourceApp.legacyMultiAppGuard : sourceApps.first
+        try legacy.encodeIfPresent(legacySource?.bundleId, forKey: .sourceAppBundleId)
+        try legacy.encodeIfPresent(legacySource?.name, forKey: .sourceAppName)
+    }
+
+    private enum LegacySourceAppKeys: String, CodingKey {
+        case sourceAppBundleId, sourceAppName
     }
 }
 

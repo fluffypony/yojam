@@ -19,13 +19,15 @@ public enum RuleMatcher {
         let matchingURL = URL(string: urlString) ?? url
         let normalizedURL = normalizeURL(urlString)
 
-        // Source-app filter. Must match exactly when set.
-        if let requiredSource = rule.sourceAppBundleId, sourceApp != requiredSource {
+        // Match any listed source, then apply the URL and machine filters.
+        if !rule.sourceApps.isEmpty,
+           !rule.sourceApps.contains(where: { $0.bundleId == sourceApp }) {
+            let requiredSources = rule.sourceApps.map(\.bundleId).joined(separator: ", ")
             return RuleMatchResult(
                 matched: false,
                 matcherFired: nil,
                 normalizedURL: normalizedURL,
-                explanation: "Source-app filter requires \(requiredSource); got \(sourceApp ?? "<none>")."
+                explanation: "Source must be one of: \(requiredSources). Got \(sourceApp ?? "<none>")."
             )
         }
 

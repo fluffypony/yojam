@@ -2,6 +2,51 @@ import Foundation
 import Combine
 import YojamCore
 
+// Pre-1.3 clients rewrite both rule records and the rewrite sidecar. Keep source
+// lists under a key those clients do not know. Remove this key and the guard
+// restoration once pre-1.3 clients can no longer participate in iCloud sync.
+struct ICloudSourceAppCompatibility: Codable {
+    static let key = "sync_ruleSourceApps_v1"
+
+    struct Sources: Codable {
+        let apps: [RuleSourceApp]
+        let modifiedAt: Date?
+    }
+
+    let rules: [String: Sources]
+
+    init(rules: [Rule], previous: ICloudSourceAppCompatibility? = nil) {
+        var sources: [String: Sources] = [:]
+        for rule in rules {
+            let key = rule.id.uuidString
+            if Self.hasLegacyGuard(rule) {
+                sources[key] = previous?.rules[key]
+            } else {
+                sources[key] = Sources(apps: rule.sourceApps, modifiedAt: rule.lastModifiedAt)
+            }
+        }
+        self.rules = sources
+    }
+
+    static func hasLegacyGuard(_ rule: Rule) -> Bool {
+        rule.sourceApps.count == 1
+            && rule.sourceApps.first?.bundleId == RuleSourceApp.legacyMultiAppGuard.bundleId
+    }
+
+    func restoring(_ rule: Rule, local: Rule?) -> Rule {
+        guard Self.hasLegacyGuard(rule) else { return rule }
+        let saved = rules[rule.id.uuidString]
+        var copy = rule
+        if let local, !Self.hasLegacyGuard(local),
+           saved == nil || (local.lastModifiedAt ?? .distantPast) > (saved?.modifiedAt ?? .distantPast) {
+            copy.sourceApps = local.sourceApps
+        } else if let saved {
+            copy.sourceApps = saved.apps
+        }
+        return copy
+    }
+}
+
 // Keep each sync record flat so older app versions can decode it as the model.
 // If an older version writes it back, the missing marker identifies lost fields.
 struct ICloudBrowserSyncRecord: Codable {
@@ -440,6 +485,10 @@ final class ICloudSyncManager {
         }
         do {
             let records = userRules.map(ICloudRuleSyncRecord.init(rule:))
+            let previousSources = kvStore.data(forKey: ICloudSourceAppCompatibility.key)
+                .flatMap { try? JSONDecoder().decode(ICloudSourceAppCompatibility.self, from: $0) }
+            let sourceApps = ICloudSourceAppCompatibility(rules: userRules, previous: previousSources)
+            payloads.append((ICloudSourceAppCompatibility.key, try encoder.encode(sourceApps)))
             payloads.append(("sync_rules", try encoder.encode(records)))
         } catch {
             YojamLogger.shared.log("iCloud push rules failed: \(error.localizedDescription)")
@@ -595,13 +644,20 @@ final class ICloudSyncManager {
         }
         if let data = kvStore.data(forKey: "sync_rules") {
             do {
+                let allLocal = settingsStore.loadRules()
+                let sourceApps = kvStore.data(forKey: ICloudSourceAppCompatibility.key)
+                    .flatMap { try? decoder.decode(ICloudSourceAppCompatibility.self, from: $0) }
+                    ?? ICloudSourceAppCompatibility(rules: [])
                 let records = try decoder.decode([ICloudRuleSyncRecord].self, from: data)
                 let restoredRemote = records.map { record in
+                    let rule = sourceApps.restoring(
+                        record.rule,
+                        local: allLocal.first { $0.id == record.rule.id })
                     guard record.requiresLocalRewriteFields,
                           let compatibilitySidecar else {
-                        return record.rule
+                        return rule
                     }
-                    return compatibilitySidecar.restoringLegacyRule(record.rule)
+                    return compatibilitySidecar.restoringLegacyRule(rule)
                 }
                 let remote = SyncConflictResolver.remapRuleBrowserTargets(
                     restoredRemote,
@@ -620,7 +676,6 @@ final class ICloudSyncManager {
                             compatibilitySidecar?.containsRule($0.rule.id) == true
                         }
                         .map { $0.rule.id })
-                let allLocal = settingsStore.loadRules()
                 let localBuiltIns = allLocal.filter { $0.isBuiltIn }
                 let local = SyncConflictResolver.remapRuleBrowserTargets(
                     allLocal.filter { !$0.isBuiltIn },

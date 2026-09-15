@@ -118,8 +118,8 @@ final class ChoosyConfigParserTests: XCTestCase {
             applicationResolver: resolveApplication)
         let rule = try rule(named: "Source and URL", in: result)
 
-        XCTAssertEqual(rule.sourceAppBundleId, "com.tinyspeck.slackmacgap")
-        XCTAssertEqual(rule.sourceAppName, "Slack")
+        XCTAssertEqual(rule.sourceApps.first?.bundleId, "com.tinyspeck.slackmacgap")
+        XCTAssertEqual(rule.sourceApps.first?.name, "Slack")
         XCTAssertTrue(matches(
             rule,
             "https://example.com/github.com",
@@ -332,10 +332,10 @@ final class ChoosyConfigParserTests: XCTestCase {
 
         XCTAssertEqual(result.rules.count, 2, result.warnings.joined(separator: "\n"))
         let sourceRule = try XCTUnwrap(result.rules.first {
-            $0.sourceAppBundleId == "com.tinyspeck.slackmacgap"
+            $0.sourceApps.first?.bundleId == "com.tinyspeck.slackmacgap"
         })
         let exactURLRule = try XCTUnwrap(result.rules.first {
-            $0.sourceAppBundleId == nil
+            $0.sourceApps.isEmpty
         })
         XCTAssertEqual(sourceRule.metadata?["importRequiresReview"], "true")
         XCTAssertNil(exactURLRule.metadata?["importRequiresReview"])

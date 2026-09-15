@@ -1674,7 +1674,7 @@ private final class FinickyASTCompiler {
                 isBuiltIn: false,
                 priority: 200 + rules.count,
                 rewriteRules: attachedRewrites,
-                sourceAppBundleId: matcher.sourceBundleIdentifier,
+                sourceApps: matcher.sourceBundleIdentifier.map { [RuleSourceApp(bundleId: $0)] } ?? [],
                 metadata: metadata,
                 ruleProfileId: action.profileID,
                 ruleOpenInPrivateWindow: false,

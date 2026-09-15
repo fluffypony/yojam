@@ -229,8 +229,10 @@ enum ChoosyConfigParser {
                         targetAppName: target.application.displayName,
                         isBuiltIn: false,
                         priority: (rules.count + imported.count + 1) * 10,
-                        sourceAppBundleId: alternative.source?.application.bundleIdentifier,
-                        sourceAppName: alternative.source?.application.displayName,
+                        sourceApps: alternative.source.map {
+                            [RuleSourceApp(bundleId: $0.application.bundleIdentifier,
+                                           name: $0.application.displayName)]
+                        } ?? [],
                         metadata: metadata,
                         ruleProfileId: target.profileIdentifier,
                         ruleOpenInPrivateWindow: target.profileIdentifier == nil ? nil : false,

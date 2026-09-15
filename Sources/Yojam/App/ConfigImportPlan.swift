@@ -98,7 +98,7 @@ struct ConfigImportPlan {
             rule.urlNormalization.rawValue,
             rule.targetBundleId.lowercased(),
             rule.targetBrowserEntryId?.uuidString ?? "",
-            rule.sourceAppBundleId?.lowercased() ?? "",
+            Set(rule.sourceApps.map(\.bundleId)).sorted().joined(separator: "\u{1f}"),
             machineIDs,
             String(rule.stripUTMParams),
             nestedRewrites,

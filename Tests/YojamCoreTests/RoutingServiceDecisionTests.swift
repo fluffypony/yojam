@@ -341,7 +341,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let rule = Rule(
             name: "Slack Links", matchType: .all, pattern: "",
             targetBundleId: "com.google.Chrome", targetAppName: "Chrome",
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let config = makeConfig(
             browsers: [chrome], rules: [rule], activationMode: .smartFallback)
 
@@ -366,11 +366,36 @@ final class RoutingServiceDecisionTests: XCTestCase {
         }
     }
 
+    func testSeveralWorkAppsUseOneRuleAndConfiguredProfile() {
+        let work = BrowserEntry(
+            bundleIdentifier: "com.google.Chrome", displayName: "Chrome",
+            profileId: "Profile 2", profileName: "Work")
+        let apps = ["com.apple.mail", "com.tinyspeck.slackmacgap", "com.microsoft.teams2",
+                    "com.apple.iCal", "com.microsoft.Outlook"]
+        let rule = Rule(
+            name: "Work apps", matchType: .all, pattern: "",
+            targetBundleId: work.bundleIdentifier, targetAppName: work.fullDisplayName,
+            targetBrowserEntryId: work.id,
+            sourceApps: apps.map { RuleSourceApp(bundleId: $0) })
+        let config = makeConfig(browsers: [chrome, work], rules: [rule], activationMode: .smartFallback)
+        for source in apps {
+            let request = IncomingLinkRequest(
+                url: URL(string: "https://example.com")!, sourceAppBundleId: source, origin: .defaultHandler)
+            guard case .openDirect(let browser, _, _, _, _) = RoutingService.decide(
+                request: request, configuration: config) else {
+                XCTFail("Expected the work profile for \(source)")
+                continue
+            }
+            XCTAssertEqual(browser.id, work.id)
+            XCTAssertEqual(browser.profileId, "Profile 2")
+        }
+    }
+
     func testEarlierLinearRuleBeatsBroadSlackSourceRule() {
         let slackRule = Rule(
             name: "All Slack Links", matchType: .all, pattern: "",
             targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let linearRule = Rule(
             name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
             targetBundleId: "com.linear", targetAppName: "Linear",
@@ -397,7 +422,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         let slackRule = Rule(
             name: "All Slack Links", matchType: .all, pattern: "",
             targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let linearRule = Rule(
             name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
             targetBundleId: "com.linear", targetAppName: "Linear",
@@ -440,7 +465,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
             targetBundleId: "com.vivaldi.Vivaldi",
             targetAppName: "Vivaldi — Personal",
             targetBrowserEntryId: personalId,
-            sourceAppBundleId: "com.automattic.beeper")
+            sourceApps: [RuleSourceApp(bundleId: "com.automattic.beeper")])
         let config = makeConfig(
             browsers: [work, personal], rules: [rule], activationMode: .smartFallback)
         let request = IncomingLinkRequest(
@@ -533,7 +558,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
         var rule = Rule(
             name: "Work", matchType: .domain, pattern: "example.com",
             targetBundleId: "com.google.Chrome", targetAppName: "Chrome")
-        rule.sourceAppBundleId = SourceAppSentinel.safariExtension
+        rule.sourceApps = [RuleSourceApp(bundleId: SourceAppSentinel.safariExtension)]
         let config = makeConfig(
             browsers: [chrome], rules: [rule], activationMode: .smartFallback)
         let request = IncomingLinkRequest(

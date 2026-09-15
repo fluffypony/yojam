@@ -3,6 +3,14 @@ import XCTest
 
 final class RuleLiveTestPersistenceTests: XCTestCase {
     @MainActor
+    func testPendingSourceAppDraftIsIncludedWhenSaving() {
+        let apps = AddRuleSheet.sourceAppsByAddingDraft(" com.apple.mail \n", to: [])
+        XCTAssertEqual(apps.map(\.bundleId), ["com.apple.mail"])
+        XCTAssertEqual(AddRuleSheet.sourceAppsByAddingDraft("com.apple.mail", to: apps), apps)
+        XCTAssertEqual(AddRuleSheet.sourceAppsByAddingDraft(" \n", to: apps), apps)
+    }
+
+    @MainActor
     func testLiveTestURLIsStoredInRuleMetadata() {
         let metadata = AddRuleSheet.metadataByPersistingLiveTestURL(
             "https://example.com/path",

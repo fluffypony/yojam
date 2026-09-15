@@ -19,7 +19,7 @@ final class FinickyConfigParserTests: XCTestCase {
         })
         XCTAssertEqual(sourceOnly.matchType, .all)
         XCTAssertEqual(sourceOnly.pattern, "")
-        XCTAssertEqual(sourceOnly.sourceAppBundleId, "com.example.password-manager")
+        XCTAssertEqual(sourceOnly.sourceApps.first?.bundleId, "com.example.password-manager")
         XCTAssertEqual(sourceOnly.targetBundleId, "com.apple.Safari")
 
         let profileRoutes = result.rules.filter {
@@ -35,7 +35,7 @@ final class FinickyConfigParserTests: XCTestCase {
         XCTAssertEqual(Set(profileRoutes.compactMap(\.ruleOpenAsNewInstance)), [true])
 
         let fallbackRoute = try XCTUnwrap(profileRoutes.first)
-        XCTAssertNil(fallbackRoute.sourceAppBundleId)
+        XCTAssertTrue(fallbackRoute.sourceApps.isEmpty)
         XCTAssertTrue(RegexMatcher.matches(
             "https://meet.example.test/room",
             pattern: fallbackRoute.pattern
@@ -130,7 +130,7 @@ final class FinickyConfigParserTests: XCTestCase {
         XCTAssertEqual(result.warnings.count, 1, result.warningMessages.joined(separator: "\n"))
         XCTAssertTrue(result.warningMessages[0].contains("default browser"))
         let predicateRule = try XCTUnwrap(result.rules.first {
-            $0.sourceAppBundleId == "com.tinyspeck.slackmacgap"
+            $0.sourceApps.first?.bundleId == "com.tinyspeck.slackmacgap"
         })
         XCTAssertTrue(RuleMatcher.evaluate(
             url: URL(string: "https://handbook.corp.example/docs/start")!,

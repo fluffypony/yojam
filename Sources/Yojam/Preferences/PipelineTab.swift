@@ -812,7 +812,9 @@ struct AddRuleSheet: View {
     @State private var targetBrowserEntryId: UUID? = nil
     @State private var priority = 100
     @State private var stripUTMParams = false
-    @State private var sourceAppBundleId = ""
+    @State private var sourceApps: [RuleSourceApp] = []
+    @State private var sourceAppBundleIdDraft = ""
+    @State private var testSourceApp = ""
     @State private var machineScope: MachineScope = .allMacs
     @State private var machineScopeIdentifiers: [String] = []
     @State private var machineScopeNames: [String: String] = [:]
@@ -929,7 +931,7 @@ struct AddRuleSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Add Routing Rule")
+                Text(editing == nil ? "Add Routing Rule" : "Edit Routing Rule")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Theme.textInverse)
                 Spacer()
@@ -1105,21 +1107,75 @@ struct AddRuleSheet: View {
     }
 
     private var sourceAppField: some View {
-        fieldRow("Source App (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
+        fieldRow("Source Apps (optional)", helpText: HelpText.Pipeline.ruleSourceApp) {
+            Text("Match links from any listed app. An empty list allows all apps.")
+                .font(.system(size: 11))
+                .foregroundColor(Theme.textSecondary)
+
+            ForEach(sourceApps) { app in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.displayName)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textPrimary)
+                        if app.name != nil {
+                            Text(app.bundleId)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    Spacer()
+                    ThemeIconButton(systemName: "minus.circle", help: "Remove source app") {
+                        sourceApps.removeAll { $0.bundleId == app.bundleId }
+                    }
+                    .accessibilityLabel("Remove \(app.displayName)")
+                }
+                .padding(8)
+                .background(Theme.bgInput, in: RoundedRectangle(cornerRadius: Theme.radiusSm))
+            }
+
             HStack(spacing: 8) {
-                ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleId, isMono: true)
-                ThemeButton("Choose App\u{2026}") {
+                ThemeTextField(placeholder: "com.apple.mail", text: $sourceAppBundleIdDraft, isMono: true)
+                    .accessibilityLabel("Source app bundle ID")
+                    .onSubmit { addSourceAppDraft() }
+                ThemeButton("Add") { addSourceAppDraft() }
+                    .disabled(sourceAppBundleIdDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel("Add source app bundle ID")
+                ThemeButton("Choose Apps\u{2026}") {
                     let panel = NSOpenPanel()
                     panel.allowedContentTypes = [.applicationBundle]
                     panel.directoryURL = URL(fileURLWithPath: "/Applications")
-                    if panel.runModal() == .OK, let url = panel.url,
-                       let bundle = Bundle(url: url),
-                       let bundleId = bundle.bundleIdentifier {
-                        sourceAppBundleId = bundleId
+                    panel.allowsMultipleSelection = true
+                    if panel.runModal() == .OK {
+                        for url in panel.urls {
+                            guard let bundle = Bundle(url: url),
+                                  let bundleId = bundle.bundleIdentifier,
+                                  !sourceApps.contains(where: { $0.bundleId == bundleId }) else { continue }
+                            let appName = bundle.infoDictionary?["CFBundleName"] as? String
+                                ?? url.deletingPathExtension().lastPathComponent
+                            sourceApps.append(RuleSourceApp(bundleId: bundleId, name: appName))
+                        }
                     }
                 }
             }
         }
+    }
+
+    private var resolvedSourceApps: [RuleSourceApp] {
+        Self.sourceAppsByAddingDraft(sourceAppBundleIdDraft, to: sourceApps)
+    }
+
+    static func sourceAppsByAddingDraft(_ draft: String, to apps: [RuleSourceApp]) -> [RuleSourceApp] {
+        let bundleId = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleId.isEmpty, !apps.contains(where: { $0.bundleId == bundleId }) else { return apps }
+        return apps + [RuleSourceApp(bundleId: bundleId)]
+    }
+
+    private func addSourceAppDraft() {
+        sourceApps = resolvedSourceApps
+        sourceAppBundleIdDraft = ""
     }
 
     private var machineScopeField: some View {
@@ -1229,6 +1285,26 @@ struct AddRuleSheet: View {
             .onChange(of: testURL) { _, _ in runLiveTest() }
             .onChange(of: pattern) { _, _ in runLiveTest() }
             .onChange(of: matchType) { _, _ in runLiveTest() }
+            .onChange(of: resolvedSourceApps) { _, apps in
+                if !apps.contains(where: { $0.bundleId == testSourceApp }) {
+                    testSourceApp = apps.first?.bundleId ?? ""
+                }
+                runLiveTest()
+            }
+            .onChange(of: testSourceApp) { _, _ in runLiveTest() }
+        if !resolvedSourceApps.isEmpty {
+            fieldRow("Test source app") {
+                Picker("", selection: $testSourceApp) {
+                    Text("Unknown source").tag("")
+                    ForEach(resolvedSourceApps) { app in
+                        Text(app.displayName).tag(app.bundleId)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityLabel("Test source app")
+            }
+        }
         if !testResult.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -1271,7 +1347,8 @@ struct AddRuleSheet: View {
         }
         priority = rule.priority
         stripUTMParams = rule.stripUTMParams
-        sourceAppBundleId = rule.sourceAppBundleId ?? ""
+        sourceApps = rule.sourceApps
+        testSourceApp = rule.sourceApps.first?.bundleId ?? ""
         machineScopeIdentifiers = (rule.machineScopeIdentifiers ?? [])
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         machineScopeNames = rule.machineScopeNames ?? [:]
@@ -1406,7 +1483,7 @@ struct AddRuleSheet: View {
             isBuiltIn: editing?.isBuiltIn ?? false,
             priority: priority, stripUTMParams: stripUTMParams,
             rewriteRules: editing?.rewriteRules ?? [],
-            sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+            sourceApps: resolvedSourceApps,
             machineScopeIdentifiers: machine.ids,
             machineScopeNames: machine.names,
             firefoxContainer: firefoxContainer.isEmpty ? nil : firefoxContainer,
@@ -1454,11 +1531,11 @@ struct AddRuleSheet: View {
             targetBundleId: targetBundleId,
             targetAppName: targetAppName,
             targetBrowserEntryId: targetBrowserEntryId,
-            sourceAppBundleId: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+            sourceApps: resolvedSourceApps,
             machineScopeIdentifiers: resolvedMachineScope().ids,
             machineScopeNames: resolvedMachineScope().names)
         let result = RuleMatcher.evaluate(url: url, against: testRule,
-                                          sourceApp: sourceAppBundleId.isEmpty ? nil : sourceAppBundleId,
+                                          sourceApp: testSourceApp.isEmpty ? nil : testSourceApp,
                                           machineIdentifier: currentMachineId)
         testMatched = result.matched
         testResult = result.matched ? "Match (\(matchType.displayName))" : "No match"

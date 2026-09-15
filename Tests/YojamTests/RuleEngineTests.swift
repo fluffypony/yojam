@@ -136,7 +136,7 @@ final class RuleEngineTests: XCTestCase {
             pattern: "github.com",
             targetBundleId: "com.google.Chrome",
             targetAppName: "Chrome",
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let engine = RuleEngine(settingsStore: SettingsStore())
         engine.rules = [rule]
         XCTAssertNil(engine.evaluate(
@@ -151,7 +151,7 @@ final class RuleEngineTests: XCTestCase {
             pattern: "",
             targetBundleId: "/bin/echo",
             targetAppName: "Echo",
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let engine = RuleEngine(settingsStore: SettingsStore())
         engine.rules = [rule]
         XCTAssertEqual(engine.evaluate(
@@ -196,7 +196,7 @@ final class RuleEngineTests: XCTestCase {
             name: "All Slack", matchType: .all, pattern: "",
             targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
             isBuiltIn: false, priority: 10,
-            sourceAppBundleId: "com.tinyspeck.slackmacgap")
+            sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
         let linear = Rule(
             name: "Linear", matchType: .domainSuffix, pattern: "linear.app",
             targetBundleId: "com.linear", targetAppName: "Linear",
@@ -246,7 +246,7 @@ final class RuleEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testDuplicateRulePreservesURLNormalization() throws {
+    func testDuplicateRulePreservesURLNormalizationAndSourceApps() throws {
         let store = SettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
@@ -257,6 +257,8 @@ final class RuleEngineTests: XCTestCase {
             urlNormalization: .whatwg,
             targetBundleId: "com.apple.Safari",
             targetAppName: "Safari",
+            sourceApps: [RuleSourceApp(bundleId: "com.apple.mail", name: "Mail"),
+                         RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack")],
             metadata: ["importedFrom": "finicky"]
         )
         let engine = RuleEngine(settingsStore: store)
@@ -266,6 +268,7 @@ final class RuleEngineTests: XCTestCase {
 
         let copy = try XCTUnwrap(engine.rules.first { $0.id != original.id })
         XCTAssertEqual(copy.urlNormalization, .whatwg)
+        XCTAssertEqual(copy.sourceApps, original.sourceApps)
         XCTAssertEqual(copy.metadata, original.metadata)
     }
 
