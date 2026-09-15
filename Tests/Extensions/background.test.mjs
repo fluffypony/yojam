@@ -8,10 +8,10 @@ let sequence = 0;
 
 beforeEach(() => {
   navigations = [];
+  globalThis.browser = { contextualIdentities: { query: async () => [] } };
   const settings = new Promise(resolve => { resolveSettings = resolve; });
   globalThis.chrome = {
     runtime: { getURL: path => `moz-extension://test/${path}`,
-      getManifest: () => ({ browser_specific_settings: { gecko: { id: "yojam@yoj.am" } } }),
       onStartup: event(), onInstalled: event(), onMessage: event(),
       sendNativeMessage: async () => ({ ok: true }) },
     storage: { local: { get: () => settings }, onChanged: event() },
@@ -25,7 +25,7 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => { delete globalThis.chrome; });
+afterEach(() => { delete globalThis.chrome; delete globalThis.browser; });
 
 async function loadWorker() {
   const url = new URL("../../Extensions/shared/background.js", import.meta.url);
@@ -80,7 +80,7 @@ test("routing failure reaches the popup as a failure", async () => {
 
 test("Chromium ignores saved automatic routing and registers no navigation listener", async () => {
   chrome.runtime.getURL = path => `chrome-extension://test/${path}`;
-  chrome.runtime.getManifest = () => ({});
+  delete globalThis.browser;
   chrome.storage.local.get = () => { throw new Error("Chrome must not read automatic routing settings"); };
   await loadWorker();
   assert.equal(chrome.webNavigation.onBeforeNavigate.listeners.length, 0);
@@ -90,7 +90,7 @@ test("Chromium ignores saved automatic routing and registers no navigation liste
 
 test("Chromium explicit routing works without navigation or storage permissions", async () => {
   chrome.runtime.getURL = path => `chrome-extension://test/${path}`;
-  chrome.runtime.getManifest = () => ({});
+  delete globalThis.browser;
   delete chrome.webNavigation;
   delete chrome.storage;
   await loadWorker();
@@ -101,7 +101,7 @@ test("Chromium explicit routing works without navigation or storage permissions"
   assert.deepEqual(response, { ok: true, transport: "native" });
 });
 
-test("the Firefox package keeps container interception under an Orion URL scheme", async () => {
+test("container APIs keep Orion interception without Firefox manifest metadata", async () => {
   chrome.runtime.getURL = path => `chrome-extension://test/${path}`;
   const navigate = await loadWorker();
   resolveSettings({ alwaysRoute: false });

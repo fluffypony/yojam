@@ -2,9 +2,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Feature-detect Safari (no webNavigation interception)
   const isSafari =
     chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
-  const isFirefoxPackage = !!chrome.runtime.getManifest().browser_specific_settings?.gecko;
-  // Chrome exposes only explicit routing. The Firefox package also serves Orion.
-  if (!isFirefoxPackage && !isSafari) return;
+  const supportsContainers = typeof browser !== "undefined" && !!browser.contextualIdentities;
+  // Chrome exposes only explicit routing; Firefox and Orion expose container APIs.
+  if (!supportsContainers && !isSafari) return;
 
   document.getElementById("automatic-routing").hidden = false;
   const toggle = document.getElementById("always-route");

@@ -12,8 +12,8 @@ function getSourceSentinel() {
 const isSafari =
   typeof chrome !== "undefined" &&
   chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
-const isFirefoxPackage = !!chrome.runtime.getManifest().browser_specific_settings?.gecko;
-const supportsAutomaticRouting = !isSafari && isFirefoxPackage &&
+const supportsAutomaticRouting = !isSafari &&
+  typeof browser !== "undefined" && !!browser.contextualIdentities &&
   !!chrome.webNavigation?.onBeforeNavigate;
 
 // ---- Always-Route Interception ----
