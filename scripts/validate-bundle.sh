@@ -226,8 +226,7 @@ MANIFEST_VERSION=$(plutil -extract version raw -o - "$SAFARI_RESOURCES/manifest.
 }
 
 echo "Checking Chrome extension ID configuration..."
-if [ ! -f "$APP/Contents/Resources/chrome-extension-ids.json" ]; then
-  echo "WARNING: chrome-extension-ids.json not bundled — Chrome native messaging will not install manifests"
-fi
+/bin/bash "$(dirname "$0")/validate-chrome-extension-ids.sh" \
+  "$APP/Contents/Resources/chrome-extension-ids.json"
 
 echo "=== All checks passed ==="
