@@ -123,6 +123,7 @@
 			<key>NSSendTypes</key>
 			<array>
 				<string>public.url</string>
+				<string>public.rtf</string>
 				<string>public.utf8-plain-text</string>
 				<string>NSStringPboardType</string>
 				<string>public.plain-text</string>

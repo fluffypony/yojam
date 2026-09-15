@@ -134,6 +134,7 @@ targets:
             NSRequiredContext: {}
             NSSendTypes:
               - public.url
+              - public.rtf
               - public.utf8-plain-text
               - NSStringPboardType
               - public.plain-text

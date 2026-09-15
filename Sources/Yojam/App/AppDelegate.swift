@@ -858,12 +858,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openURLViaService(_ pasteboard: NSPasteboard,
                                  userData: String?,
                                  error: AutoreleasingUnsafeMutablePointer<NSString>) {
-        // A text selection yields an empty array here, not nil, so the text
-        // path below must run whenever no URL objects came through.
-        let urlObjects = (pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? []
-        let candidates = Self.serviceRequestURLs(
-            urlObjects: urlObjects,
-            text: pasteboard.string(forType: .string))
+        let candidates = ServiceRequestURLExtractor.urls(from: pasteboard)
         let modifiers = NSEvent.modifierFlags
         for url in candidates {
             let request = IncomingLinkRequest(
@@ -874,23 +869,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             enqueueOrHandle(request)
         }
-    }
-
-    /// URLs carried by a Services request. URL objects win. Otherwise every
-    /// link the data detector finds in the selected text, or the text itself
-    /// when it reads as a bare host such as `example.com`.
-    nonisolated static func serviceRequestURLs(urlObjects: [URL], text: String?) -> [URL] {
-        if !urlObjects.isEmpty { return urlObjects }
-        guard let text else { return [] }
-        let detector = try? NSDataDetector(
-            types: NSTextCheckingResult.CheckingType.link.rawValue)
-        let range = NSRange(text.startIndex..., in: text)
-        let detected = detector?.matches(in: text, range: range).compactMap(\.url) ?? []
-        if !detected.isEmpty { return detected }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("."), !trimmed.contains(" "), !trimmed.contains("://"),
-              let url = URL(string: "https://" + trimmed) else { return [] }
-        return [url]
     }
 
     // MARK: - Legacy Routing (thin wrapper around unified pipeline)

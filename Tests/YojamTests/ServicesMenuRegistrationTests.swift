@@ -90,4 +90,21 @@ final class ServicesMenuRegistrationTests: XCTestCase {
         XCTAssertTrue(key.hasPrefix(Bundle.main.bundleURL.path + "|"))
         XCTAssertEqual(key.split(separator: "|").count, 3)
     }
+
+    func testServiceAcceptsRichTextSoBrowsersKeepHyperlinkDestinations() throws {
+#if SWIFT_PACKAGE
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: repository.appendingPathComponent("Sources/Yojam/Resources/Info.plist"))
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+#else
+        let plist = try XCTUnwrap(Bundle.main.infoDictionary)
+#endif
+        let services = try XCTUnwrap(plist["NSServices"] as? [[String: Any]])
+        let service = try XCTUnwrap(services.first { $0["NSMessage"] as? String == "openURLViaService" })
+        let sendTypes = try XCTUnwrap(service["NSSendTypes"] as? [String])
+        XCTAssertTrue(sendTypes.contains("public.rtf"))
+        XCTAssertTrue(sendTypes.contains("public.url"))
+        XCTAssertTrue(sendTypes.contains("public.utf8-plain-text"))
+    }
 }
