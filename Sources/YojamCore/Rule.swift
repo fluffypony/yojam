@@ -151,7 +151,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
             self.sourceApps = sourceApps
         } else {
             // Single-source rules survive in saved exports and on Macs that update
-            // independently. New saves use only sourceApps. Remove this read
+            // independently. The sourceApps list is canonical. Remove this read
             // once pre-1.3 exports and sync clients are no longer supported.
             let legacy = try decoder.container(keyedBy: LegacySourceAppKeys.self)
             if let bundleId = try legacy.decodeIfPresent(String.self, forKey: .sourceAppBundleId) {
