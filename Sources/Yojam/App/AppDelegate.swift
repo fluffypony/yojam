@@ -264,18 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             closeAutoOpenedPreferencesWindow(retryCount: pendingRequests.isEmpty ? 3 : 8)
         }
 
-        // Install native messaging host manifests — but only once per
-        // bundle location. Writing to other apps' NativeMessagingHosts
-        // dirs trips the macOS "access data from other apps" TCC prompt,
-        // and there's no need to rewrite identical content on every
-        // launch. Re-runs automatically when the bundle is moved (the
-        // classic "repair after move" case) because the stored path no
-        // longer matches Bundle.main.bundleURL.path.
-        let currentBundlePath = Bundle.main.bundleURL.path
-        if settingsStore.lastNativeMessagingBundlePath != currentBundlePath {
-            NativeMessagingInstaller.reconcileInstalled()
-            settingsStore.lastNativeMessagingBundlePath = currentBundlePath
-        }
+        // Update manifests when their content or installed browser set changes.
+        // Unchanged launches avoid browser directories that can require TCC access.
+        NativeMessagingInstaller.reconcileInstalled(settingsStore: settingsStore)
 
         // Belt-and-suspenders: if the user later trashes Yojam.app without
         // using the in-app Uninstall flow, a periodic LaunchAgent sweeps

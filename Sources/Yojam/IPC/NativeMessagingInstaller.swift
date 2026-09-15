@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CryptoKit
 
 /// Installs native messaging host manifests for Chrome, Firefox, and
 /// Chromium-based browsers so the Yojam browser extension can communicate
@@ -28,44 +29,117 @@ enum NativeMessagingInstaller {
         "org.mozilla.nightly",
     ]
 
+    struct Configuration {
+        let applicationSupportDirectory: URL
+        let hostPath: String
+        let chromeExtensionIds: [String]
+        let installedBrowserBundleIds: Set<String>
+    }
+
+    struct Manifest {
+        let browserName: String
+        let fileURL: URL
+        let contents: Data?
+    }
+
+    struct Plan {
+        let manifests: [Manifest]
+
+        /// Only desired content is read here. Browser directories can require
+        /// TCC access, so leave them alone when this fingerprint is unchanged.
+        var registrationKey: String {
+            var hash = SHA256()
+            for manifest in manifests {
+                hash.update(data: Data(manifest.fileURL.path.utf8))
+                hash.update(data: Data([0]))
+                hash.update(data: manifest.contents ?? Data("absent".utf8))
+                hash.update(data: Data([0]))
+            }
+            return hash.finalize().map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
+    @MainActor
+    struct FileAccess {
+        var read: (URL) throws -> Data?
+        var write: (Data, URL) throws -> Void
+        var remove: (URL) throws -> Void
+
+        static let live = FileAccess(
+            read: { url in
+                do { return try Data(contentsOf: url) }
+                catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+            },
+            write: { data, url in
+                try FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+            },
+            remove: { url in
+                do { _ = try FileManager.default.attributesOfItem(atPath: url.path) }
+                catch let error as CocoaError where error.code == .fileReadNoSuchFile { return }
+                try FileManager.default.removeItem(at: url)
+            })
+    }
+
     // MARK: - Public API
 
-    /// Reconcile manifests against actually-installed browsers. Installs
-    /// manifests for browsers that are present, removes stale manifests for
-    /// browsers that are not.
+    /// Reconcile when the desired manifests change. Explicit repair also
+    /// checks for missing or altered files without rewriting matching content.
     @MainActor
-    static func reconcileInstalled() {
+    static func reconcileInstalled(settingsStore: SettingsStore, force: Bool = false) {
         guard let hostPath = resolveHostPath() else {
             YojamLogger.shared.log("Cannot locate YojamNativeHost binary in app bundle")
             return
         }
 
-        let appSupport = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support")
+        let browserIds = chromiumPaths.map(\.bundleId) + firefoxBundleIds
+        let installed = Set(browserIds.filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+        })
+        let configuration = Configuration(
+            applicationSupportDirectory: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support"),
+            hostPath: hostPath,
+            chromeExtensionIds: resolveChromeExtensionIds(),
+            installedBrowserBundleIds: installed)
+        do {
+            reconcile(plan: try makePlan(configuration), settingsStore: settingsStore, force: force)
+        } catch {
+            YojamLogger.shared.log("Cannot prepare native messaging manifests: \(error.localizedDescription)")
+        }
+    }
 
-        // Chromium-based
-        for entry in chromiumPaths {
-            let dir = appSupport.appendingPathComponent(entry.relativePath)
-            let installed = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: entry.bundleId) != nil
-            if installed {
-                installChromiumManifest(at: dir, hostPath: hostPath, browserName: entry.name)
-                YojamLogger.shared.log("Installed native host manifest for \(entry.name)")
-            } else {
-                removeManifest(at: dir)
+    @MainActor
+    @discardableResult
+    static func reconcile(
+        plan: Plan, settingsStore: SettingsStore, force: Bool = false,
+        files: FileAccess = .live,
+        log: (String) -> Void = { YojamLogger.shared.log($0) }
+    ) -> Bool {
+        let key = plan.registrationKey
+        guard force || settingsStore.lastNativeMessagingRegistrationKey != key else { return true }
+        var succeeded = true
+        for manifest in plan.manifests {
+            do {
+                if let expected = manifest.contents {
+                    if let existing = try files.read(manifest.fileURL),
+                       manifestsMatch(existing, expected) { continue }
+                    try files.write(expected, manifest.fileURL)
+                    log("Installed native host manifest for \(manifest.browserName)")
+                } else {
+                    try files.remove(manifest.fileURL)
+                }
+            } catch {
+                succeeded = false
+                log(
+                    "Cannot reconcile native host manifest for \(manifest.browserName): \(error.localizedDescription)")
             }
         }
-
-        // Firefox
-        let firefoxInstalled = firefoxBundleIds.contains { bundleId in
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
-        }
-        let firefoxDir = appSupport.appendingPathComponent(firefoxPath)
-        if firefoxInstalled {
-            installFirefoxManifest(at: firefoxDir, hostPath: hostPath)
-        } else {
-            removeManifest(at: firefoxDir)
-        }
+        // A failed repair must remain retryable, even if its previous key
+        // matched before the user explicitly asked to repair the files.
+        settingsStore.lastNativeMessagingRegistrationKey = succeeded ? key : nil
+        return succeeded
     }
 
     /// Remove all manifests managed by Yojam (used by Uninstall flow).
@@ -77,10 +151,6 @@ enum NativeMessagingInstaller {
         }
         removeManifest(at: appSupport.appendingPathComponent(firefoxPath))
     }
-
-    /// Backwards-compatible alias used by older call sites. Prefer reconcileInstalled().
-    @MainActor
-    static func installAll() { reconcileInstalled() }
 
     /// Check if at least one native messaging manifest is installed.
     static func isAnyManifestInstalled() -> Bool {
@@ -135,18 +205,58 @@ enum NativeMessagingInstaller {
     /// messaging. Priority:
     /// 1. `YOJAM_CHROME_EXTENSION_IDS` environment variable (comma-separated)
     /// 2. `Contents/Resources/chrome-extension-ids.json` bundle resource (array of strings)
-    /// 3. Empty (manifest installation will be skipped with a clear log)
+    /// 3. Empty (Chrome manifests are omitted until an ID is configured)
     static func resolveChromeExtensionIds() -> [String] {
         if let env = ProcessInfo.processInfo.environment["YOJAM_CHROME_EXTENSION_IDS"], !env.isEmpty {
-            return env.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+            return canonicalExtensionIds(env.components(separatedBy: ","))
         }
         if let url = Bundle.main.url(forResource: "chrome-extension-ids", withExtension: "json"),
            let data = try? Data(contentsOf: url),
            let ids = try? JSONDecoder().decode([String].self, from: data) {
-            return ids.filter { !$0.isEmpty }
+            return canonicalExtensionIds(ids)
         }
         return []
+    }
+
+    // MARK: - Desired manifests
+
+    static func makePlan(_ configuration: Configuration) throws -> Plan {
+        let extensionIds = canonicalExtensionIds(configuration.chromeExtensionIds)
+        let chromiumManifest: [String: Any] = [
+            "name": hostName,
+            "description": "Yojam browser picker - routes links to the right browser",
+            "path": configuration.hostPath,
+            "type": "stdio",
+            "allowed_origins": extensionIds.map { "chrome-extension://\($0)/" }
+        ]
+        let chromiumData = try JSONSerialization.data(
+            withJSONObject: chromiumManifest, options: [.prettyPrinted, .sortedKeys])
+        var manifests = chromiumPaths.map { entry in
+            Manifest(
+                browserName: entry.name,
+                fileURL: configuration.applicationSupportDirectory
+                    .appendingPathComponent(entry.relativePath).appendingPathComponent("\(hostName).json"),
+                contents: !extensionIds.isEmpty && configuration.installedBrowserBundleIds.contains(entry.bundleId)
+                    ? chromiumData : nil)
+        }
+        let firefoxManifest: [String: Any] = [
+            "name": hostName,
+            "description": "Yojam browser picker - routes links to the right browser",
+            "path": configuration.hostPath,
+            "type": "stdio",
+            "allowed_extensions": [
+                "yojam@yoj.am"
+            ]
+        ]
+        let firefoxData = try JSONSerialization.data(
+            withJSONObject: firefoxManifest, options: [.prettyPrinted, .sortedKeys])
+        manifests.append(Manifest(
+            browserName: "Firefox",
+            fileURL: configuration.applicationSupportDirectory
+                .appendingPathComponent(firefoxPath).appendingPathComponent("\(hostName).json"),
+            contents: firefoxBundleIds.contains(where: configuration.installedBrowserBundleIds.contains)
+                ? firefoxData : nil))
+        return Plan(manifests: manifests)
     }
 
     // MARK: - Private
@@ -170,62 +280,24 @@ enum NativeMessagingInstaller {
         return nil
     }
 
-    private static func installChromiumManifest(
-        at directory: URL, hostPath: String, browserName: String
-    ) {
-        let extensionIds = resolveChromeExtensionIds()
-        guard !extensionIds.isEmpty else {
-            YojamLogger.shared.log(
-                "Skipping \(browserName) native host manifest install: no Chrome extension IDs configured "
-                + "(set YOJAM_CHROME_EXTENSION_IDS or bundle chrome-extension-ids.json).")
-            removeManifest(at: directory)
-            return
-        }
-        let manifest: [String: Any] = [
-            "name": hostName,
-            "description": "Yojam browser picker - routes links to the right browser",
-            "path": hostPath,
-            "type": "stdio",
-            "allowed_origins": extensionIds.map { "chrome-extension://\($0)/" }
-        ]
-        writeManifest(manifest, to: directory, browserName: browserName)
+    private static func canonicalExtensionIds(_ ids: [String]) -> [String] {
+        Array(Set(ids.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty })).sorted()
     }
 
-    private static func installFirefoxManifest(
-        at directory: URL, hostPath: String
-    ) {
-        let manifest: [String: Any] = [
-            "name": hostName,
-            "description": "Yojam browser picker - routes links to the right browser",
-            "path": hostPath,
-            "type": "stdio",
-            "allowed_extensions": [
-                "yojam@yoj.am"
-            ]
-        ]
-        writeManifest(manifest, to: directory, browserName: "Firefox")
+    private static func manifestsMatch(_ existing: Data, _ expected: Data) -> Bool {
+        if existing == expected { return true }
+        guard let existingJSON = try? JSONSerialization.jsonObject(with: existing) as? NSDictionary,
+              let expectedJSON = try? JSONSerialization.jsonObject(with: expected) as? NSDictionary else {
+            return false
+        }
+        return existingJSON == expectedJSON
     }
 
     private static func removeManifest(at directory: URL) {
         let filePath = directory.appendingPathComponent("\(hostName).json")
         if FileManager.default.fileExists(atPath: filePath.path) {
             try? FileManager.default.removeItem(at: filePath)
-        }
-    }
-
-    private static func writeManifest(
-        _ manifest: [String: Any], to directory: URL, browserName: String
-    ) {
-        do {
-            try FileManager.default.createDirectory(
-                at: directory, withIntermediateDirectories: true)
-            let filePath = directory.appendingPathComponent("\(hostName).json")
-            let data = try JSONSerialization.data(
-                withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: filePath, options: .atomic)
-        } catch {
-            YojamLogger.shared.log(
-                "Failed to install native messaging manifest for \(browserName): \(error.localizedDescription)")
         }
     }
 }

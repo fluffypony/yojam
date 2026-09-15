@@ -118,11 +118,9 @@ final class SettingsStore: ObservableObject {
         // User-selected location for the live JSON config mirror. App-local:
         // do not include it in SettingsExport, because paths vary per Mac.
         static let configFilePath = "configFilePath"
-        // Bundle path where we last ran NativeMessagingInstaller.reconcileInstalled.
-        // Used to skip the reconcile on every launch — writing to other apps'
-        // NativeMessagingHosts dirs triggers the macOS "access data from
-        // other apps" TCC prompt.
-        static let lastNativeMessagingBundlePath = "lastNativeMessagingBundlePath"
+        // Desired manifest fingerprint last reconciled successfully. Keeps
+        // unchanged launches out of browser directories protected by TCC.
+        static let lastNativeMessagingRegistrationKey = "lastNativeMessagingRegistrationKey"
         // Install location + version for which we last asked pbs to rescan
         // Services. Keeps NSUpdateDynamicServices() to one call per install.
         static let lastServicesRegistrationKey = "lastServicesRegistrationKey"
@@ -301,16 +299,13 @@ final class SettingsStore: ObservableObject {
                 forKey: Keys.completedImporterOfferVersion)
         }
     }
-    /// Bundle path where we last reconciled native-messaging manifests.
-    /// nil or mismatched path means we need to reconcile on next launch.
-    /// Avoids re-writing manifests into other apps' NativeMessagingHosts
-    /// dirs on every launch, which trips the TCC prompt.
-    @Published var lastNativeMessagingBundlePath: String? {
+    /// Desired manifests last reconciled successfully, including extension IDs.
+    @Published var lastNativeMessagingRegistrationKey: String? {
         didSet {
-            if let path = lastNativeMessagingBundlePath, !path.isEmpty {
-                defaults.set(path, forKey: Keys.lastNativeMessagingBundlePath)
+            if let key = lastNativeMessagingRegistrationKey, !key.isEmpty {
+                defaults.set(key, forKey: Keys.lastNativeMessagingRegistrationKey)
             } else {
-                defaults.removeObject(forKey: Keys.lastNativeMessagingBundlePath)
+                defaults.removeObject(forKey: Keys.lastNativeMessagingRegistrationKey)
             }
         }
     }
@@ -435,7 +430,14 @@ final class SettingsStore: ObservableObject {
             d.integer(forKey: Keys.completedImporterOfferVersion))
         self.configFileEditorBundleId = d.string(forKey: Keys.configFileEditorBundleId)
         self.configFilePath = d.string(forKey: Keys.configFilePath)
-        self.lastNativeMessagingBundlePath = d.string(forKey: Keys.lastNativeMessagingBundlePath)
+        // The old path-only marker cannot establish current manifest content.
+        // Discard it and any cached fingerprint after an older app has run.
+        // Remove this migration once path-only releases can no longer upgrade.
+        if d.object(forKey: "lastNativeMessagingBundlePath") != nil {
+            d.removeObject(forKey: "lastNativeMessagingBundlePath")
+            d.removeObject(forKey: Keys.lastNativeMessagingRegistrationKey)
+        }
+        self.lastNativeMessagingRegistrationKey = d.string(forKey: Keys.lastNativeMessagingRegistrationKey)
         self.lastServicesRegistrationKey = d.string(forKey: Keys.lastServicesRegistrationKey)
 
         // Routing settings from App Group suite
@@ -1021,6 +1023,7 @@ final class SettingsStore: ObservableObject {
         self.quickStartVisitedTester = false
         self.completedImporterOfferVersion = 0
         self.configFilePath = nil
+        self.lastNativeMessagingRegistrationKey = nil
         saveBrowsers([])
         saveEmailClients([])
         savePhoneClients([])
