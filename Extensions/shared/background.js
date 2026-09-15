@@ -12,6 +12,9 @@ function getSourceSentinel() {
 const isSafari =
   typeof chrome !== "undefined" &&
   chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
+const isFirefoxPackage = !!chrome.runtime.getManifest().browser_specific_settings?.gecko;
+const supportsAutomaticRouting = !isSafari && isFirefoxPackage &&
+  !!chrome.webNavigation?.onBeforeNavigate;
 
 // ---- Always-Route Interception ----
 
@@ -25,14 +28,18 @@ const routedTabs = new Map(); // tabId -> expiry timestamp
 // (RFC 6761) so it never resolves if the extension is absent.
 const CONTAINER_BRIDGE_PREFIX = "https://yojam-container.invalid/open";
 
-// Load setting on startup
-chrome.storage.local.get("alwaysRoute", (r) => {
-  alwaysRoute = !!r.alwaysRoute;
-});
-chrome.runtime.onStartup.addListener(async () => {
-  const r = await chrome.storage.local.get("alwaysRoute");
-  alwaysRoute = !!r.alwaysRoute;
-});
+const settingsReady = supportsAutomaticRouting
+  ? chrome.storage.local.get("alwaysRoute").then((r) => {
+    alwaysRoute = !!r.alwaysRoute;
+  })
+  : Promise.resolve();
+if (supportsAutomaticRouting) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.alwaysRoute) {
+      alwaysRoute = !!changes.alwaysRoute.newValue;
+    }
+  });
+}
 
 function isRoutedRecently(tabId) {
   const exp = routedTabs.get(tabId);
@@ -50,8 +57,20 @@ function showContainerError(tabId) {
   });
 }
 
-// webNavigation interception (Chrome/Firefox only, not Safari)
-if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
+async function routeNavigation(d) {
+  if (d.frameId !== 0 || !/^https?:\/\//i.test(d.url)) return;
+  await settingsReady;
+  if (!alwaysRoute) return;
+  if (isRoutedRecently(d.tabId)) return;
+
+  routedTabs.set(d.tabId, Date.now() + 3000);
+  const yojamURL = buildYojamURL(d.url, getSourceSentinel());
+  await chrome.tabs.update(d.tabId, { url: yojamURL });
+}
+
+// Chromium routes only explicit actions. Firefox/Orion retain their bridge
+// and navigation routing; Safari has no webNavigation interception support.
+if (supportsAutomaticRouting) {
   chrome.webNavigation.onBeforeNavigate.addListener(async (d) => {
     if (d.frameId !== 0) return; // top-frame only
 
@@ -79,14 +98,7 @@ if (!isSafari && chrome.webNavigation?.onBeforeNavigate) {
       return;
     }
 
-    if (!alwaysRoute) return;
-    if (!/^https?:\/\//i.test(d.url)) return; // http(s) only
-    if (d.url.startsWith("yojam://")) return;
-    if (isRoutedRecently(d.tabId)) return; // loop guard
-
-    routedTabs.set(d.tabId, Date.now() + 3000);
-    const yojamURL = buildYojamURL(d.url, getSourceSentinel());
-    chrome.tabs.update(d.tabId, { url: yojamURL });
+    await routeNavigation(d);
   });
 }
 
@@ -205,8 +217,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((containers) => sendResponse({ ok: true, containers }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
-  }
-  if (message.action === "updateAlwaysRoute") {
-    alwaysRoute = !!message.enabled;
   }
 });

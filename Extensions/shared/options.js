@@ -1,10 +1,14 @@
 document.addEventListener("DOMContentLoaded", async () => {
-  const toggle = document.getElementById("always-route");
-  const safariNotice = document.getElementById("safari-notice");
-
   // Feature-detect Safari (no webNavigation interception)
   const isSafari =
     chrome.runtime?.getURL("/")?.startsWith("safari-web-extension://");
+  const isFirefoxPackage = !!chrome.runtime.getManifest().browser_specific_settings?.gecko;
+  // Chrome exposes only explicit routing. The Firefox package also serves Orion.
+  if (!isFirefoxPackage && !isSafari) return;
+
+  document.getElementById("automatic-routing").hidden = false;
+  const toggle = document.getElementById("always-route");
+  const safariNotice = document.getElementById("safari-notice");
   if (isSafari || !chrome.webNavigation?.onBeforeNavigate) {
     toggle.disabled = true;
     safariNotice.style.display = "block";
@@ -15,9 +19,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   toggle.checked = alwaysRoute;
   toggle.addEventListener("change", async () => {
     await chrome.storage.local.set({ alwaysRoute: toggle.checked });
-    chrome.runtime.sendMessage({
-      action: "updateAlwaysRoute",
-      enabled: toggle.checked,
-    });
   });
 });
