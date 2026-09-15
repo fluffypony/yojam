@@ -86,10 +86,12 @@ The release script builds the app, signs it with Developer ID, notarises the DMG
 
 You need Xcode, XcodeGen, `create-dmg`, and the GitHub CLI. The signing Mac also needs:
 
-- A Developer ID Application certificate and separate provisioning profiles for the main app, Share Extension, Safari Web Extension, and `Yojam.app/Contents/Helpers/YojamNativeHost.app`. The helper needs explicit macOS Development and Developer ID profiles for `com.yojam.app.NativeHost`; both must authorise `group.org.yojam.shared`.
-- `ExportOptions.plist` in the project root, with the `developer-id` export method and your Apple team ID.
+- Apple Development and Developer ID Application certificates, plus separate provisioning profiles for the main app, Share Extension, Safari Web Extension, and `Yojam.app/Contents/Helpers/YojamNativeHost.app`.
+- `ExportOptions.plist` in the project root, copied from [ExportOptions.example.plist](ExportOptions.example.plist). Git ignores this file. Set `teamID` to your team and all four `provisioningProfiles` entries to your installed profile names. Keep `method` as `developer-id` and `signingStyle` as `manual`.
 - Notarisation credentials in the `YojamNotarize` Keychain profile. Set `YOJAM_NOTARIZE_PROFILE` if you use another profile.
 - The existing Sparkle EdDSA key in Keychain. Its public key must match `SUPublicEDKey` in `project.yml`. Back up this key securely: replacing it can prevent installed copies from accepting updates. `YOJAM_SPARKLE_PRIVATE_KEY_FILE` can select an explicit signing key file; the script checks that it matches too.
+
+For the helper's explicit App ID, `com.yojam.app.NativeHost`, create and install a macOS Development profile named `Yojam Native Host Development` and a Developer ID profile named `Yojam Native Host Developer ID`. Both profiles must authorise `group.org.yojam.shared`. The helper target uses manual signing with the `Apple Development` identity; Developer ID export uses the second profile. If you use different names, update the helper target's `PROVISIONING_PROFILE_SPECIFIER` in `project.yml` and its entry in `ExportOptions.plist` together.
 
 1. Update `MARKETING_VERSION` and increment `CURRENT_PROJECT_VERSION` in `project.yml`. Sparkle compares the build number, so it must increase with every release.
 2. Set the same version in `Extensions/chrome/manifest.json`, `Extensions/firefox/manifest.json`, and `Extensions/safari/manifest.json`.
