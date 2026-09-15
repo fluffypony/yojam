@@ -31,7 +31,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "registerProfile":
             // Explicit handshake so the extension can force registration.
             let response = NSExtensionItem()
-            response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
+            response.userInfo = [SFExtensionMessageKey: ["ok": true]]
             context.completeRequest(returningItems: [response])
         default:
             sendError(context, message: "Unknown action: \(action)")
@@ -73,9 +73,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         context.open(yojamURL) { success in
             let response = NSExtensionItem()
             if success {
-                response.userInfo = [SFExtensionMessageKey: ["status": "ok"]]
+                response.userInfo = [SFExtensionMessageKey: ["ok": true]]
             } else {
-                response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": "Failed to open URL"]]
+                response.userInfo = [SFExtensionMessageKey: ["ok": false, "error": "Failed to open URL"]]
             }
             ctx.completeRequest(returningItems: [response])
         }
@@ -110,7 +110,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
            let previewDict = try? JSONSerialization.jsonObject(with: previewData) as? [String: Any] {
             let response = NSExtensionItem()
             response.userInfo = [SFExtensionMessageKey: [
-                "status": "ok",
+                "ok": true,
                 "preview": previewDict
             ]]
             context.completeRequest(returningItems: [response])
@@ -121,7 +121,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private func sendError(_ context: NSExtensionContext, message: String) {
         let response = NSExtensionItem()
-        response.userInfo = [SFExtensionMessageKey: ["status": "error", "message": message]]
+        response.userInfo = [SFExtensionMessageKey: ["ok": false, "error": message]]
         context.completeRequest(returningItems: [response])
     }
 }
