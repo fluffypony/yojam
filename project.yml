@@ -68,8 +68,10 @@ targets:
       - target: YojamNativeHost
         embed: true
         codeSign: true
+        link: false
         copy:
-          destination: executables
+          destination: wrapper
+          subpath: Contents/Helpers
       - package: Sparkle
     info:
       path: Sources/Yojam/Resources/Info.plist
@@ -246,15 +248,22 @@ targets:
           cp "${SRCROOT}/Extensions/safari/manifest.json" "${RESOURCE_DIR}/manifest.json"
 
   YojamNativeHost:
-    type: tool
+    type: application
     platform: macOS
     sources:
       - path: Sources/YojamNativeHost
         excludes:
+          - Info.plist
           - YojamNativeHost.entitlements
     dependencies:
       - target: YojamCore
         embed: false
+    info:
+      path: Sources/YojamNativeHost/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSBackgroundOnly: true
     entitlements:
       path: Sources/YojamNativeHost/YojamNativeHost.entitlements
       properties:
@@ -266,9 +275,10 @@ targets:
         PRODUCT_NAME: YojamNativeHost
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Sources/YojamNativeHost/YojamNativeHost.entitlements
+        GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS:
-          - "@executable_path/../Frameworks"
+          - "@executable_path/../../../../Frameworks"
 
   YojamCLI:
     type: tool

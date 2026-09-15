@@ -74,7 +74,7 @@ final class NativeMessagingInstallerTests: IsolatedSettingsTestCase {
         reconcile(plan: try plan(ids: [firstID]), settingsStore: store, files: files.access)
         files.clearOperations()
 
-        let host = "/Applications/Moved Yojam.app/Contents/MacOS/YojamNativeHost"
+        let host = "/Applications/Moved Yojam.app/Contents/Helpers/YojamNativeHost.app/Contents/MacOS/YojamNativeHost"
         let after = try plan(ids: [firstID], hostPath: host)
         reconcile(plan: after, settingsStore: store, files: files.access)
         XCTAssertEqual(files.writes.count, 2)
@@ -249,6 +249,38 @@ final class NativeMessagingInstallerTests: IsolatedSettingsTestCase {
         XCTAssertNil(makeSettingsStore().lastNativeMessagingRegistrationKey)
     }
 
+    func testOnlyTheProvisionedHelperBundlePathIsResolved() throws {
+        let app = configDirectory.appendingPathComponent("Yojam.app")
+        let oldHost = app.appendingPathComponent("Contents/MacOS/YojamNativeHost")
+        try FileManager.default.createDirectory(at: oldHost.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("legacy helper".utf8).write(to: oldHost)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: oldHost.path)
+        XCTAssertNil(NativeMessagingInstaller.resolveHostPath(in: app))
+
+        let helper = app.appendingPathComponent("Contents/Helpers/YojamNativeHost.app/Contents/MacOS/YojamNativeHost")
+        try FileManager.default.createDirectory(at: helper.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("bundled helper".utf8).write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        XCTAssertEqual(NativeMessagingInstaller.resolveHostPath(in: app), helper.path)
+    }
+
+    @MainActor
+    func testUpgradeReplacesBareToolPathsInExistingManifests() throws {
+        let store = makeSettingsStore()
+        let files = MemoryFiles()
+        let before = try plan(ids: [firstID], hostPath: "/Applications/Yojam.app/Contents/MacOS/YojamNativeHost")
+        reconcile(plan: before, settingsStore: store, files: files.access)
+        files.clearOperations()
+        let after = try plan(ids: [firstID])
+
+        XCTAssertTrue(reconcile(plan: after, settingsStore: store, files: files.access))
+        XCTAssertEqual(files.writes.count, 2)
+        for browser in ["Chrome", "Firefox"] {
+            let path = try XCTUnwrap(json(browser, in: after, files: files)["path"] as? String)
+            XCTAssertTrue(path.contains("/Helpers/YojamNativeHost.app/Contents/MacOS/"))
+        }
+    }
+
     @MainActor
     func testFileAdapterCreatesUpdatesAndRemovesOnlyTemporaryManifests() throws {
         let store = makeSettingsStore()
@@ -286,7 +318,7 @@ final class NativeMessagingInstallerTests: IsolatedSettingsTestCase {
 
     private func plan(
         ids: [String],
-        hostPath: String = "/Applications/Yojam.app/Contents/MacOS/YojamNativeHost",
+        hostPath: String = "/Applications/Yojam.app/Contents/Helpers/YojamNativeHost.app/Contents/MacOS/YojamNativeHost",
         browsers: Set<String> = ["com.google.Chrome", "org.mozilla.firefox"]
     ) throws -> NativeMessagingInstaller.Plan {
         try NativeMessagingInstaller.makePlan(.init(

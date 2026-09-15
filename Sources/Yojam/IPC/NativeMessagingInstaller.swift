@@ -88,7 +88,7 @@ enum NativeMessagingInstaller {
     /// checks for missing or altered files without rewriting matching content.
     @MainActor
     static func reconcileInstalled(settingsStore: SettingsStore, force: Bool = false) {
-        guard let hostPath = resolveHostPath() else {
+        guard let hostPath = resolveHostPath(in: Bundle.main.bundleURL) else {
             YojamLogger.shared.log("Cannot locate YojamNativeHost binary in app bundle")
             return
         }
@@ -261,23 +261,12 @@ enum NativeMessagingInstaller {
 
     // MARK: - Private
 
-    private static func resolveHostPath() -> String? {
-        let bundle = Bundle.main
-        // xcodegen tool targets with `copy: destination: executables` go to
-        // Contents/MacOS. Check multiple locations for robustness.
-        let candidates = [
-            bundle.bundleURL.appendingPathComponent("Contents/MacOS/YojamNativeHost"),
-            bundle.bundleURL.appendingPathComponent("Contents/Helpers/YojamNativeHost"),
-            bundle.bundleURL.appendingPathComponent("Contents/MacOS/yojamnativehost"),
-        ]
-        for candidate in candidates {
-            if FileManager.default.isExecutableFile(atPath: candidate.path) {
-                return candidate.path
-            }
-        }
-        YojamLogger.shared.log(
-            "YojamNativeHost not found in any expected location: \(candidates.map(\.path))")
-        return nil
+    static func resolveHostPath(in appBundle: URL) -> String? {
+        // The helper needs its own app identity and provisioning profile to
+        // access the App Group without asking on every new native process.
+        let executable = appBundle.appendingPathComponent(
+            "Contents/Helpers/YojamNativeHost.app/Contents/MacOS/YojamNativeHost")
+        return FileManager.default.isExecutableFile(atPath: executable.path) ? executable.path : nil
     }
 
     private static func canonicalExtensionIds(_ ids: [String]) -> [String] {

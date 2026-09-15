@@ -102,7 +102,9 @@ require_profile_string_authorisation() {
 
 SHARE_EXTENSION="$APP/Contents/PlugIns/YojamShareExtension.appex"
 SAFARI_EXTENSION="$APP/Contents/PlugIns/YojamSafariExtension.appex"
-PROFILE_BUNDLES=("$APP" "$SHARE_EXTENSION" "$SAFARI_EXTENSION")
+NATIVE_HOST_APP="$APP/Contents/Helpers/YojamNativeHost.app"
+NATIVE_HOST="$NATIVE_HOST_APP/Contents/MacOS/YojamNativeHost"
+PROFILE_BUNDLES=("$APP" "$SHARE_EXTENSION" "$SAFARI_EXTENSION" "$NATIVE_HOST_APP")
 PROFILE_COUNT=0
 for BUNDLE in "${PROFILE_BUNDLES[@]}"; do
   [ -d "$BUNDLE" ] || {
@@ -137,13 +139,35 @@ for BUNDLE in "${PROFILE_BUNDLES[@]}"; do
     "Entitlements:com.apple.security.application-groups" \
     "Provisioning profile for $BUNDLE"
 
+  # App Group claims need a profile associated with this executable's App ID.
+  # A bare helper with only an application-groups entitlement can ask for
+  # access on every process launch because that association is missing.
+  PROFILE_STRING_ENTITLEMENTS=(
+    "com.apple.application-identifier"
+    "com.apple.developer.team-identifier"
+  )
   if [ "$BUNDLE" = "$APP" ]; then
+    PROFILE_STRING_ENTITLEMENTS+=("com.apple.developer.ubiquity-kvstore-identifier")
+  fi
+  for ENTITLEMENT in "${PROFILE_STRING_ENTITLEMENTS[@]}"; do
     require_profile_string_authorisation \
       "$SIGNED_ENTITLEMENTS" \
       "$DECODED_PROFILE" \
-      "com.apple.developer.ubiquity-kvstore-identifier" \
+      "$ENTITLEMENT" \
       "$BUNDLE"
-  fi
+  done
+
+  BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw -o - "$BUNDLE/Contents/Info.plist")
+  SIGNED_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :com.apple.application-identifier" "$SIGNED_ENTITLEMENTS")
+  case "$SIGNED_APP_ID" in
+    *."$BUNDLE_ID") ;;
+    *) echo "FAIL: Signed App ID does not match the bundle identifier for $BUNDLE"; exit 1 ;;
+  esac
+  SIGNING_IDENTIFIER=$(/usr/bin/codesign -d --verbose=2 "$BUNDLE" 2>&1 | /usr/bin/sed -n 's/^Identifier=//p')
+  [ "$SIGNING_IDENTIFIER" = "$BUNDLE_ID" ] || {
+    echo "FAIL: Signing identifier does not match the bundle identifier for $BUNDLE"
+    exit 1
+  }
 done
 echo "Validated $REQUIRED_APP_GROUP in $PROFILE_COUNT provisioning profiles"
 echo "Validated iCloud KVS provisioning profile authorisation"
@@ -168,6 +192,7 @@ done
 APP_INFO="$APP/Contents/Info.plist"
 SHARE_INFO="$SHARE_EXTENSION/Contents/Info.plist"
 SAFARI_INFO="$SAFARI_EXTENSION/Contents/Info.plist"
+NATIVE_HOST_INFO="$NATIVE_HOST_APP/Contents/Info.plist"
 APP_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP_INFO")
 APP_BUILD=$(plutil -extract CFBundleVersion raw -o - "$APP_INFO")
 
@@ -193,6 +218,25 @@ check_bundle_version() {
 echo "Checking embedded extension versions..."
 check_bundle_version "$SHARE_INFO" "Share extension"
 check_bundle_version "$SAFARI_INFO" "Safari extension"
+check_bundle_version "$NATIVE_HOST_INFO" "Native messaging helper"
+
+echo "Checking native messaging helper identity..."
+[ "$(plutil -extract CFBundleIdentifier raw -o - "$NATIVE_HOST_INFO")" = "com.yojam.app.NativeHost" ] || {
+  echo "FAIL: Native messaging helper bundle identifier is invalid"
+  exit 1
+}
+[ "$(plutil -extract LSBackgroundOnly raw -o - "$NATIVE_HOST_INFO")" = "true" ] || {
+  echo "FAIL: Native messaging helper must be a background-only app"
+  exit 1
+}
+[ -x "$NATIVE_HOST" ] || {
+  echo "FAIL: Native messaging helper executable is missing"
+  exit 1
+}
+[ ! -e "$APP/Contents/MacOS/YojamNativeHost" ] || {
+  echo "FAIL: Obsolete unprovisioned native host is still bundled"
+  exit 1
+}
 
 echo "Checking Safari Web Extension..."
 [ -d "$SAFARI_EXTENSION" ] || {
