@@ -29,24 +29,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  // Fetch and display preview
-  const preview = await previewInYojam(url, getSourceSentinel());
-  if (preview) {
-    status.textContent = preview.summary;
-  } else {
-    status.textContent = "Preview unavailable";
-  }
-
   openBtn.addEventListener("click", async () => {
     openBtn.disabled = true;
     status.textContent = "Routing...";
     try {
-      await chrome.runtime.sendMessage({ action: "route", url });
-      status.textContent = "Sent to Yojam";
-      setTimeout(() => window.close(), 500);
+      const response = await chrome.runtime.sendMessage({ action: "route", url });
+      if (response?.ok !== true ||
+          !["native", "protocol"].includes(response.transport)) {
+        throw new Error(response?.error || "Yojam returned an invalid response.");
+      }
+      if (response.transport === "native") {
+        status.textContent = "Sent to Yojam";
+        setTimeout(() => window.close(), 500);
+      } else {
+        status.textContent = "Confirm the request in your browser to open Yojam.";
+      }
     } catch (e) {
       status.textContent = "Failed: " + e.message;
       openBtn.disabled = false;
     }
   });
+
+  // A slow preview must not delay the Open button or overwrite its result.
+  const preview = await previewInYojam(url, getSourceSentinel());
+  if (!openBtn.disabled && !status.textContent) {
+    status.textContent = preview?.summary || "Preview unavailable";
+  }
 });

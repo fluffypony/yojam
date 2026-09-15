@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <style>
@@ -48,7 +48,7 @@
     button:disabled { background: #555; cursor: default; }
     .status {
       font-size: 11px;
-      color: #777;
+      color: #b3b3b3;
       text-align: center;
       margin-top: 8px;
     }
@@ -58,7 +58,7 @@
   <h1><img src="icons/48.png" alt=""> Yojam</h1>
   <div class="url-display" id="url-display">No tab URL</div>
   <button id="open-btn" disabled>Open in Yojam</button>
-  <div class="status" id="status"></div>
-  <script src="popup.js"></script>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

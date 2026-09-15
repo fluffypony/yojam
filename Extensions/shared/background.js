@@ -190,8 +190,8 @@ async function listContainers() {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "route" && message.url) {
     sendToYojam(message.url, getSourceSentinel(), message.container)
-      .then(() => sendResponse({ ok: true }))
-      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+      .then((transport) => sendResponse({ ok: true, transport }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
     return true; // async response
   }
   if (message.action === "open_in_container" && message.url && message.container) {

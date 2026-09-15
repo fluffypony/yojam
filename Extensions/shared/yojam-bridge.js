@@ -22,28 +22,50 @@ export function buildYojamURL(targetURL, sourceSentinel, container) {
 /**
  * Two-tier transport strategy:
  * 1. Try native messaging host (Chrome/Firefox only, no prompt, bidirectional).
- * 2. Fall back to opening a throwaway tab pointed at yojam:// (triggers
- *    the protocol-handler prompt on first use, closes automatically).
+ * 2. If native messaging is unavailable, open yojam:// in an active tab
+ *    and leave it open so the user can complete the browser's confirmation.
  *
  * @param {string} targetURL - The URL to route.
  * @param {string} sourceSentinel - The source app sentinel identifier.
+ * @returns {Promise<"native"|"protocol">} The transport used for the request.
  */
 export async function sendToYojam(targetURL, sourceSentinel, container) {
   // Try native messaging first (Chrome/Firefox only)
   if (typeof chrome !== "undefined" && chrome.runtime?.sendNativeMessage) {
+    let response;
+    let receivedResponse = false;
     try {
-      await chrome.runtime.sendNativeMessage("org.yojam.host", {
+      response = await chrome.runtime.sendNativeMessage("org.yojam.host", {
         action: "route",
         url: targetURL,
         source: sourceSentinel,
         container: container || undefined,
       });
-      return;
+      receivedResponse = true;
     } catch (_e) {
       // Native host not installed — fall through to yojam:// scheme.
       console.warn(
         "Yojam native host unavailable, falling back to yojam:// scheme"
       );
+    }
+
+    if (receivedResponse) {
+      // A reply means the host handled the request. Retrying through another
+      // transport could repeat an action or conceal the host's rejection.
+      if (!response || typeof response !== "object" ||
+          Array.isArray(response) || typeof response.ok !== "boolean" ||
+          (response.error != null && typeof response.error !== "string") ||
+          (response.ok && response.error != null)) {
+        throw new Error("Yojam returned an invalid response.");
+      }
+      if (!response.ok) {
+        throw new Error(
+          typeof response.error === "string" && response.error.trim()
+            ? response.error
+            : "Yojam could not open this link."
+        );
+      }
+      return "native";
     }
   }
 
@@ -55,10 +77,10 @@ export async function sendToYojam(targetURL, sourceSentinel, container) {
     ? "com.yojam.source.safari-extension"
     : sourceSentinel;
 
-  // Fall back to opening a yojam:// URL in a throwaway tab.
+  // Keep the confirmation visible until the user decides whether to continue.
   const url = buildYojamURL(targetURL, effectiveSentinel, container);
-  const tab = await chrome.tabs.create({ url, active: false });
-  setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 600);
+  await chrome.tabs.create({ url, active: true });
+  return "protocol";
 }
 
 /**
@@ -85,7 +107,10 @@ export async function previewInYojam(targetURL, sourceSentinel) {
         setTimeout(() => rej(new Error("preview timeout")), 1500)
       ),
     ]);
-    return resp?.ok ? resp.preview : null;
+    return resp?.ok === true && resp.preview &&
+      typeof resp.preview === "object" && typeof resp.preview.summary === "string"
+      ? resp.preview
+      : null;
   } catch (_e) {
     return null;
   }
