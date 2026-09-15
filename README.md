@@ -86,7 +86,7 @@ The release script builds the app, signs it with Developer ID, notarises the DMG
 
 You need Xcode, XcodeGen, `create-dmg`, and the GitHub CLI. The signing Mac also needs:
 
-- A Developer ID Application certificate and access to the app's provisioning profiles.
+- A Developer ID Application certificate and separate provisioning profiles for the main app, Share Extension, Safari Web Extension, and `Yojam.app/Contents/Helpers/YojamNativeHost.app`. The helper needs explicit macOS Development and Developer ID profiles for `com.yojam.app.NativeHost`; both must authorise `group.org.yojam.shared`.
 - `ExportOptions.plist` in the project root, with the `developer-id` export method and your Apple team ID.
 - Notarisation credentials in the `YojamNotarize` Keychain profile. Set `YOJAM_NOTARIZE_PROFILE` if you use another profile.
 - The existing Sparkle EdDSA key in Keychain. Its public key must match `SUPublicEDKey` in `project.yml`. Back up this key securely: replacing it can prevent installed copies from accepting updates. `YOJAM_SPARKLE_PRIVATE_KEY_FILE` can select an explicit signing key file; the script checks that it matches too.
