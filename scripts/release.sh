@@ -6,6 +6,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/release.sh [--skip-archive] [--skip-notarize]
+#   ./scripts/release.sh --check-extension-versions
 #
 # Prerequisites (one-time setup):
 #   1. Developer ID Application certificate in Keychain
@@ -19,14 +20,17 @@ set -euo pipefail
 #
 # The script reads version info from project.yml - bump
 # MARKETING_VERSION and CURRENT_PROJECT_VERSION there first.
+# Safari must match MARKETING_VERSION; Chrome and Firefox have separate releases.
 # ------------------------------------------------------------------
 
 SKIP_ARCHIVE=false
 SKIP_NOTARIZE=false
+CHECK_EXTENSION_VERSIONS=false
 for arg in "$@"; do
   case "$arg" in
     --skip-archive)  SKIP_ARCHIVE=true ;;
     --skip-notarize) SKIP_NOTARIZE=true ;;
+    --check-extension-versions) CHECK_EXTENSION_VERSIONS=true ;;
     *) echo "Unknown flag: $arg"; exit 1 ;;
   esac
 done
@@ -39,33 +43,43 @@ EXPORT_PATH="$BUILD_DIR/export"
 APP_PATH="$EXPORT_PATH/Yojam.app"
 EXPORT_OPTIONS="$PROJECT_DIR/ExportOptions.plist"
 
-RS_TEAM_ID="${RS_TEAM_ID:?Set RS_TEAM_ID to your Apple Developer Team ID}"
-KEYCHAIN_PROFILE="${YOJAM_NOTARIZE_PROFILE:-YojamNotarize}"
-SPARKLE_PRIVATE_KEY_FILE="${YOJAM_SPARKLE_PRIVATE_KEY_FILE:-}"
-if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
-  if [[ "$SPARKLE_PRIVATE_KEY_FILE" != /* ]]; then
-    SPARKLE_PRIVATE_KEY_FILE="$PROJECT_DIR/$SPARKLE_PRIVATE_KEY_FILE"
-  fi
-fi
-
-# Sparkle bin - check common locations
-SPARKLE_BIN=""
-for candidate in \
-  "$PROJECT_DIR/.build/artifacts/sparkle/Sparkle/bin" \
-  "$HOME/Library/Developer/Xcode/DerivedData"/Yojam-*/SourcePackages/artifacts/sparkle/Sparkle/bin \
-  "/usr/local/bin"; do
-  if [ -f "$candidate/sign_update" ]; then
-    SPARKLE_BIN="$candidate"
-    break
-  fi
-done
-
 # ---- Helpers ----
 
 step=0
 info()  { step=$((step + 1)); printf "\n\033[1;34m[%d] %s\033[0m\n" "$step" "$1"; }
 ok()    { printf "    \033[32m✓ %s\033[0m\n" "$1"; }
 fail()  { printf "    \033[31m✗ %s\033[0m\n" "$1"; exit 1; }
+
+check_extension_versions() {
+  /usr/bin/perl -MJSON::PP -e '
+    my ($project, $app_version) = @ARGV;
+    for my $browser (qw(chrome firefox safari)) {
+      my $path = "$project/Extensions/$browser/manifest.json";
+      open my $file, "<", $path
+        or die "FAIL: Cannot read $browser extension manifest.\n";
+      my $manifest = eval { local $/; decode_json(<$file>) };
+      die "FAIL: $browser extension manifest must be a JSON object.\n"
+        if $@ || ref($manifest) ne "HASH";
+      my $version = $manifest->{version};
+      # AMO permits one to four components, each with at most nine digits.
+      unless (defined($version) && !ref($version)
+          && encode_json($version) =~ /\A"/
+          && $version =~ /\A(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,3}\z/) {
+        die "FAIL: $browser extension version must be a string with one to four dot-separated integers, no leading zeros, and at most nine digits per integer.\n";
+      }
+      if ($browser eq "chrome") {
+        my @parts = split /\./, $version;
+        die "FAIL: Chrome extension version integers must be 0 to 65535 and must not all be zero.\n"
+          if (grep { $_ > 65535 } @parts) || !(grep { $_ > 0 } @parts);
+      }
+      if ($browser eq "safari" && $version ne $app_version) {
+        die "FAIL: Safari extension version $version does not match app version $app_version.\n";
+      }
+      print "    $browser extension: $version\n";
+    }
+  ' "$PROJECT_DIR" "$MARKETING_VERSION" || fail "Browser extension version validation failed"
+  ok "Browser extension versions are valid; Safari matches the app"
+}
 
 sparkle_command() {
   local command="$1"
@@ -146,8 +160,35 @@ ensure_update_signatures() {
 
 # ---- Extract version from project.yml ----
 
+[ -f "$PROJECT_DIR/project.yml" ] || fail "project.yml not found - run from repo root"
 MARKETING_VERSION=$(grep 'MARKETING_VERSION:' "$PROJECT_DIR/project.yml" | head -1 | awk '{print $2}' | tr -d '"')
 BUILD_NUMBER=$(grep 'CURRENT_PROJECT_VERSION:' "$PROJECT_DIR/project.yml" | head -1 | awk '{print $2}' | tr -d '"')
+check_extension_versions
+if [ "$CHECK_EXTENSION_VERSIONS" = true ]; then
+  exit 0
+fi
+
+RS_TEAM_ID="${RS_TEAM_ID:?Set RS_TEAM_ID to your Apple Developer Team ID}"
+KEYCHAIN_PROFILE="${YOJAM_NOTARIZE_PROFILE:-YojamNotarize}"
+SPARKLE_PRIVATE_KEY_FILE="${YOJAM_SPARKLE_PRIVATE_KEY_FILE:-}"
+if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
+  if [[ "$SPARKLE_PRIVATE_KEY_FILE" != /* ]]; then
+    SPARKLE_PRIVATE_KEY_FILE="$PROJECT_DIR/$SPARKLE_PRIVATE_KEY_FILE"
+  fi
+fi
+
+# Sparkle bin - check common locations
+SPARKLE_BIN=""
+for candidate in \
+  "$PROJECT_DIR/.build/artifacts/sparkle/Sparkle/bin" \
+  "$HOME/Library/Developer/Xcode/DerivedData"/Yojam-*/SourcePackages/artifacts/sparkle/Sparkle/bin \
+  "/usr/local/bin"; do
+  if [ -f "$candidate/sign_update" ]; then
+    SPARKLE_BIN="$candidate"
+    break
+  fi
+done
+
 DMG_NAME="Yojam-${MARKETING_VERSION}.dmg"
 DMG_PATH="$BUILD_DIR/$DMG_NAME"
 
@@ -160,7 +201,6 @@ echo ""
 
 info "Preflight checks"
 
-[ -f "$PROJECT_DIR/project.yml" ] || fail "project.yml not found - run from repo root"
 [ -f "$PROJECT_DIR/Package.resolved" ] || fail "Package.resolved not found"
 [ -f "$EXPORT_OPTIONS" ]          || fail "ExportOptions.plist not found (see release guide)"
 command -v xcodebuild >/dev/null  || fail "xcodebuild not found"
@@ -200,16 +240,6 @@ if [ -n "$SPARKLE_PRIVATE_KEY_FILE" ]; then
     || fail "Explicit Sparkle private key does not match project.yml"
   ok "Sparkle signing will use the explicit private key file"
 fi
-
-for manifest in \
-  "$PROJECT_DIR/Extensions/chrome/manifest.json" \
-  "$PROJECT_DIR/Extensions/firefox/manifest.json" \
-  "$PROJECT_DIR/Extensions/safari/manifest.json"; do
-  EXTENSION_VERSION=$(plutil -extract version raw -o - "$manifest")
-  [ "$EXTENSION_VERSION" = "$MARKETING_VERSION" ] \
-    || fail "$(basename "$(dirname "$manifest")") extension version $EXTENSION_VERSION does not match $MARKETING_VERSION"
-done
-ok "Browser extension versions match the app"
 
 # Check notarization credentials exist (dry run)
 if [ "$SKIP_NOTARIZE" = false ]; then
