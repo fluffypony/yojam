@@ -51,6 +51,17 @@ final class SourceAppSyncTests: XCTestCase {
             sourceApp: "com.apple.mail").matched)
     }
 
+    func testDelayedSourceKeyReplacesCachedGuardAtEqualTimestamp() throws {
+        let original = workRule()
+        let cachedGuard = try echoFromLegacyClient(original)
+        let restored = ICloudSourceAppCompatibility(rules: [original])
+            .restoring(cachedGuard, local: cachedGuard)
+        let merged = try XCTUnwrap(SyncConflictResolver.mergeRules(
+            local: [cachedGuard], remote: [restored],
+            preferringRemoteOnEqualTimestampForRuleIDs: [restored.id]).first)
+        XCTAssertEqual(merged.sourceApps, original.sourceApps)
+    }
+
     func testNewerLocalSourceEditWinsOverOlderBackup() throws {
         let original = workRule()
         let backup = ICloudSourceAppCompatibility(rules: [original])

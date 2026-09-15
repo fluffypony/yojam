@@ -669,6 +669,10 @@ final class ICloudSyncManager {
                             compatibilitySidecar?.containsRule($0.rule.id) != true
                         }
                         .map { $0.rule.id })
+                let restoredSourceRuleIds = Set(zip(records, restoredRemote).compactMap { record, rule in
+                    ICloudSourceAppCompatibility.hasLegacyGuard(record.rule)
+                        && !ICloudSourceAppCompatibility.hasLegacyGuard(rule) ? rule.id : nil
+                })
                 let restoredLegacyRuleIds = Set(
                     records.lazy
                         .filter(\.requiresLocalRewriteFields)
@@ -676,6 +680,7 @@ final class ICloudSyncManager {
                             compatibilitySidecar?.containsRule($0.rule.id) == true
                         }
                         .map { $0.rule.id })
+                    .union(restoredSourceRuleIds)
                 let localBuiltIns = allLocal.filter { $0.isBuiltIn }
                 let local = SyncConflictResolver.remapRuleBrowserTargets(
                     allLocal.filter { !$0.isBuiltIn },
