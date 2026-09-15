@@ -1,12 +1,3 @@
-import { previewInYojam } from "./yojam-bridge.js";
-
-function getSourceSentinel() {
-  if (typeof browser !== "undefined" && browser.runtime?.getBrowserInfo) {
-    return "com.yojam.source.firefox-extension";
-  }
-  return "com.yojam.source.chrome-extension";
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
   const urlDisplay = document.getElementById("url-display");
   const openBtn = document.getElementById("open-btn");
@@ -51,7 +42,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // A slow preview must not delay the Open button or overwrite its result.
-  const preview = await previewInYojam(url, getSourceSentinel());
+  let preview;
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "preview", url });
+    if (response?.ok === true) preview = response.preview;
+  } catch (_) {
+    // Routing remains available when the preview request cannot complete.
+  }
   if (!openBtn.disabled && !status.textContent) {
     status.textContent = preview?.summary || "Preview unavailable";
   }

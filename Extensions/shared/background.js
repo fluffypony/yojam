@@ -1,7 +1,8 @@
-import { sendToYojam, buildYojamURL } from "./yojam-bridge.js";
+import { sendToYojam, buildYojamURL, previewInYojam } from "./yojam-bridge.js";
 
 // Detect browser type for sentinel selection
 function getSourceSentinel() {
+  if (isSafari) return "com.yojam.source.safari-extension";
   if (typeof browser !== "undefined" && browser.runtime?.getBrowserInfo) {
     return "com.yojam.source.firefox-extension";
   }
@@ -200,6 +201,11 @@ async function listContainers() {
 // ---- Popup / Options Messages ----
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action === "preview" && message.url) {
+    previewInYojam(message.url, getSourceSentinel())
+      .then((preview) => sendResponse({ ok: preview !== null, preview }));
+    return true;
+  }
   if (message.action === "route" && message.url) {
     sendToYojam(message.url, getSourceSentinel(), message.container)
       .then((transport) => sendResponse({ ok: true, transport }))

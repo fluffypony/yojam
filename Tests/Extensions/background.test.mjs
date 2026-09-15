@@ -78,6 +78,53 @@ test("routing failure reaches the popup as a failure", async () => {
   assert.deepEqual(response, { ok: false, error: "Invalid URL" });
 });
 
+test("the worker owns native preview and derives its source", async () => {
+  chrome.runtime.getURL = path => `chrome-extension://test/${path}`;
+  delete globalThis.browser;
+  delete chrome.webNavigation;
+  delete chrome.storage;
+  await loadWorker();
+  const preview = { summary: "Would show picker (preselected: Safari)" };
+  chrome.runtime.sendNativeMessage = async (host, request) => {
+    assert.equal(host, "org.yojam.host");
+    assert.deepEqual(request, {
+      action: "preview", url: "https://example.com/", source: "com.yojam.source.chrome-extension",
+    });
+    return { ok: true, preview };
+  };
+  const response = await new Promise(resolve => {
+    assert.equal(chrome.runtime.onMessage.listeners[0](
+      { action: "preview", url: "https://example.com/", source: "caller-supplied-source" }, {}, resolve), true);
+  });
+  assert.deepEqual(response, { ok: true, preview });
+});
+
+test("a rejected native preview reaches the popup without claiming success", async () => {
+  await loadWorker();
+  resolveSettings({ alwaysRoute: false });
+  chrome.runtime.sendNativeMessage = async () => ({ ok: false, error: "Cannot load config" });
+  const response = await new Promise(resolve => {
+    chrome.runtime.onMessage.listeners[0](
+      { action: "preview", url: "https://example.com/" }, {}, resolve);
+  });
+  assert.deepEqual(response, { ok: false, preview: null });
+});
+
+test("the Safari worker supplies the Safari source for native preview", async () => {
+  chrome.runtime.getURL = path => `safari-web-extension://test/${path}`;
+  delete globalThis.browser;
+  await loadWorker();
+  chrome.runtime.sendNativeMessage = async (_host, request) => {
+    assert.equal(request.source, "com.yojam.source.safari-extension");
+    return { ok: true, preview: { summary: "Would show picker" } };
+  };
+  const response = await new Promise(resolve => {
+    chrome.runtime.onMessage.listeners[0](
+      { action: "preview", url: "https://example.com/" }, {}, resolve);
+  });
+  assert.equal(response.ok, true);
+});
+
 test("Chromium ignores saved automatic routing and registers no navigation listener", async () => {
   chrome.runtime.getURL = path => `chrome-extension://test/${path}`;
   delete globalThis.browser;
