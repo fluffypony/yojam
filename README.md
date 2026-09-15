@@ -313,7 +313,7 @@ The first time certain features are used, macOS will show:
 
 Yojam routes URLs on your Mac. Browser and Share extensions pass URLs to the local app, and the browser popup can request a local routing preview. Yojam has no analytics or crash-reporting service.
 
-Some features make network requests. Update checks contact yoj.am, and downloads may use hosts such as GitHub. Optional shortlink resolution contacts configured shortlink services, including during a preview. Optional iCloud sync sends browser configuration, routing rules, and related settings through your Apple account. Chrome's Always Route mode can let a page load before the hand-off to Yojam.
+Some features make network requests. Update checks contact yoj.am, and downloads may use hosts such as GitHub. Optional shortlink resolution contacts configured shortlink services, including during a preview. Optional iCloud sync sends browser configuration, routing rules, and related settings through your Apple account.
 
 The Mac app can keep recent URLs and learned browser choices locally; its settings let you manage or clear them. If you enable Clipboard Monitoring, it checks copied text for web URLs and offers to open them. It does not keep a clipboard history.
 
