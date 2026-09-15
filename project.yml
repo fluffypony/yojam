@@ -273,7 +273,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yojam.app.NativeHost
         PRODUCT_NAME: YojamNativeHost
-        CODE_SIGN_STYLE: Automatic
+        # A wildcard Mac profile does not authorise the shared App Group.
+        # Automatic Developer ID export derives the distribution profile from this App ID.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: Apple Development
+        PROVISIONING_PROFILE_SPECIFIER: Yojam Native Host Development
         CODE_SIGN_ENTITLEMENTS: Sources/YojamNativeHost/YojamNativeHost.entitlements
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
