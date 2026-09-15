@@ -132,7 +132,7 @@ For later public updates, build the extensions, obtain API credentials from the 
 ./Extensions/sign-firefox.sh
 ```
 
-This validates the extension for public distribution, submits it to the listed channel, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. If review exceeds the script's wait period, continue with that submission in the Developer Hub and download its signed XPI there. Check the [public listing](https://addons.mozilla.org/en-US/firefox/addon/b0f23b4f7148465da644/) and approval status before announcing availability. A signature alone does not confirm public publication.
+This validates the extension for public distribution, submits it to the listed channel, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. If review exceeds the script's wait period, continue with that submission in the Developer Hub and download its signed XPI there. Check the [public listing](https://addons.mozilla.org/en-US/firefox/addon/yojam/) and approval status before announcing availability. A signature alone does not confirm public publication.
 
 Keep versioned copies of signed Firefox packages and submitted Chrome ZIPs before another build: `Extensions/build.sh` recreates `dist/`. Record each extension's actual version in release notes when it differs from the Mac version.
 
@@ -255,7 +255,7 @@ Download `yojam-chrome.zip` from the [latest GitHub release](https://github.com/
 
 ### Firefox
 
-Use Firefox 140 or later. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), open it in Firefox, and confirm the installation. From Yojam 1.3.0, this download has a Mozilla signature and works in normal Firefox. Public store submissions use the [Yojam listing on AMO](https://addons.mozilla.org/en-US/firefox/addon/b0f23b4f7148465da644/); each version becomes available there after Mozilla approves it.
+Use Firefox 140 or later. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), open it in Firefox, and confirm the installation. From Yojam 1.3.0, this download has a Mozilla signature and works in normal Firefox. Public store submissions use the [Yojam listing on AMO](https://addons.mozilla.org/en-US/firefox/addon/yojam/); each version becomes available there after Mozilla approves it.
 
 Firefox asks for permission to transfer browsing activity because the extension passes links to Yojam on your Mac. It does not upload those links to a server. To route into a container, create the container in Firefox and enter its name in the rule's **Container** field. The name must match an existing container.
 
