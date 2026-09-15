@@ -78,6 +78,57 @@ Build and run from Xcode. On first launch, Yojam asks to become your default bro
 - The **Share Extension**, **Safari Web Extension**, and **native messaging host** are Xcode-only targets. `swift build` only builds the bare Yojam executable and `YojamCore` library.
 - `Extensions/build.sh` produces `dist/yojam-chrome.zip` and `dist/yojam-firefox.xpi` from the shared WebExtension source. Signing and store submission are out of scope for this script.
 
+## Release engineering
+
+The release script builds the app, signs it with Developer ID, notarises the DMG, and generates signed Sparkle updates. Publishing the website and GitHub release are separate steps.
+
+### Prepare the release
+
+You need Xcode, XcodeGen, `create-dmg`, and the GitHub CLI. The signing Mac also needs:
+
+- A Developer ID Application certificate and access to the app's provisioning profiles.
+- `ExportOptions.plist` in the project root, with the `developer-id` export method and your Apple team ID.
+- Notarisation credentials in the `YojamNotarize` Keychain profile. Set `YOJAM_NOTARIZE_PROFILE` if you use another profile.
+- The existing Sparkle EdDSA key in Keychain. Its public key must match `SUPublicEDKey` in `project.yml`. Back up this key securely: replacing it can prevent installed copies from accepting updates. `YOJAM_SPARKLE_PRIVATE_KEY_FILE` can select an explicit signing key file; the script checks that it matches too.
+
+1. Update `MARKETING_VERSION` and increment `CURRENT_PROJECT_VERSION` in `project.yml`. Sparkle compares the build number, so it must increase with every release.
+2. Set the same version in `Extensions/chrome/manifest.json`, `Extensions/firefox/manifest.json`, and `Extensions/safari/manifest.json`.
+3. Run `swift test`, then build the app with Xcode and test the changed flows. Check the bundled integrations as well: the Swift package alone does not build them.
+4. Commit the release changes. Keep `Package.resolved` committed; the release build uses its pinned dependencies.
+
+### Build and sign
+
+Keep the previous release DMGs in `build/releases/` so Sparkle can generate delta updates. On a fresh checkout, copy those DMGs from the published releases before you build.
+
+```bash
+export RS_TEAM_ID="YOUR_APPLE_TEAM_ID"
+./scripts/release.sh
+```
+
+The script validates the app bundle and signatures, checks the exported version, notarises and staples the DMG, then generates the appcast. Stop if any step fails. `--skip-archive` reuses an existing archive and checks its version; `--skip-notarize` is for local checks, not a public release.
+
+The outputs are:
+
+- `build/Yojam-<version>.dmg`, the signed and notarised installer.
+- `build/releases/appcast.xml`, with the version, download URLs, file lengths, and Sparkle signatures.
+- The DMGs and any `.delta` files in `build/releases/` that the appcast references. The script signs and verifies these update files.
+- `Extensions/dist/yojam-chrome.zip` and `Extensions/dist/yojam-firefox.xpi`. The Firefox XPI from this script is unsigned; Mozilla signing is a separate step.
+
+### Publish and verify
+
+1. Tag the release commit as `v<version>` and push the commit and tag.
+2. Publish the versioned DMG and every delta referenced by the appcast at `https://yoj.am/releases/`. Keep older files available for clients that cached an earlier feed.
+3. Replace `https://yoj.am/yojam.dmg` with the new DMG and publish the generated feed at `https://yoj.am/appcast.xml`. Make the download files available before the feed, or deploy them together atomically. Preserve the generated `/releases/` enclosure URLs and signatures.
+4. Create the GitHub release for the tag. Attach the DMG and both extension packages, and include release notes with any installation requirements.
+5. Check the live feed and all its enclosure URLs. Verify that the hosted DMG has the same SHA-256 hash as the local release. Open an older installed version, use *Check for Updates*, and complete the update. Check the hourly update reminder too, including Preferences when the menu bar icon is hidden.
+6. Once the downloads are live, open the Homebrew cask update:
+
+   ```bash
+   brew bump --open-pr yojam
+   ```
+
+   Check the resulting pull request for the version, download URL, and SHA-256 hash. If a pull request already exists, check that one instead of opening a duplicate.
+
 ## How it works
 
 When you click a link anywhere on your Mac, Yojam processes it through a pipeline:
