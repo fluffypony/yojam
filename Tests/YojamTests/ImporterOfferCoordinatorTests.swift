@@ -87,18 +87,14 @@ final class ImporterOfferCoordinatorTests: XCTestCase {
 }
 
 @MainActor
-final class ImporterOfferPersistenceTests: XCTestCase {
+final class ImporterOfferPersistenceTests: IsolatedSettingsTestCase {
     func testCurrentOfferCompletionPersists() throws {
-        let suiteName = "ImporterOfferPersistenceTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = SettingsStore(defaults: defaults)
+        let store = makeSettingsStore()
         XCTAssertFalse(store.hasCompletedCurrentImporterOffer)
 
         store.completeCurrentImporterOffer()
 
-        let reloaded = SettingsStore(defaults: defaults)
+        let reloaded = makeSettingsStore()
         XCTAssertTrue(reloaded.hasCompletedCurrentImporterOffer)
         XCTAssertEqual(
             reloaded.completedImporterOfferVersion,

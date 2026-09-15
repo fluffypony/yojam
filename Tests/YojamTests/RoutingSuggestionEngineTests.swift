@@ -2,10 +2,10 @@ import XCTest
 @testable import Yojam
 import YojamCore
 
-final class RoutingSuggestionEngineTests: XCTestCase {
+final class RoutingSuggestionEngineTests: IsolatedSettingsTestCase {
     @MainActor
     func testNoSuggestionBelowThreshold() {
-        let engine = RoutingSuggestionEngine()
+        let engine = makeRoutingSuggestionEngine()
         engine.clearAll()
         engine.recordChoice(domain: "example.com", entryId: "browser-a")
         engine.recordChoice(domain: "example.com", entryId: "browser-a")
@@ -15,7 +15,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
 
     @MainActor
     func testSuggestionAfterThreshold() {
-        let engine = RoutingSuggestionEngine()
+        let engine = makeRoutingSuggestionEngine()
         engine.clearAll()
         for _ in 0..<4 {
             engine.recordChoice(domain: "test.com", entryId: "browser-x")
@@ -25,7 +25,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
 
     @MainActor
     func testNoSuggestionWhenSplit() {
-        let engine = RoutingSuggestionEngine()
+        let engine = makeRoutingSuggestionEngine()
         engine.clearAll()
         // 2 choices for A, 2 for B — total 4 but neither > 70%
         engine.recordChoice(domain: "split.com", entryId: "a")
@@ -37,7 +37,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
 
     @MainActor
     func testClearAll() {
-        let engine = RoutingSuggestionEngine()
+        let engine = makeRoutingSuggestionEngine()
         for _ in 0..<5 {
             engine.recordChoice(domain: "clear.com", entryId: "x")
         }
@@ -48,13 +48,13 @@ final class RoutingSuggestionEngineTests: XCTestCase {
 
     @MainActor
     func testUnknownDomainReturnsNil() {
-        let engine = RoutingSuggestionEngine()
+        let engine = makeRoutingSuggestionEngine()
         XCTAssertNil(engine.suggestion(for: "never-seen.com"))
     }
 
     @MainActor
     func testPersistedPreferenceEmitsConfigMirrorChangeOnce() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let defaults = store.sharedStore.defaults
         let key = SharedRoutingStore.Keys.learnedDomainPreferences
         let originalData = defaults.data(forKey: key)
@@ -71,7 +71,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
                 defaults.removeObject(forKey: key)
             }
         }
-        let engine = RoutingSuggestionEngine {
+        let engine = makeRoutingSuggestionEngine {
             store.configMirrorDataDidChange.send()
         }
 
@@ -87,7 +87,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
 
     @MainActor
     func testReloadCancelsPendingSaveAndKeepsImportedPreferences() async throws {
-        let defaults = SharedRoutingStore().defaults
+        let defaults = makeSharedStore().defaults
         let key = SharedRoutingStore.Keys.learnedDomainPreferences
         let originalData = defaults.data(forKey: key)
         defer {
@@ -98,7 +98,7 @@ final class RoutingSuggestionEngineTests: XCTestCase {
             }
         }
         defaults.removeObject(forKey: key)
-        let engine = RoutingSuggestionEngine(saveDelay: 0.05)
+        let engine = makeRoutingSuggestionEngine(saveDelay: 0.05)
         engine.recordChoice(domain: "pending.invalid", entryId: "browser-a")
 
         let imported = ["imported.invalid": ["browser-b": 3]]

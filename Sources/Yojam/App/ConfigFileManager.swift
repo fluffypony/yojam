@@ -20,6 +20,7 @@ final class ConfigFileManager {
     private(set) var configPath: URL
     private var fsSource: DispatchSourceFileSystemObject?
     private let settingsStore: SettingsStore
+    private let fallbackConfigPath: URL
     private let onImport: (() -> Void)?
     private var pathSubscription: AnyCancellable?
     private var configSubscription: AnyCancellable?
@@ -39,11 +40,11 @@ final class ConfigFileManager {
         configPath(forRawPath: settingsStore.configFilePath)
     }
 
-    private static func configPath(forRawPath rawPath: String?) -> URL {
+    private static func configPath(forRawPath rawPath: String?, fallback: URL = defaultConfigPath) -> URL {
         guard let rawPath = rawPath?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !rawPath.isEmpty else {
-            return defaultConfigPath
+            return fallback
         }
         return URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
             .standardizedFileURL
@@ -56,15 +57,17 @@ final class ConfigFileManager {
 
     init(
         settingsStore: SettingsStore,
+        defaultConfigPath: URL = ConfigFileManager.defaultConfigPath,
         writeDelay: TimeInterval = 0.3,
         onImport: (() -> Void)? = nil,
         onWrite: (() -> Void)? = nil
     ) {
         self.settingsStore = settingsStore
+        self.fallbackConfigPath = defaultConfigPath
         self.writeDelay = writeDelay
         self.onImport = onImport
         self.onWrite = onWrite
-        self.configPath = Self.configPath(for: settingsStore)
+        self.configPath = Self.configPath(forRawPath: settingsStore.configFilePath, fallback: defaultConfigPath)
         self.pathSubscription = settingsStore.$configFilePath
             .dropFirst()
             .sink { [weak self] rawPath in
@@ -108,7 +111,7 @@ final class ConfigFileManager {
     }
 
     private func switchToConfiguredPath(_ rawPath: String?) {
-        let newPath = Self.configPath(forRawPath: rawPath)
+        let newPath = Self.configPath(forRawPath: rawPath, fallback: fallbackConfigPath)
         guard newPath != configPath else { return }
         fsSource?.cancel()
         fsSource = nil

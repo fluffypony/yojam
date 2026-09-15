@@ -2,10 +2,10 @@ import XCTest
 @testable import Yojam
 import YojamCore
 
-final class RuleEngineTests: XCTestCase {
+final class RuleEngineTests: IsolatedSettingsTestCase {
     @MainActor
     func testUnavailableBuiltInRuleKeepsPortableEnabledState() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         let rule = Rule(
@@ -25,7 +25,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testRuleEngineMigratesOnlyUnstampedBuiltInDisable() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         let userModifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -60,7 +60,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testResetBuiltInPreservesDisabledStateAcrossReload() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         store.saveRules(BuiltInRules.all)
@@ -81,7 +81,7 @@ final class RuleEngineTests: XCTestCase {
         let rule = Rule(
             name: "Test", matchType: .domain, pattern: "example.com",
             targetBundleId: "com.test", targetAppName: "Test")
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         XCTAssertTrue(engine.matches(
             url: URL(string: "https://example.com/path")!, rule: rule))
         XCTAssertFalse(engine.matches(
@@ -93,7 +93,7 @@ final class RuleEngineTests: XCTestCase {
         let rule = Rule(
             name: "Test", matchType: .domainSuffix, pattern: "example.com",
             targetBundleId: "com.test", targetAppName: "Test")
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         XCTAssertTrue(engine.matches(
             url: URL(string: "https://example.com/path")!, rule: rule))
         XCTAssertTrue(engine.matches(
@@ -107,7 +107,7 @@ final class RuleEngineTests: XCTestCase {
         let rule = Rule(
             name: "Test", matchType: .urlContains, pattern: "zoom.us/j/",
             targetBundleId: "com.test", targetAppName: "Test")
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         XCTAssertTrue(engine.matches(
             url: URL(string: "https://zoom.us/j/123")!, rule: rule))
         XCTAssertFalse(engine.matches(
@@ -120,7 +120,7 @@ final class RuleEngineTests: XCTestCase {
             name: "Test", matchType: .regex,
             pattern: #"^https://github\.com/[^/]+/[^/]+/pull/"#,
             targetBundleId: "com.test", targetAppName: "Test")
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         XCTAssertTrue(engine.matches(
             url: URL(string: "https://github.com/user/repo/pull/42")!,
             rule: rule))
@@ -137,7 +137,7 @@ final class RuleEngineTests: XCTestCase {
             targetBundleId: "com.google.Chrome",
             targetAppName: "Chrome",
             sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         engine.rules = [rule]
         XCTAssertNil(engine.evaluate(
             URL(string: "https://github.com/repo")!,
@@ -152,7 +152,7 @@ final class RuleEngineTests: XCTestCase {
             targetBundleId: "/bin/echo",
             targetAppName: "Echo",
             sourceApps: [RuleSourceApp(bundleId: "com.tinyspeck.slackmacgap")])
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         engine.rules = [rule]
         XCTAssertEqual(engine.evaluate(
             URL(string: "https://github.com/repo")!,
@@ -161,7 +161,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testPriorityOrderingCanPlaceBuiltInBeforeUserRule() {
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         let userRule = Rule(
             name: "User", matchType: .urlContains, pattern: "zoom.us/j/",
             targetBundleId: "com.apple.Safari", targetAppName: "Safari",
@@ -177,7 +177,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testPriorityOrdering() {
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         let low = Rule(
             name: "Low", matchType: .domainSuffix, pattern: "example.com",
             targetBundleId: "com.a", targetAppName: "A", priority: 10)
@@ -191,7 +191,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testMoveRuleReindexesPrioritiesAcrossBuiltInAndUserRules() {
-        let engine = RuleEngine(settingsStore: SettingsStore())
+        let engine = RuleEngine(settingsStore: makeSettingsStore())
         let slack = Rule(
             name: "All Slack", matchType: .all, pattern: "",
             targetBundleId: "org.mozilla.firefox", targetAppName: "Firefox",
@@ -212,7 +212,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testImportedRulesRunBeforeBuiltInsAndKeepSourceOrder() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         let existing = Rule(
@@ -247,7 +247,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testDuplicateRulePreservesURLNormalizationAndSourceApps() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         let original = Rule(
@@ -274,7 +274,7 @@ final class RuleEngineTests: XCTestCase {
 
     @MainActor
     func testChangingImportedFinickyMatchMakesRuleUserScoped() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
         let original = Rule(

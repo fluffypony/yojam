@@ -11,11 +11,12 @@ final class RoutingSuggestionEngine: ObservableObject {
     private let saveDebouncer: Debouncer
 
     init(
+        sharedDefaults: UserDefaults = SharedRoutingStore().defaults,
         saveDelay: TimeInterval = 2.0,
         onPersistedChange: @escaping @MainActor () -> Void = {}
     ) {
         self.onPersistedChange = onPersistedChange
-        self.sharedDefaults = SharedRoutingStore().defaults
+        self.sharedDefaults = sharedDefaults
         self.saveDebouncer = Debouncer(delay: saveDelay)
         reloadFromDefaults()
     }

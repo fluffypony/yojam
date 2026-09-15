@@ -4,7 +4,7 @@ import XCTest
 /// Tests for RoutingService.decide covering activation mode × rule match ×
 /// source-app filter × mailto × forced browser × picker fallback.
 /// Uses JSON-style inline fixture data.
-final class RoutingServiceDecisionTests: XCTestCase {
+final class RoutingServiceDecisionTests: IsolatedRoutingTestCase {
 
     // MARK: - Helpers
 
@@ -840,7 +840,7 @@ final class RoutingServiceDecisionTests: XCTestCase {
     // MARK: - RoutingSnapshotLoader
 
     func testSnapshotLoaderReturnsConfigFromEmptyDefaults() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let hostKey = SharedRoutingStore.Keys.shortlinkResolutionHosts
         let modeKey = SharedRoutingStore.Keys.shortlinkResolutionMode
         let oldHosts = store.defaults.object(forKey: hostKey)

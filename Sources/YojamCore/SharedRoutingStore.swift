@@ -18,25 +18,34 @@ public final class SharedRoutingStore: ObservableObject, @unchecked Sendable {
     public static let suiteName = "group.org.yojam.shared"
 
     public let defaults: UserDefaults
+    private let defaultsDomainName: String?
 
-    /// Whether the App Group suite was successfully opened.
-    /// False means we fell back to .standard (only expected during swift test).
+    /// Whether this store uses the production App Group suite.
+    /// False for an injected suite or an unsigned-build fallback to .standard.
     public let isUsingAppGroup: Bool
 
     /// - Parameter requireAppGroup: When `true`, crashes if the App Group
     ///   entitlement is missing. Use `true` in signed binaries (native host,
     ///   CLI) and `false` only in test/unsigned builds.
-    public init(requireAppGroup: Bool = false) {
-        if let suite = UserDefaults(suiteName: SharedRoutingStore.suiteName) {
+    public init(suiteName: String = SharedRoutingStore.suiteName, requireAppGroup: Bool = false) {
+        if let suite = UserDefaults(suiteName: suiteName) {
             self.defaults = suite
-            self.isUsingAppGroup = true
+            self.defaultsDomainName = suiteName
+            self.isUsingAppGroup = suiteName == SharedRoutingStore.suiteName
         } else {
             if requireAppGroup {
                 fatalError("SharedRoutingStore: App Group '\(SharedRoutingStore.suiteName)' unavailable — check entitlements")
             }
             os_log(.error, "SharedRoutingStore: App Group unavailable, falling back to .standard (test-only)")
             self.defaults = UserDefaults.standard
+            self.defaultsDomainName = Bundle.main.bundleIdentifier
             self.isUsingAppGroup = false
+        }
+    }
+
+    public func removeAll() {
+        if let defaultsDomainName {
+            defaults.removePersistentDomain(forName: defaultsDomainName)
         }
     }
 

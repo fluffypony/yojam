@@ -1,6 +1,21 @@
 import SwiftUI
 
 @main
+enum YojamEntryPoint {
+    @MainActor
+    static func main() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            // Hosted tests need an AppKit run loop, without Yojam's live stores
+            // or launch-time system registrations.
+            _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+            return
+        }
+        #endif
+        YojamApp.main()
+    }
+}
+
 struct YojamApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow

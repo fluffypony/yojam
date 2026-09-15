@@ -73,9 +73,11 @@ struct PreferencesRoute: Equatable {
 final class SettingsStore: ObservableObject {
     /// App-only settings (launch at login, Quick Start, clipboard, Sparkle, etc.)
     private let defaults: UserDefaults
+    private let defaultsDomainName: String?
+    private let updateLoginItem: (Bool) throws -> Void
     /// Routing-relevant settings shared via App Group with extensions.
     /// Per hard-cut policy: no fallback to .standard for routing data.
-    let sharedStore = SharedRoutingStore()
+    let sharedStore: SharedRoutingStore
     private var sharedDefaults: UserDefaults { sharedStore.defaults }
     private var isRevertingLaunchAtLogin = false
     private var isCanonicalisingShortlinkHosts = false
@@ -172,11 +174,7 @@ final class SettingsStore: ObservableObject {
         didSet {
             guard !isRevertingLaunchAtLogin else { return }
             do {
-                if launchAtLogin {
-                    try SMAppService.mainApp.register()
-                } else {
-                    try SMAppService.mainApp.unregister()
-                }
+                try updateLoginItem(launchAtLogin)
                 defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
                 configMirrorDataDidChange.send()
             } catch {
@@ -384,8 +382,22 @@ final class SettingsStore: ObservableObject {
             Self.currentImporterOfferVersion)
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        defaultsDomainName: String? = Bundle.main.bundleIdentifier,
+        sharedStore: SharedRoutingStore = SharedRoutingStore(),
+        updateLoginItem: @escaping (Bool) throws -> Void = { enabled in
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        }
+    ) {
         self.defaults = defaults
+        self.defaultsDomainName = defaultsDomainName
+        self.sharedStore = sharedStore
+        self.updateLoginItem = updateLoginItem
         // App-only defaults
         let d = defaults
         d.register(defaults: [
@@ -977,11 +989,11 @@ final class SettingsStore: ObservableObject {
 
     func resetToDefaults() {
         // Clear app-only settings
-        if let domain = Bundle.main.bundleIdentifier {
+        if let domain = defaultsDomainName {
             defaults.removePersistentDomain(forName: domain)
         }
         // Clear shared routing settings
-        sharedDefaults.removePersistentDomain(forName: SharedRoutingStore.suiteName)
+        sharedStore.removeAll()
         self.isEnabled = true
         self.activationMode = .always
         self.defaultSelectionBehavior = .alwaysFirst

@@ -1,10 +1,10 @@
 import XCTest
 @testable import Yojam
 
-final class UTMStripperTests: XCTestCase {
+final class UTMStripperTests: IsolatedSettingsTestCase {
     @MainActor
     func testStripsUTM() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string:
             "https://example.com/page?utm_source=twitter&utm_medium=social&id=42")!
@@ -15,7 +15,7 @@ final class UTMStripperTests: XCTestCase {
 
     @MainActor
     func testRemovesAllQueryWhenAllStripped() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string:
             "https://example.com/page?utm_source=twitter&fbclid=abc")!
@@ -26,7 +26,7 @@ final class UTMStripperTests: XCTestCase {
 
     @MainActor
     func testPreservesCleanURL() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string: "https://example.com/page?id=42&name=test")!
         XCTAssertEqual(
@@ -35,7 +35,7 @@ final class UTMStripperTests: XCTestCase {
 
     @MainActor
     func testCaseInsensitiveStripping() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string:
             "https://example.com/page?UTM_SOURCE=twitter&UTM_Medium=social&id=42")!
@@ -46,7 +46,7 @@ final class UTMStripperTests: XCTestCase {
 
     @MainActor
     func testHandlesURLWithNoQuery() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string: "https://example.com/page")!
         XCTAssertEqual(
@@ -55,7 +55,7 @@ final class UTMStripperTests: XCTestCase {
 
     @MainActor
     func testHandlesURLWithFragment() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let stripper = UTMStripper(settingsStore: store)
         let url = URL(string:
             "https://example.com/page?utm_source=x&id=1#section")!

@@ -2,10 +2,10 @@ import XCTest
 @testable import YojamCore
 
 @MainActor
-final class SharedRoutingStoreTests: XCTestCase {
+final class SharedRoutingStoreTests: IsolatedRoutingTestCase {
     func testStoreInitializes() {
-        let store = SharedRoutingStore()
-        // In test environment without entitlements, falls back to .standard
+        let store = makeSharedStore()
+        // Use a separate suite even when the test host has App Group entitlements.
         XCTAssertNotNil(store.defaults)
     }
 
@@ -62,7 +62,7 @@ final class SharedRoutingStoreTests: XCTestCase {
     }
 
     func testReadWriteRoundTripString() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let key = "test_roundtrip_string_\(UUID().uuidString)"
         store.defaults.set("hello", forKey: key)
         XCTAssertEqual(store.defaults.string(forKey: key), "hello")
@@ -70,7 +70,7 @@ final class SharedRoutingStoreTests: XCTestCase {
     }
 
     func testReadWriteRoundTripBool() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let key = "test_roundtrip_bool_\(UUID().uuidString)"
         store.defaults.set(true, forKey: key)
         XCTAssertTrue(store.defaults.bool(forKey: key))
@@ -78,7 +78,7 @@ final class SharedRoutingStoreTests: XCTestCase {
     }
 
     func testReadWriteRoundTripData() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let key = "test_roundtrip_data_\(UUID().uuidString)"
         let data = "test payload".data(using: .utf8)!
         store.defaults.set(data, forKey: key)
@@ -87,7 +87,7 @@ final class SharedRoutingStoreTests: XCTestCase {
     }
 
     func testReadWriteRoundTripArray() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let key = "test_roundtrip_array_\(UUID().uuidString)"
         let array = ["utm_source", "fbclid", "gclid"]
         store.defaults.set(array, forKey: key)
@@ -96,25 +96,19 @@ final class SharedRoutingStoreTests: XCTestCase {
     }
 
     func testMissingKeyReturnsNil() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let key = "nonexistent_key_\(UUID().uuidString)"
         XCTAssertNil(store.defaults.string(forKey: key))
         XCTAssertNil(store.defaults.data(forKey: key))
     }
 
     func testIsUsingAppGroupFlagReported() {
-        let store = SharedRoutingStore()
-        // In test environment, the App Group may or may not be available
-        // depending on code signing. Just verify the flag is set consistently.
-        if UserDefaults(suiteName: SharedRoutingStore.suiteName) != nil {
-            XCTAssertTrue(store.isUsingAppGroup)
-        } else {
-            XCTAssertFalse(store.isUsingAppGroup)
-        }
+        let store = makeSharedStore()
+        XCTAssertFalse(store.isUsingAppGroup)
     }
 
     func testLocalMachineIdentifierPersists() {
-        let store = SharedRoutingStore()
+        let store = makeSharedStore()
         let first = store.localMachineIdentifier
         let second = store.localMachineIdentifier
         XCTAssertFalse(first.isEmpty)

@@ -3,20 +3,54 @@ import Combine
 @testable import Yojam
 import YojamCore
 
-final class SettingsStoreTests: XCTestCase {
+final class SettingsStoreTests: IsolatedSettingsTestCase {
+    @MainActor
+    func testResetUsesInjectedDomainsAndLoginItemAction() {
+        let otherSuite = "org.yojam.tests.unrelated.\(UUID().uuidString)"
+        let other = UserDefaults(suiteName: otherSuite)!
+        defer { other.removePersistentDomain(forName: otherSuite) }
+        other.set("keep", forKey: "sentinel")
+        var loginChanges: [Bool] = []
+        let store = makeSettingsStore { loginChanges.append($0) }
+        let appDefaults = UserDefaults(suiteName: appSuiteName)!
+        appDefaults.set("remove", forKey: "sentinel")
+        store.sharedStore.defaults.set("remove", forKey: "sentinel")
+
+        store.resetToDefaults()
+
+        XCTAssertNil(appDefaults.string(forKey: "sentinel"))
+        XCTAssertNil(store.sharedStore.defaults.string(forKey: "sentinel"))
+        XCTAssertEqual(other.string(forKey: "sentinel"), "keep")
+        XCTAssertEqual(loginChanges, [false])
+    }
+
+    @MainActor
+    func testClearingCustomConfigPathUsesInjectedDefaultDirectory() throws {
+        let store = makeSettingsStore()
+        store.configFilePath = configDirectory.appendingPathComponent("custom.json").path
+        let manager = makeConfigFileManager(settingsStore: store)
+        store.configFilePath = nil
+
+        let expected = configDirectory.appendingPathComponent("config.json")
+        XCTAssertEqual(manager.configPath, expected)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path))
+        let saved = try JSONDecoder().decode(SettingsExport.self, from: Data(contentsOf: expected))
+        XCTAssertEqual(saved.activationMode, store.activationMode)
+    }
+
     @MainActor
     func testFirstLaunchKeyPersistence() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let initial = store.isFirstLaunch
         store.isFirstLaunch = false
-        let store2 = SettingsStore()
+        let store2 = makeSettingsStore()
         XCTAssertFalse(store2.isFirstLaunch)
         store.isFirstLaunch = initial
     }
 
     @MainActor
     func testResetToDefaultsUpdatesInMemory() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         store.soundEffectsEnabled = true
         store.verticalThreshold = 15
         store.globalUTMStrippingEnabled = true
@@ -32,7 +66,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testImportExportRoundTrip() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         store.verticalThreshold = 12
         store.soundEffectsEnabled = false
         store.debugLoggingEnabled = true
@@ -51,7 +85,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testShortlinkPolicyRoundTripsThroughSettingsExport() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalEnabled = store.shortlinkResolutionEnabled
         let originalHosts = store.shortlinkResolutionHosts
         let originalMode = store.shortlinkResolutionMode
@@ -80,7 +114,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLegacySettingsExportUsesOriginalYojamShortlinkPolicy() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         var object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: store.exportJSON()) as? [String: Any])
         object.removeValue(forKey: "shortlinkResolutionEnabled")
@@ -100,7 +134,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLegacySettingsImportKeepsCurrentShortlinkPolicy() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalEnabled = store.shortlinkResolutionEnabled
         let originalHosts = store.shortlinkResolutionHosts
         let originalMode = store.shortlinkResolutionMode
@@ -129,7 +163,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testCanonicalShortlinkHostsPersistAndPublishRoutingChange() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalHosts = store.shortlinkResolutionHosts
         let defaults = store.sharedStore.defaults
         let key = SharedRoutingStore.Keys.shortlinkResolutionHosts
@@ -157,7 +191,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testICloudScalarSettingsPublishRoutingChanges() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalClipboard = store.clipboardMonitoringEnabled
         let originalDebug = store.debugLoggingEnabled
         let originalInterval = store.periodicRescanInterval
@@ -179,7 +213,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLoadRulesMergesNewBuiltIns() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let partial = Array(BuiltInRules.all.prefix(3))
         store.saveRules(partial)
         let loaded = store.loadRules()
@@ -188,7 +222,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLoadRulesAddsAppNotionBuiltInToOlderSavedRules() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
 
@@ -204,7 +238,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testSaveBrowsersRoundTrip() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let original = store.loadBrowsers()
         let browsers = [
             BrowserEntry(bundleIdentifier: "com.test.a", displayName: "A"),
@@ -220,7 +254,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testSavePhoneClientsRoundTrip() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let original = store.loadPhoneClients()
         defer { store.savePhoneClients(original) }
 
@@ -236,7 +270,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testGlobalRewriteLoadOnlyDeduplicatesExactBehaviour() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let original = store.loadGlobalRewriteRules()
         defer { store.saveGlobalRewriteRules(original) }
 
@@ -310,7 +344,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLoadRulesUpdatesBuiltInDefinitions() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         // Save built-in rules with one disabled
         var rules = BuiltInRules.all
         rules[0].enabled = false
@@ -327,7 +361,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLoadRulesDropsRemovedBuiltIns() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         // Create a fake saved rule with a removed built-in ID
         var rules = BuiltInRules.all
         let removedId = UUID(uuidString: "550e8400-e29b-41d4-a716-44665544000a")!
@@ -342,7 +376,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testImportPreservesBuiltInStates() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         // Disable a built-in rule
         var rules = BuiltInRules.all
         rules[0].enabled = false
@@ -361,7 +395,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testSuppressedClipboardDomainsExportImport() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         store.suppressedClipboardDomains = ["example.com", "test.org"]
 
         let exported = try store.exportJSON()
@@ -373,7 +407,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testCustomConfigFilePathPersistsLocally() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         defer { store.configFilePath = originalPath }
 
@@ -382,13 +416,13 @@ final class SettingsStoreTests: XCTestCase {
             .path
         store.configFilePath = path
 
-        let reloaded = SettingsStore()
+        let reloaded = makeSettingsStore()
         XCTAssertEqual(reloaded.configFilePath, path)
     }
 
     @MainActor
     func testConfigFileManagerUsesCustomConfigPath() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         defer { store.configFilePath = originalPath }
 
@@ -396,13 +430,13 @@ final class SettingsStoreTests: XCTestCase {
             .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
         store.configFilePath = path.path
 
-        let manager = ConfigFileManager(settingsStore: store)
+        let manager = makeConfigFileManager(settingsStore: store)
         XCTAssertEqual(manager.configPath, path.standardizedFileURL)
     }
 
     @MainActor
     func testConfigFileManagerImportsExistingConfigOnStart() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalThreshold = store.verticalThreshold
         defer {
@@ -417,7 +451,7 @@ final class SettingsStoreTests: XCTestCase {
         store.verticalThreshold = 8
         store.configFilePath = path.path
 
-        let manager = ConfigFileManager(settingsStore: store)
+        let manager = makeConfigFileManager(settingsStore: store)
         manager.start()
 
         XCTAssertEqual(store.verticalThreshold, 13)
@@ -425,7 +459,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerNotifiesAfterStartupImport() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         defer { store.configFilePath = originalPath }
 
@@ -435,7 +469,7 @@ final class SettingsStoreTests: XCTestCase {
         store.configFilePath = path.path
 
         var imported = false
-        let manager = ConfigFileManager(settingsStore: store) {
+        let manager = makeConfigFileManager(settingsStore: store) {
             imported = true
         }
         manager.start()
@@ -445,7 +479,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigMirrorImportRequiresExplicitYojamVersion() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalThreshold = store.verticalThreshold
         defer { store.verticalThreshold = originalThreshold }
         store.verticalThreshold = 14
@@ -457,7 +491,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testPortableConfigMirrorIgnoresMachineLocalBrowserState() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalBrowsers = store.loadBrowsers()
         defer { store.saveBrowsers(originalBrowsers) }
 
@@ -487,7 +521,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigMirrorImportPreservesLocalBrowserState() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalBrowsers = store.loadBrowsers()
         defer { store.saveBrowsers(originalBrowsers) }
 
@@ -520,7 +554,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigMirrorImportRechecksRetargetedBrowserState() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalBrowsers = store.loadBrowsers()
         defer { store.saveBrowsers(originalBrowsers) }
 
@@ -549,7 +583,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testIdenticalConfigMirrorImportEmitsNoRoutingChanges() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let data = try store.exportConfigMirrorJSON()
         var notificationCount = 0
         let cancellable = store.routingDataDidChange.sink {
@@ -564,7 +598,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testLearnedPreferenceImportEmitsConfigChange() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let defaults = store.sharedStore.defaults
         let key = SharedRoutingStore.Keys.learnedDomainPreferences
         let originalData = defaults.data(forKey: key)
@@ -598,7 +632,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigMirrorSettingsEmitExpectedRoutingChanges() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalClipboardMonitoring = store.clipboardMonitoringEnabled
         let originalICloudSync = store.iCloudSyncEnabled
         let originalDebugLogging = store.debugLoggingEnabled
@@ -647,7 +681,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testDeletedBuiltInRuleIdsEmitOnlyWhenTheyChange() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalDeletedIds = store.deletedBuiltInRuleIds()
         let newId = UUID()
         var configNotificationCount = 0
@@ -678,7 +712,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerWritesMirrorOnlySettingChange() async throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalDebugLogging = store.debugLoggingEnabled
         let path = FileManager.default.temporaryDirectory
@@ -686,7 +720,7 @@ final class SettingsStoreTests: XCTestCase {
         store.configFilePath = path.path
         var writeCount = 0
         let wroteChange = expectation(description: "mirror-only config write")
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0.05,
             onWrite: {
@@ -713,13 +747,13 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerSkipsByteIdenticalWrite() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
         store.configFilePath = path.path
         var writeCount = 0
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0,
             onWrite: { writeCount += 1 })
@@ -745,7 +779,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerPreservesInvalidExistingMirror() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("yojam-\(UUID().uuidString)-config.json")
@@ -753,7 +787,7 @@ final class SettingsStoreTests: XCTestCase {
         try invalidData.write(to: path, options: .atomic)
         store.configFilePath = path.path
         var writeCount = 0
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0,
             onWrite: { writeCount += 1 })
@@ -771,7 +805,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testStartupImportMigratesAvailabilityDerivedBuiltInDisable() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalRules = store.loadRules()
         let path = FileManager.default.temporaryDirectory
@@ -795,7 +829,7 @@ final class SettingsStoreTests: XCTestCase {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(mirror).write(to: path, options: .atomic)
         store.configFilePath = path.path
-        let manager = ConfigFileManager(settingsStore: store) {
+        let manager = makeConfigFileManager(settingsStore: store) {
             engine.reloadRules()
         }
 
@@ -811,7 +845,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testPortableConfigMirrorSortsDeletedBuiltInRuleIds() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalDeletedIds = store.deletedBuiltInRuleIds()
         defer {
             store.clearDeletedBuiltInRuleIds()
@@ -835,7 +869,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerDebouncesBurstIntoOneWrite() async throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalThreshold = store.verticalThreshold
         let path = FileManager.default.temporaryDirectory
@@ -843,7 +877,7 @@ final class SettingsStoreTests: XCTestCase {
         store.configFilePath = path.path
         var writeCount = 0
         let wroteBurst = expectation(description: "debounced config write")
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0.05,
             onWrite: {
@@ -870,7 +904,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testExternalConfigImportIsNotWrittenBack() async throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalThreshold = store.verticalThreshold
         let path = FileManager.default.temporaryDirectory
@@ -882,7 +916,7 @@ final class SettingsStoreTests: XCTestCase {
         var importCount = 0
         var writeCount = 0
         let importedExternalChange = expectation(description: "external config import")
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0.05,
             onImport: {
@@ -914,7 +948,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testRapidExternalReplacementsImportLatestMirror() async throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalThreshold = store.verticalThreshold
         let path = FileManager.default.temporaryDirectory
@@ -924,7 +958,7 @@ final class SettingsStoreTests: XCTestCase {
         store.configFilePath = path.path
         let importedLatest = expectation(description: "latest config replacement imported")
         var writeCount = 0
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0.05,
             onImport: {
@@ -959,7 +993,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testConfigFileManagerSwitchesToPublishedCustomPath() async throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalPath = store.configFilePath
         let originalThreshold = store.verticalThreshold
         let firstPath = FileManager.default.temporaryDirectory
@@ -976,7 +1010,7 @@ final class SettingsStoreTests: XCTestCase {
         try encoder.encode(secondExport).write(to: secondPath, options: .atomic)
         store.configFilePath = firstPath.path
         let wroteNewPath = expectation(description: "new config path written")
-        var manager: ConfigFileManager? = ConfigFileManager(
+        var manager: ConfigFileManager? = makeConfigFileManager(
             settingsStore: store,
             writeDelay: 0.05,
             onWrite: {
@@ -1009,7 +1043,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testRepeatedMissingEmailClientRemovalDoesNotResave() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalBrowsers = store.loadBrowsers()
         let originalEmailClients = store.loadEmailClients()
         let originalPhoneClients = store.loadPhoneClients()
@@ -1044,7 +1078,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testRepeatedInstalledBrowserEventDoesNotResaveOrSuggestDuplicate() {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalBrowsers = store.loadBrowsers()
         defer { store.saveBrowsers(originalBrowsers) }
         let bundleId = "com.example.installed-browser"
@@ -1073,7 +1107,7 @@ final class SettingsStoreTests: XCTestCase {
 
     @MainActor
     func testImportDisablesRulesWithCustomLaunchArgs() throws {
-        let store = SettingsStore()
+        let store = makeSettingsStore()
         let originalRules = store.loadRules()
         defer { store.saveRules(originalRules) }
 
