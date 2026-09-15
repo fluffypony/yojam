@@ -114,6 +114,14 @@ The outputs are:
 - The DMGs and any `.delta` files in `build/releases/` that the appcast references. The script signs and verifies these update files.
 - `Extensions/dist/yojam-chrome.zip` and `Extensions/dist/yojam-firefox.xpi`. The Firefox XPI from this script is unsigned; Mozilla signing is a separate step.
 
+Before publishing the Firefox package, obtain API credentials from the [AMO Developer Hub](https://addons.mozilla.org/developers/addon/api/key/) and load them into `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`. Keep them out of the repository and shell history. Then run:
+
+```bash
+./Extensions/sign-firefox.sh
+```
+
+This validates the extension, submits it for unlisted Mozilla signing, and replaces `Extensions/dist/yojam-firefox.xpi` only when a signed package returns. Unlisted signing lets Firefox users install the GitHub download without an AMO store listing. If Mozilla holds the submission for review, wait for the signed package before publishing it. Keep a separate copy of that package if you rerun the build: `Extensions/build.sh` recreates `dist/`.
+
 ### Publish and verify
 
 1. Tag the release commit as `v<version>` and push the commit and tag.
@@ -165,7 +173,9 @@ Yojam ships with built-in rules for Zoom, Telegram, Slack, Discord, Spotify, App
 
 Discord ignores plain web links handed to it, so Yojam converts `discord.com` channel, message, and invite links (and `discord.gg` invites) to `discord://` deep links at launch time. The URL tester shows the converted link.
 
-Add your own rules matching on all URLs, domain (exact), domain suffix, URL prefix, URL substring, or regex. Rules can optionally filter by source app - only route links from Slack to your work browser, for example.
+Add your own rules matching on all URLs, domain (exact), domain suffix, URL prefix, URL substring, or regex. A rule can also filter by source app. Add several apps to the same rule to accept links from any of them; the URL condition still applies.
+
+To send links from several work apps to one browser profile, create a rule in **Link Handling**, select **All URLs**, and add each app under **Source Apps**. Choose the target browser and its **Profile**, then save. You only need one rule, and iCloud sync keeps the source list together. Update each Mac to 1.3.0 or later before you use multi-app rules there.
 
 ### Per-rule overrides
 
