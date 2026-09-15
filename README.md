@@ -114,7 +114,7 @@ The outputs are:
 - The DMGs and any `.delta` files in `build/releases/` that the appcast references. The script signs and verifies these update files.
 - `Extensions/dist/yojam-chrome.zip` and `Extensions/dist/yojam-firefox.xpi`. The Firefox XPI from this script is unsigned; Mozilla signing is a separate step.
 
-Before publishing the Firefox package, obtain API credentials from the [AMO Developer Hub](https://addons.mozilla.org/developers/addon/api/key/) and load them into `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`. Keep them out of the repository and shell history. Then run:
+Mozilla requires two-step authentication on the developer account before its first add-on submission. Before publishing the Firefox package, obtain API credentials from the [AMO Developer Hub](https://addons.mozilla.org/developers/addon/api/key/) and load them into `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`. Keep them out of the repository and shell history. Then run:
 
 ```bash
 ./Extensions/sign-firefox.sh
@@ -233,7 +233,11 @@ Download `yojam-chrome.zip` from the [latest GitHub release](https://github.com/
 
 ### Firefox
 
-Firefox release builds require Mozilla-signed extensions, and Yojam is not on AMO yet. The raw `yojam-firefox.xpi` attached to GitHub releases is for Orion and Firefox development builds configured to allow unsigned extensions. A normal Firefox install will need the AMO build once it is published.
+Use Firefox 140 or later. Download `yojam-firefox.xpi` from the [latest GitHub release](https://github.com/fluffypony/yojam/releases/latest), open it in Firefox, and confirm the installation. From Yojam 1.3.0, this download has a Mozilla signature and works in normal Firefox. It is distributed directly through GitHub, without an AMO store listing.
+
+Firefox asks for permission to transfer browsing activity because the extension passes links to Yojam on your Mac. It does not upload those links to a server. To route into a container, create the container in Firefox and enter its name in the rule's **Container** field. The name must match an existing container.
+
+Install a newer XPI from GitHub when you update the extension. Sparkle updates the Mac app; it does not replace the Firefox extension.
 
 ### Orion 1.1+
 
