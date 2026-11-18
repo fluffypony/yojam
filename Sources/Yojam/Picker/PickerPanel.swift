@@ -9,6 +9,34 @@ final class PickerPanel: NSPanel {
     private var deactivationObserver: NSObjectProtocol?
     private let onDismiss: (PickerPanel) -> Void
     private var isDismissed = false
+    private var linkSourceTerminationObserver: NSObjectProtocol?
+    private var linkSourceProcessIdentifier: pid_t?
+    private var linkSourceQuitAt: Date?
+    private var hasKeptAfterLinkSourceQuit = false
+
+    nonisolated static let linkSourceQuitActivationTolerance: TimeInterval = 0.5
+    nonisolated static let otherAppActivationSettleDelay: Duration = .milliseconds(500)
+
+    nonisolated static func linkSourceQuitBeforeShowCounts(linkReceivedAt: Date?, shownAt: Date) -> Bool {
+        guard let linkReceivedAt else { return false }
+        return shownAt.timeIntervalSince(linkReceivedAt) < linkSourceQuitActivationTolerance
+    }
+
+    nonisolated static func linkSourceAppHasQuit(processIdentifier: pid_t?) -> Bool {
+        guard let processIdentifier else { return false }
+        guard let app = NSRunningApplication(processIdentifier: processIdentifier) else { return true }
+        return app.isTerminated
+    }
+
+    nonisolated static func shouldKeepAfterOtherAppActivated(
+        linkSourceQuitAt: Date?,
+        otherAppActivatedAt: Date,
+        hasKeptAfterLinkSourceQuit: Bool
+    ) -> Bool {
+        guard let linkSourceQuitAt, !hasKeptAfterLinkSourceQuit else { return false }
+        return abs(otherAppActivatedAt.timeIntervalSince(linkSourceQuitAt))
+            < linkSourceQuitActivationTolerance
+    }
 
     init(url: URL, entries: [BrowserEntry], preselectedIndex: Int,
          settingsStore: SettingsStore,
@@ -195,10 +223,28 @@ final class PickerPanel: NSPanel {
         }
     }
 
-    func showAtCursor() {
+    func showAtCursor(linkSourceProcessIdentifier: pid_t? = nil, linkReceivedAt: Date? = nil) {
         let origin = ScreenEdgeDetector.calculateOrigin(
             pickerSize: frame.size, cursorTarget: cursorTarget)
         setFrameOrigin(origin)
+        self.linkSourceProcessIdentifier = linkSourceProcessIdentifier
+        if Self.linkSourceAppHasQuit(processIdentifier: linkSourceProcessIdentifier) {
+            let shownAt = Date()
+            if Self.linkSourceQuitBeforeShowCounts(linkReceivedAt: linkReceivedAt, shownAt: shownAt) {
+                linkSourceQuitAt = shownAt
+            }
+        } else if let linkSourceProcessIdentifier {
+            linkSourceTerminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification,
+                object: nil, queue: .main
+            ) { [weak self] notification in
+                let terminated = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication
+                guard terminated?.processIdentifier == linkSourceProcessIdentifier else { return }
+                let quitAt = Date()
+                Task { @MainActor in self?.linkSourceQuitAt = quitAt }
+            }
+        }
 
         // Stay in .accessory policy — NSApp.activate() works without
         // switching to .regular, so the picker never appears in Cmd+Tab.
@@ -221,20 +267,46 @@ final class PickerPanel: NSPanel {
             return event
         }
 
-        // Dismiss when the user Cmd+Tabs away
-        deactivationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
+        deactivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.dismissAnimated() }
+        ) { [weak self] notification in
+            let activated = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+            guard activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            else { return }
+            let activatedAt = Date()
+            Task { @MainActor in
+                try? await Task.sleep(for: Self.otherAppActivationSettleDelay)
+                self?.handleOtherAppActivated(at: activatedAt)
+            }
         }
+    }
+
+    private func handleOtherAppActivated(at activatedAt: Date) {
+        guard !isDismissed else { return }
+        let keep = Self.shouldKeepAfterOtherAppActivated(
+            linkSourceQuitAt: linkSourceQuitAt,
+            otherAppActivatedAt: activatedAt,
+            hasKeptAfterLinkSourceQuit: hasKeptAfterLinkSourceQuit)
+        guard keep else {
+            dismissAnimated()
+            return
+        }
+        hasKeptAfterLinkSourceQuit = true
+        orderFrontRegardless()
+        makeKey()
     }
 
     // §10: Shared cleanup to prevent event monitor leaks
     private func removeMonitors() {
         if let monitor = globalMonitor { NSEvent.removeMonitor(monitor); globalMonitor = nil }
         if let local = localMonitor { NSEvent.removeMonitor(local); localMonitor = nil }
-        if let obs = deactivationObserver { NotificationCenter.default.removeObserver(obs); deactivationObserver = nil }
+        if let obs = deactivationObserver { NSWorkspace.shared.notificationCenter.removeObserver(obs); deactivationObserver = nil }
+        if let obs = linkSourceTerminationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            linkSourceTerminationObserver = nil
+        }
     }
 
     override func close() {

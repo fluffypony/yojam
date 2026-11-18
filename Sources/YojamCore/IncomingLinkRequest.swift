@@ -7,6 +7,7 @@ import Foundation
 public struct IncomingLinkRequest: Sendable {
     public let url: URL
     public let sourceAppBundleId: String?
+    public let sourceProcessIdentifier: Int32?
     public let origin: IngressOrigin
     public let modifierFlags: UInt
     public let receivedAt: Date
@@ -25,6 +26,7 @@ public struct IncomingLinkRequest: Sendable {
     public init(
         url: URL,
         sourceAppBundleId: String? = nil,
+        sourceProcessIdentifier: Int32? = nil,
         origin: IngressOrigin,
         modifierFlags: UInt = 0,
         receivedAt: Date = Date(),
@@ -35,6 +37,7 @@ public struct IncomingLinkRequest: Sendable {
     ) {
         self.url = url
         self.sourceAppBundleId = sourceAppBundleId
+        self.sourceProcessIdentifier = sourceProcessIdentifier
         self.origin = origin
         self.modifierFlags = modifierFlags
         self.receivedAt = receivedAt
