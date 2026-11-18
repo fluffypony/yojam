@@ -375,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let resolvedRequest = IncomingLinkRequest(
                 url: resolved,
                 sourceAppBundleId: request.sourceAppBundleId,
+                sourceProcessIdentifier: request.sourceProcessIdentifier,
                 origin: request.origin,
                 modifierFlags: request.modifierFlags,
                 receivedAt: request.receivedAt,
@@ -652,7 +653,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         if !prefsOpen { NSApp.setActivationPolicy(.accessory) }
                     }
                 })
-            pickerPanel?.showAtCursor()
+            pickerPanel?.showAtCursor(
+                linkSourceProcessIdentifier: request.sourceProcessIdentifier,
+                linkReceivedAt: request.receivedAt)
 
         case .openSystemDefault(let url):
             openInDefaultBrowser(url)
@@ -751,6 +754,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let request = IncomingLinkRequest(
             url: url,
             sourceAppBundleId: sourceAppBundleId,
+            sourceProcessIdentifier: SourceAppResolver.senderProcessIdentifier(from: event),
             origin: .defaultHandler,
             modifierFlags: modifiers.rawValue
         )
